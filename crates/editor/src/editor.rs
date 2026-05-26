@@ -1,6 +1,6 @@
 use glam::Vec2;
 use tiles::{App, Cell, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, State};
-use tiles::font::{FONT_4X6, Font, TOM_THUMB};
+use tiles::font::{Font, TOM_THUMB_3X5};
 
 use crate::document::{Document, Palette};
 use crate::history::History;
@@ -234,7 +234,7 @@ impl Editor {
     }
 
     fn draw_tools_panel(&self, state: &mut State) {
-        let font = &TOM_THUMB;
+        let font = &TOM_THUMB_3X5;
         let tools_list = [
             ("Pencil", "B", Tool::Pencil),
             ("Eraser", "E", Tool::Eraser),
@@ -286,7 +286,7 @@ impl Editor {
         for ch in text.chars() {
             if let Some(glyph) = font.glyph(ch) {
                 for row in 0..font.height {
-                    for col in 0..font.width {
+                    for col in 0..font.glyph_width(ch) {
                         if font.pixel(glyph, col, row) {
                             state.draw(
                                 Cell::new(cursor_x + col as f32, y - row as f32)
@@ -296,7 +296,7 @@ impl Editor {
                     }
                 }
             }
-            cursor_x += font.char_advance() as f32;
+            cursor_x += font.char_advance(ch) as f32;
         }
     }
 }

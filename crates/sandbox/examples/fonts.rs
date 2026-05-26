@@ -1,12 +1,16 @@
 use tiles::{
     font::{
-        Font, CLR6X12, CREEP, FONT_10X20, FONT_4X6, FONT_5X7, FONT_5X8, FONT_6X10, FONT_6X12,
-        FONT_6X13, FONT_6X13B, FONT_6X13O, FONT_6X9, FONT_7X13, FONT_7X13B, FONT_7X13O,
-        FONT_7X14, FONT_7X14B, FONT_8X13, FONT_8X13B, FONT_8X13O, FONT_9X15, FONT_9X15B,
-        FONT_9X18, FONT_9X18B, HAXORMEDIUM_10, HAXORMEDIUM_11, HAXORMEDIUM_12, HAXORMEDIUM_13,
-        HAXORNARROW_15, HAXORNARROW_16, HAXORNARROW_17, HELVR12, KNXT, LOGISOSO46, PEEP_10X20,
-        PSEVDOAZBUKAMEDIUM_12, SCIENTIFICA_11, SCIENTIFICABOLD_11, SCIENTIFICAITALIC_11,
-        SPLEEN_12X24, SPLEEN_16X32, SPLEEN_32X64, SPLEEN_5X8, SPLEEN_8X16, TOM_THUMB,
+        Font, HELVR12_7X9, LOGISOSO46_23X46, MONO_10X20, MONO_4X6, MONO_5X7, MONO_5X8,
+        MONO_6X10, MONO_6X12, MONO_6X13, MONO_6X9, MONO_7X13, MONO_7X14, MONO_8X13, MONO_9X15,
+        MONO_9X18, MONO_BOLD_6X13, MONO_BOLD_7X13, MONO_BOLD_7X14, MONO_BOLD_8X13,
+        MONO_BOLD_9X15, MONO_BOLD_9X18, MONO_CLR6X12_6X12, MONO_CREEP_4X7,
+        MONO_HAXORMEDIUM_6X11, MONO_HAXORMEDIUM_7X13, MONO_HAXORMEDIUM_8X14,
+        MONO_HAXORMEDIUM_9X15, MONO_HAXORNARROW_5X11, MONO_HAXORNARROW_6X12,
+        MONO_HAXORNARROW_7X13, MONO_KNXT_9X20, MONO_OBLIQUE_6X13, MONO_OBLIQUE_7X13,
+        MONO_OBLIQUE_8X13, MONO_PEEP_10X21, MONO_PSEVDOAZBUKAMEDIUM_8X14, MONO_SCIENTIFICA_4X7,
+        MONO_SCIENTIFICABOLD_4X7, MONO_SCIENTIFICAITALIC_4X7, MONO_SPLEEN_12X24,
+        MONO_SPLEEN_16X32, MONO_SPLEEN_32X64, MONO_SPLEEN_5X8, MONO_SPLEEN_8X16, TINY5_4X5,
+        TOM_THUMB_3X5,
     },
     App, Cell, Config, KeyCode, KeyEvent, KeyState, MouseEvent, State,
 };
@@ -17,51 +21,52 @@ struct FontDemo {
 }
 
 const FONTS: &[(&str, &Font)] = &[
-    ("Tom Thumb", &TOM_THUMB),
-    ("4x6", &FONT_4X6),
-    ("5x7", &FONT_5X7),
-    ("5x8", &FONT_5X8),
-    ("Spleen 5x8", &SPLEEN_5X8),
-    ("6x9", &FONT_6X9),
-    ("6x10", &FONT_6X10),
-    ("6x12", &FONT_6X12),
-    ("6x13", &FONT_6X13),
-    ("6x13B", &FONT_6X13B),
-    ("6x13O", &FONT_6X13O),
-    ("clR6x12", &CLR6X12),
-    ("7x13", &FONT_7X13),
-    ("7x13B", &FONT_7X13B),
-    ("7x13O", &FONT_7X13O),
-    ("7x14", &FONT_7X14),
-    ("7x14B", &FONT_7X14B),
-    ("8x13", &FONT_8X13),
-    ("8x13B", &FONT_8X13B),
-    ("8x13O", &FONT_8X13O),
-    ("Spleen 8x16", &SPLEEN_8X16),
-    ("9x15", &FONT_9X15),
-    ("9x15B", &FONT_9X15B),
-    ("9x18", &FONT_9X18),
-    ("9x18B", &FONT_9X18B),
-    ("10x20", &FONT_10X20),
-    ("Peep 10x20", &PEEP_10X20),
-    ("Creep", &CREEP),
-    ("Scientifica 11", &SCIENTIFICA_11),
-    ("Scientifica Bold 11", &SCIENTIFICABOLD_11),
-    ("Scientifica Italic 11", &SCIENTIFICAITALIC_11),
-    ("Haxor Medium 10", &HAXORMEDIUM_10),
-    ("Haxor Medium 11", &HAXORMEDIUM_11),
-    ("Haxor Medium 12", &HAXORMEDIUM_12),
-    ("Haxor Medium 13", &HAXORMEDIUM_13),
-    ("Haxor Narrow 15", &HAXORNARROW_15),
-    ("Haxor Narrow 16", &HAXORNARROW_16),
-    ("Haxor Narrow 17", &HAXORNARROW_17),
-    ("Helv R12", &HELVR12),
-    ("Knxt", &KNXT),
-    ("Psevdo Azbuka 12", &PSEVDOAZBUKAMEDIUM_12),
-    ("Spleen 12x24", &SPLEEN_12X24),
-    ("Spleen 16x32", &SPLEEN_16X32),
-    ("Spleen 32x64", &SPLEEN_32X64),
-    ("Logisoso 46", &LOGISOSO46),
+    ("Tom Thumb 3x5", &TOM_THUMB_3X5),
+    ("Tiny5 4x5", &TINY5_4X5),
+    ("4x6", &MONO_4X6),
+    ("Creep 4x7", &MONO_CREEP_4X7),
+    ("Scientifica 4x7", &MONO_SCIENTIFICA_4X7),
+    ("Scientifica Bold 4x7", &MONO_SCIENTIFICABOLD_4X7),
+    ("Scientifica Italic 4x7", &MONO_SCIENTIFICAITALIC_4X7),
+    ("5x7", &MONO_5X7),
+    ("5x8", &MONO_5X8),
+    ("Spleen 5x8", &MONO_SPLEEN_5X8),
+    ("6x9", &MONO_6X9),
+    ("6x10", &MONO_6X10),
+    ("6x12", &MONO_6X12),
+    ("6x13", &MONO_6X13),
+    ("Bold 6x13", &MONO_BOLD_6X13),
+    ("Oblique 6x13", &MONO_OBLIQUE_6X13),
+    ("clR 6x12", &MONO_CLR6X12_6X12),
+    ("7x13", &MONO_7X13),
+    ("Bold 7x13", &MONO_BOLD_7X13),
+    ("Oblique 7x13", &MONO_OBLIQUE_7X13),
+    ("7x14", &MONO_7X14),
+    ("Bold 7x14", &MONO_BOLD_7X14),
+    ("8x13", &MONO_8X13),
+    ("Bold 8x13", &MONO_BOLD_8X13),
+    ("Oblique 8x13", &MONO_OBLIQUE_8X13),
+    ("Spleen 8x16", &MONO_SPLEEN_8X16),
+    ("9x15", &MONO_9X15),
+    ("Bold 9x15", &MONO_BOLD_9X15),
+    ("9x18", &MONO_9X18),
+    ("Bold 9x18", &MONO_BOLD_9X18),
+    ("10x20", &MONO_10X20),
+    ("Peep 10x21", &MONO_PEEP_10X21),
+    ("Haxor Medium 6x11", &MONO_HAXORMEDIUM_6X11),
+    ("Haxor Medium 7x13", &MONO_HAXORMEDIUM_7X13),
+    ("Haxor Medium 8x14", &MONO_HAXORMEDIUM_8X14),
+    ("Haxor Medium 9x15", &MONO_HAXORMEDIUM_9X15),
+    ("Haxor Narrow 5x11", &MONO_HAXORNARROW_5X11),
+    ("Haxor Narrow 6x12", &MONO_HAXORNARROW_6X12),
+    ("Haxor Narrow 7x13", &MONO_HAXORNARROW_7X13),
+    ("Helv 7x9", &HELVR12_7X9),
+    ("Knxt 9x20", &MONO_KNXT_9X20),
+    ("Psevdo Azbuka 8x14", &MONO_PSEVDOAZBUKAMEDIUM_8X14),
+    ("Spleen 12x24", &MONO_SPLEEN_12X24),
+    ("Spleen 16x32", &MONO_SPLEEN_16X32),
+    ("Spleen 32x64", &MONO_SPLEEN_32X64),
+    ("Logisoso 23x46", &LOGISOSO46_23X46),
 ];
 
 const SAMPLE_LINES: &[&str] = &[
@@ -87,7 +92,7 @@ impl FontDemo {
         for ch in text.chars() {
             if let Some(glyph) = font.glyph(ch) {
                 for row in 0..font.height {
-                    for col in 0..font.width {
+                    for col in 0..font.glyph_width(ch) {
                         if font.pixel(glyph, col, row) {
                             let x = cursor_x + col as f32;
                             let y = start_y - row as f32;
@@ -97,7 +102,7 @@ impl FontDemo {
                     }
                 }
             }
-            cursor_x += font.char_advance() as f32;
+            cursor_x += font.char_advance(ch) as f32;
         }
     }
 }
@@ -112,7 +117,7 @@ impl App for FontDemo {
     fn update(&mut self, state: &mut State) {
         let (_, font) = FONTS[self.font_index];
         let max_chars = SAMPLE_LINES.iter().map(|l| l.len()).max().unwrap_or(10);
-        let text_width = max_chars as f32 * font.char_advance() as f32;
+        let text_width = max_chars as f32 * font.char_advance('A') as f32;
         let line_height = font.height as f32 + 2.0;
         let text_height = (SAMPLE_LINES.len() as f32 + 2.0) * line_height;
 
@@ -134,11 +139,10 @@ impl App for FontDemo {
         let start_x = -vp.x / 2.0 + 10.0;
         let start_y = vp.y / 2.0 - 10.0;
 
-        // Draw font name and index as header
-        let header = format!("[{}/{}] {}", self.font_index + 1, FONTS.len(), name);
+        let header = format!("[{}/{}]", self.font_index + 1, FONTS.len());
         FontDemo::draw_string(state, &header, font, start_x, start_y, self.illuminated);
+        FontDemo::draw_string(state, &name, font, start_x, start_y - line_height, self.illuminated);
 
-        // Draw sample lines
         for (i, line) in SAMPLE_LINES.iter().enumerate() {
             let y = start_y - line_height * (i as f32 + 2.0);
             FontDemo::draw_string(state, line, font, start_x, y, self.illuminated);

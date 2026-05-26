@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use beeps::modulator::ModTarget;
 use beeps::source::Waveform;
 use beeps::{AudioEngine, BusId, VoiceId};
-use tiles::font::{FONT_5X7, TOM_THUMB};
+use tiles::font::MONO_5X7;
 use tiles::{App, Cell, Config, KeyCode, KeyEvent, KeyState, State};
 
 struct SynthDemo {
@@ -77,12 +77,12 @@ impl SynthDemo {
     }
 
     fn draw_text(state: &mut State, text: &str, x: f32, y: f32, color: [f32; 4]) {
-        let font = &FONT_5X7;
+        let font = &MONO_5X7;
         let mut cursor_x = x;
         for ch in text.chars() {
             if let Some(glyph) = font.glyph(ch) {
                 for row in 0..font.height {
-                    for col in 0..font.width {
+                    for col in 0..font.glyph_width(ch) {
                         if font.pixel(glyph, col, row) {
                             state.draw(
                                 Cell::new(cursor_x + col as f32, y - row as f32)
@@ -92,7 +92,7 @@ impl SynthDemo {
                     }
                 }
             }
-            cursor_x += font.char_advance() as f32;
+            cursor_x += font.char_advance(ch) as f32;
         }
     }
 }

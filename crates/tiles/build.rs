@@ -10,7 +10,18 @@ fn main() {
 
     println!("cargo::rerun-if-changed=fonts");
 
-    let mut font_entries: Vec<(String, String, usize, usize)> = Vec::new();
+    // Clean old generated files
+    if let Ok(entries) = fs::read_dir(out_dir) {
+        for entry in entries {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "rs") {
+                fs::remove_file(path).unwrap();
+            }
+        }
+    }
+
+    let mut font_entries: Vec<(String, String)> = Vec::new();
 
     for entry in fs::read_dir(fonts_dir).unwrap() {
         let entry = entry.unwrap();
@@ -21,11 +32,11 @@ fn main() {
             let font = parse_bdf(&path);
 
             if let Some(font) = font {
-                let mod_name = sanitize_name(&stem);
+                let mod_name = make_font_name(&stem, font.is_mono, font.a_bbx_w, font.a_bbx_h);
                 let const_name = mod_name.to_uppercase();
                 let out_path = out_dir.join(format!("{mod_name}.rs"));
                 write_font_module(&out_path, &const_name, &font);
-                font_entries.push((mod_name, const_name, font.width, font.height));
+                font_entries.push((mod_name, const_name));
             }
         }
     }
@@ -34,29 +45,116 @@ fn main() {
 
     let mod_path = out_dir.join("mod.rs");
     let mut f = fs::File::create(mod_path).unwrap();
-    for (mod_name, const_name, _, _) in &font_entries {
+    for (mod_name, const_name) in &font_entries {
         writeln!(f, "mod {mod_name};").unwrap();
         writeln!(f, "pub use {mod_name}::{const_name};").unwrap();
     }
 }
 
-fn sanitize_name(s: &str) -> String {
-    let raw: String = s
+fn strip_trailing_size_info(s: &str) -> &str {
+    // Strip trailing _WxH pattern (e.g. _12x24)
+    let mut candidate = s;
+    if let Some(pos) = candidate.rfind('_') {
+        let after = &candidate[pos + 1..];
+        if has_wxh_pattern(after) {
+            candidate = &candidate[..pos];
+        }
+    }
+    // Strip trailing _N pattern (point-size suffix like _10, _11)
+    if let Some(pos) = candidate.rfind('_') {
+        let after = &candidate[pos + 1..];
+        if !after.is_empty() && after.chars().all(|c| c.is_ascii_digit()) {
+            let before = &candidate[..pos];
+            if !before.is_empty() {
+                return before;
+            }
+        }
+    }
+    // If the string is purely a WxH pattern (like "6x12") or a WxH with style suffix (like "6x13b"),
+    // return empty to signal no base name
+    let without_style = candidate.trim_end_matches(|c: char| c.is_ascii_alphabetic() && c != 'x');
+    if !without_style.is_empty() && without_style.chars().all(|c| c.is_ascii_digit() || c == 'x') && has_wxh_pattern(without_style) {
+        return "";
+    }
+    candidate
+}
+
+fn has_wxh_pattern(s: &str) -> bool {
+    let chars: Vec<char> = s.chars().collect();
+    for i in 0..chars.len() {
+        if chars[i] == 'x' && i > 0 && i + 1 < chars.len() {
+            let before = chars[..i].iter().rev().take_while(|c| c.is_ascii_digit()).count();
+            let after = chars[i + 1..].iter().take_while(|c| c.is_ascii_digit()).count();
+            if before > 0 && after > 0 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn make_font_name(stem: &str, is_mono: bool, a_bbx_w: usize, a_bbx_h: usize) -> String {
+    let dims = format!("{a_bbx_w}x{a_bbx_h}");
+
+    let raw: String = stem
         .chars()
         .map(|c| if c.is_alphanumeric() { c.to_ascii_lowercase() } else { '_' })
         .collect::<String>()
         .trim_matches('_')
         .to_string();
-    if raw.starts_with(|c: char| c.is_ascii_digit()) {
-        format!("font_{raw}")
+
+    // Check if stem is purely a WxH pattern with optional style suffix (like "6x13", "6x13b", "9x15b")
+    let without_style = raw.trim_end_matches(|c: char| c.is_ascii_alphabetic() && c != 'x');
+    let is_pure_dim_name = !without_style.is_empty()
+        && without_style.chars().all(|c| c.is_ascii_digit() || c == 'x')
+        && has_wxh_pattern(without_style);
+
+    let named = if is_pure_dim_name {
+        // Extract style suffix (b=bold, o=oblique)
+        let style_suffix = &raw[without_style.len()..];
+        let style_prefix = match style_suffix {
+            "b" => "bold_",
+            "o" => "oblique_",
+            _ => "",
+        };
+        if is_mono {
+            format!("mono_{style_prefix}{dims}")
+        } else {
+            format!("{style_prefix}{dims}")
+        }
     } else {
-        raw
+        let base = strip_trailing_size_info(&raw).to_string();
+        if base.is_empty() {
+            if is_mono {
+                format!("mono_{dims}")
+            } else {
+                dims.clone()
+            }
+        } else if is_mono {
+            format!("mono_{base}_{dims}")
+        } else {
+            format!("{base}_{dims}")
+        }
+    };
+
+    ensure_valid_ident(&named)
+}
+
+fn ensure_valid_ident(s: &str) -> String {
+    if s.starts_with(|c: char| c.is_ascii_digit()) {
+        format!("font_{s}")
+    } else {
+        s.to_string()
     }
 }
 
 struct BdfFont {
-    width: usize,
     height: usize,
+    max_dwidth: usize,
+    is_mono: bool,
+    a_bbx_w: usize,
+    a_bbx_h: usize,
+    widths: Vec<u8>,
     glyphs: BTreeMap<u8, Vec<Vec<bool>>>,
 }
 
@@ -68,7 +166,10 @@ fn parse_bdf(path: &Path) -> Option<BdfFont> {
     let mut fbb_h = 0usize;
     let mut fbb_y_off: i32 = 0;
 
-    let mut glyphs: BTreeMap<u8, Vec<Vec<bool>>> = BTreeMap::new();
+    let mut font_ascent: Option<i32> = None;
+    let mut font_descent: Option<i32> = None;
+    let mut spacing: Option<String> = None;
+
     let mut i = 0;
 
     while i < lines.len() {
@@ -81,7 +182,36 @@ fn parse_bdf(path: &Path) -> Option<BdfFont> {
                 fbb_h = parts[2].parse().unwrap_or(0);
                 fbb_y_off = parts[4].parse().unwrap_or(0);
             }
+        } else if line.starts_with("FONT_ASCENT ") {
+            font_ascent = line.split_whitespace().nth(1).and_then(|s| s.parse().ok());
+        } else if line.starts_with("FONT_DESCENT ") {
+            font_descent = line.split_whitespace().nth(1).and_then(|s| s.parse().ok());
+        } else if line.starts_with("SPACING ") {
+            spacing = line.split_whitespace().nth(1).map(|s| s.trim_matches('"').to_uppercase());
         }
+
+        if line.starts_with("STARTCHAR ") {
+            break;
+        }
+        i += 1;
+    }
+
+    let cell_h = if let (Some(asc), Some(desc)) = (font_ascent, font_descent) {
+        (asc + desc) as usize
+    } else {
+        fbb_h
+    };
+
+    let baseline_from_top = font_ascent.unwrap_or(fbb_h as i32 - (-fbb_y_off) as i32) as usize;
+
+    let mut glyphs: BTreeMap<u8, Vec<Vec<bool>>> = BTreeMap::new();
+    let mut dwidths: BTreeMap<u8, usize> = BTreeMap::new();
+    let mut bbx_data: BTreeMap<u8, (usize, usize)> = BTreeMap::new(); // (bbx_w, bbx_h)
+    let mut max_dwidth: usize = 0;
+
+    i = 0;
+    while i < lines.len() {
+        let line = lines[i];
 
         if line.starts_with("STARTCHAR ") {
             let mut encoding: Option<u32> = None;
@@ -89,6 +219,7 @@ fn parse_bdf(path: &Path) -> Option<BdfFont> {
             let mut bbx_h = fbb_h;
             let mut bbx_x_off: i32 = 0;
             let mut bbx_y_off: i32 = fbb_y_off;
+            let mut dwidth: Option<usize> = None;
             let mut bitmap_lines: Vec<&str> = Vec::new();
             let mut in_bitmap = false;
 
@@ -97,6 +228,8 @@ fn parse_bdf(path: &Path) -> Option<BdfFont> {
                 let l = lines[i];
                 if l.starts_with("ENCODING ") {
                     encoding = l.split_whitespace().nth(1).and_then(|s| s.parse().ok());
+                } else if l.starts_with("DWIDTH ") {
+                    dwidth = l.split_whitespace().nth(1).and_then(|s| s.parse().ok());
                 } else if l.starts_with("BBX ") {
                     let parts: Vec<&str> = l.split_whitespace().collect();
                     if parts.len() >= 5 {
@@ -115,8 +248,13 @@ fn parse_bdf(path: &Path) -> Option<BdfFont> {
 
             if let Some(enc) = encoding {
                 if enc >= 32 && enc <= 126 {
-                    let grid = rasterize_glyph(
-                        &bitmap_lines, fbb_w, fbb_h, fbb_y_off, bbx_w, bbx_h, bbx_x_off, bbx_y_off,
+                    if let Some(dw) = dwidth {
+                        max_dwidth = max_dwidth.max(dw);
+                        dwidths.insert(enc as u8, dw);
+                    }
+                    bbx_data.insert(enc as u8, (bbx_w, bbx_h));
+                    let grid = rasterize_glyph_cell(
+                        &bitmap_lines, cell_h, baseline_from_top, bbx_w, bbx_h, bbx_x_off, bbx_y_off,
                     );
                     glyphs.insert(enc as u8, grid);
                 }
@@ -126,37 +264,60 @@ fn parse_bdf(path: &Path) -> Option<BdfFont> {
         i += 1;
     }
 
-    if fbb_w == 0 || fbb_h == 0 || glyphs.is_empty() {
+    let cell_w = if max_dwidth > 0 { max_dwidth } else { fbb_w };
+
+    if cell_w == 0 || cell_h == 0 || glyphs.is_empty() {
         return None;
     }
 
+    // Must have 'A' (65)
+    let a_bbx = bbx_data.get(&65)?;
+    let a_bbx_w = a_bbx.0;
+    let a_bbx_h = a_bbx.1;
+
+    // Determine mono vs proportional
+    let is_mono = match spacing.as_deref() {
+        Some("C") | Some("M") => true,
+        Some("P") => false,
+        _ => {
+            // Fallback: check if all dwidths are identical
+            let first = dwidths.values().next().copied();
+            first.is_some() && dwidths.values().all(|&dw| Some(dw) == first)
+        }
+    };
+
+    // Build widths array (95 entries for ASCII 32-126)
+    let mut widths: Vec<u8> = Vec::with_capacity(95);
+    for code in 32u8..=126u8 {
+        let w = dwidths.get(&code).copied().unwrap_or(cell_w);
+        widths.push(w as u8);
+    }
+
     Some(BdfFont {
-        width: fbb_w,
-        height: fbb_h,
+        height: cell_h,
+        max_dwidth: cell_w,
+        is_mono,
+        a_bbx_w,
+        a_bbx_h,
+        widths,
         glyphs,
     })
 }
 
-fn rasterize_glyph(
+fn rasterize_glyph_cell(
     bitmap_lines: &[&str],
-    fbb_w: usize,
-    fbb_h: usize,
-    fbb_y_off: i32,
+    cell_h: usize,
+    baseline_from_top: usize,
     bbx_w: usize,
     bbx_h: usize,
     bbx_x_off: i32,
     bbx_y_off: i32,
 ) -> Vec<Vec<bool>> {
-    let mut grid = vec![vec![false; fbb_w]; fbb_h];
+    let grid_w = 64;
+    let mut grid = vec![vec![false; grid_w]; cell_h];
 
-    // BDF y-coordinates: baseline is at fbb_y_off rows from the bottom of the fbb.
-    // A glyph's bitmap bottom edge is bbx_y_off rows from the baseline.
-    // So the glyph's bottom row in the grid is at:
-    //   grid_bottom = (fbb_h - 1) - (bbx_y_off - fbb_y_off)
-    // And its top row is:
-    //   grid_top = grid_bottom - (bbx_h - 1)
-    let grid_bottom = (fbb_h as i32 - 1) - (bbx_y_off - fbb_y_off);
-    let y_start = grid_bottom - (bbx_h as i32 - 1);
+    let glyph_bottom = baseline_from_top as i32 - bbx_y_off;
+    let y_start = glyph_bottom - bbx_h as i32;
 
     for (row_idx, hex_str) in bitmap_lines.iter().enumerate() {
         let row_val = u64::from_str_radix(hex_str.trim(), 16).unwrap_or(0);
@@ -167,7 +328,7 @@ fn rasterize_glyph(
             continue;
         }
         let y = y as usize;
-        if y >= fbb_h {
+        if y >= cell_h {
             break;
         }
 
@@ -180,7 +341,7 @@ fn rasterize_glyph(
             };
 
             let x = bbx_x_off + col as i32;
-            if pixel_on && x >= 0 && (x as usize) < fbb_w {
+            if pixel_on && x >= 0 && (x as usize) < grid_w {
                 grid[y][x as usize] = true;
             }
         }
@@ -192,16 +353,25 @@ fn rasterize_glyph(
 fn write_font_module(path: &Path, const_name: &str, font: &BdfFont) {
     let mut f = fs::File::create(path).unwrap();
 
-    let bytes_per_row = (font.width + 7) / 8;
-    let bytes_per_glyph = bytes_per_row * font.height;
-    let total_glyphs = 95; // ASCII 32-126
+    let bytes_per_row = (font.max_dwidth + 7) / 8;
 
     writeln!(f, "use crate::font::Font;").unwrap();
     writeln!(f).unwrap();
+
+    // Write widths array
+    writeln!(f, "#[rustfmt::skip]").unwrap();
+    write!(f, "static WIDTHS: &[u8] = &[").unwrap();
+    for (i, w) in font.widths.iter().enumerate() {
+        if i > 0 { write!(f, ", ").unwrap(); }
+        write!(f, "{}", w).unwrap();
+    }
+    writeln!(f, "];").unwrap();
+    writeln!(f).unwrap();
+
     writeln!(
         f,
-        "pub static {const_name}: Font = Font::new({}, {}, 1, GLYPH_DATA, 32, 126);",
-        font.width, font.height
+        "pub static {const_name}: Font = Font::new({}, {}, WIDTHS, GLYPH_DATA, 32, 126);",
+        font.height, bytes_per_row
     ).unwrap();
     writeln!(f).unwrap();
     writeln!(f, "#[rustfmt::skip]").unwrap();
@@ -225,7 +395,7 @@ fn write_font_module(path: &Path, const_name: &str, font: &BdfFont) {
                     let mut val = 0u8;
                     for bit in 0..8 {
                         let col = byte_idx * 8 + bit;
-                        if col < font.width && row < grid.len() && col < grid[row].len() && grid[row][col] {
+                        if col < font.max_dwidth && row < grid.len() && col < grid[row].len() && grid[row][col] {
                             val |= 1 << (7 - bit);
                         }
                     }
@@ -243,7 +413,4 @@ fn write_font_module(path: &Path, const_name: &str, font: &BdfFont) {
     }
 
     writeln!(f, "];").unwrap();
-
-    let expected = total_glyphs * bytes_per_glyph;
-    let _ = expected; // sanity check could go here
 }
