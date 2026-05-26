@@ -1,9 +1,11 @@
 [package]
-name = "sandbox"
+name = "editor"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 tiles = { path = "../tiles" }
-beeps = { path = "../beeps" }
 glam = "0.29"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+png = "0.17"
