@@ -1,4 +1,4 @@
-use tiles::{App, Cell, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, State};
+use tiles::{App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, State};
 
 struct LightingDemo {
     time: f32,
@@ -46,7 +46,7 @@ impl App for LightingDemo {
                 } else {
                     (0.18, 0.16, 0.22)
                 };
-                state.draw(Cell::new(cx, cy).rgba(r, g, b, 1.0));
+                state.draw(Cell::new(cx, cy).color(Color::linear(r, g, b, 1.0)));
             }
         }
 
@@ -62,7 +62,7 @@ impl App for LightingDemo {
 
             state.draw(
                 Cell::new(x, y)
-                    .rgba(r, g, b, 1.0)
+                    .color(Color::linear(r, g, b, 1.0))
                     .light(self.light_radius)
                     .intensity(self.light_intensity),
             );
@@ -73,7 +73,7 @@ impl App for LightingDemo {
             let pos = state.mouse_position();
             state.draw(
                 Cell::new(pos.x, pos.y)
-                    .rgba(1.0, 0.95, 0.8, 1.0)
+                    .color(Color::linear(1.0, 0.95, 0.8, 1.0))
                     .light(self.light_radius * 1.5)
                     .intensity(1.5),
             );
@@ -83,7 +83,7 @@ impl App for LightingDemo {
         let pulse = (self.time * 2.0).sin() * 0.3 + 0.7;
         state.draw(
             Cell::new(0.0, 0.0)
-                .rgba(1.0, 0.4, 0.1, 1.0)
+                .color(Color::linear(1.0, 0.4, 0.1, 1.0))
                 .emissive()
                 .intensity(pulse),
         );

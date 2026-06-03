@@ -1,23 +1,11 @@
 use tiles::{
-    font::{
-        Font, HELVR12_7X9, LOGISOSO46_23X46, MONO_10X20, MONO_4X6, MONO_5X7, MONO_5X8,
-        MONO_6X10, MONO_6X12, MONO_6X13, MONO_6X9, MONO_7X13, MONO_7X14, MONO_8X13, MONO_9X15,
-        MONO_9X18, MONO_BOLD_6X13, MONO_BOLD_7X13, MONO_BOLD_7X14, MONO_BOLD_8X13,
-        MONO_BOLD_9X15, MONO_BOLD_9X18, MONO_CLR6X12_6X12, MONO_CREEP_4X7,
-        MONO_HAXORMEDIUM_6X11, MONO_HAXORMEDIUM_7X13, MONO_HAXORMEDIUM_8X14,
-        MONO_HAXORMEDIUM_9X15, MONO_HAXORNARROW_5X11, MONO_HAXORNARROW_6X12,
-        MONO_HAXORNARROW_7X13, MONO_KNXT_9X20, MONO_OBLIQUE_6X13, MONO_OBLIQUE_7X13,
-        MONO_OBLIQUE_8X13, MONO_PEEP_10X21, MONO_PSEVDOAZBUKAMEDIUM_8X14, MONO_SCIENTIFICA_4X7,
-        MONO_SCIENTIFICABOLD_4X7, MONO_SCIENTIFICAITALIC_4X7, MONO_SPLEEN_12X24,
-        MONO_SPLEEN_16X32, MONO_SPLEEN_32X64, MONO_SPLEEN_5X8, MONO_SPLEEN_8X16, TINY5_4X5,
-        TOM_THUMB_3X5,
-    },
-    App, Cell, Config, KeyCode, KeyEvent, KeyState, MouseEvent, State,
+    AnchorCorner::TopLeft, App, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Shape, State, StrokePosition::{Inner, Middle}, Text, font::{
+        Font, HELVR12_7X9, LOGISOSO46_23X46, MONO_4X6, MONO_5X7, MONO_5X8, MONO_6X9, MONO_6X10, MONO_6X12, MONO_6X13, MONO_7X13, MONO_7X14, MONO_8X13, MONO_9X15, MONO_9X18, MONO_10X20, MONO_BOLD_6X13, MONO_BOLD_7X13, MONO_BOLD_7X14, MONO_BOLD_8X13, MONO_BOLD_9X15, MONO_BOLD_9X18, MONO_CLR6X12_6X12, MONO_CREEP_4X7, MONO_HAXORMEDIUM_6X11, MONO_HAXORMEDIUM_7X13, MONO_HAXORMEDIUM_8X14, MONO_HAXORMEDIUM_9X15, MONO_HAXORNARROW_5X11, MONO_HAXORNARROW_6X12, MONO_HAXORNARROW_7X13, MONO_KNXT_9X20, MONO_OBLIQUE_6X13, MONO_OBLIQUE_7X13, MONO_OBLIQUE_8X13, MONO_PEEP_10X21, MONO_PSEVDOAZBUKAMEDIUM_8X14, MONO_SCIENTIFICA_4X7, MONO_SCIENTIFICABOLD_4X7, MONO_SCIENTIFICAITALIC_4X7, MONO_SPLEEN_5X8, MONO_SPLEEN_8X16, MONO_SPLEEN_12X24, MONO_SPLEEN_16X32, MONO_SPLEEN_32X64, TINY5_4X5, TOM_THUMB_3X5
+    }
 };
 
 struct FontDemo {
     font_index: usize,
-    illuminated: bool,
 }
 
 const FONTS: &[(&str, &Font)] = &[
@@ -84,26 +72,7 @@ const SAMPLE_LINES: &[&str] = &[
 
 impl FontDemo {
     fn new() -> Self {
-        Self { font_index: 0, illuminated: false }
-    }
-
-    fn draw_string(state: &mut State, text: &str, font: &Font, start_x: f32, start_y: f32, illuminated: bool) {
-        let mut cursor_x = start_x;
-        for ch in text.chars() {
-            if let Some(glyph) = font.glyph(ch) {
-                for row in 0..font.height {
-                    for col in 0..font.glyph_width(ch) {
-                        if font.pixel(glyph, col, row) {
-                            let x = cursor_x + col as f32;
-                            let y = start_y - row as f32;
-                            let cell = Cell::new(x, y).rgba(1.0, 1.0, 1.0, 1.0);
-                            state.draw(if illuminated { cell } else { cell.light(1.0) });
-                        }
-                    }
-                }
-            }
-            cursor_x += font.char_advance(ch) as f32;
-        }
+        Self { font_index: 0 }
     }
 }
 
@@ -135,17 +104,20 @@ impl App for FontDemo {
         let (name, font) = FONTS[self.font_index];
 
         let line_height = font.height as f32 + 2.0;
-        let vp = state.viewport_size();
-        let start_x = -vp.x / 2.0 + 10.0;
-        let start_y = vp.y / 2.0 - 10.0;
+        let start_x = 10.0;
+        let start_y = 10.0;
 
         let header = format!("[{}/{}]", self.font_index + 1, FONTS.len());
-        FontDemo::draw_string(state, &header, font, start_x, start_y, self.illuminated);
-        FontDemo::draw_string(state, &name, font, start_x, start_y - line_height, self.illuminated);
+        let test = Text::new(font, "Hello World").position(start_x, start_y - line_height).anchor(tiles::AnchorBox::Tight, TopLeft);
+        let bounds = test.bounds().offset(1);
+        state.draw_screen(bounds.stroke(2, Middle).color(Color::linear(1.0, 1.0, 1.0, 1.0)));
+        state.draw_screen(test.color(Color::linear(0.1, 0.1, 0.1, 1.0)));
+        state.draw_screen(Text::new(font, &header).position(start_x, start_y));
+        state.draw_screen(Text::new(font, name).position(start_x, start_y + line_height));
 
         for (i, line) in SAMPLE_LINES.iter().enumerate() {
-            let y = start_y - line_height * (i as f32 + 2.0);
-            FontDemo::draw_string(state, line, font, start_x, y, self.illuminated);
+            let y = start_y + line_height * (i as f32 + 2.0);
+            state.draw_screen(Text::new(font, *line).position(start_x, y));
         }
     }
 
@@ -162,11 +134,6 @@ impl App for FontDemo {
                 } else {
                     self.font_index - 1
                 };
-            }
-            KeyCode::L => {
-                self.illuminated = !self.illuminated;
-                let ambient = if self.illuminated { 0.3 } else { 0.0 };
-                state.set_ambient_illumination(ambient);
             }
             _ => {}
         }

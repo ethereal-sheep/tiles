@@ -1,5 +1,5 @@
 use glam::Vec2;
-use tiles::{App, Cell, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, State};
+use tiles::{App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent, State};
 
 const G: f32 = 500.0;
 const SOFTENING: f32 = 1.0;
@@ -201,12 +201,12 @@ impl App for NBodySim {
             let lr = NBodySim::light_radius(body.mass);
 
             let mut cell = Cell::new(body.pos.x, body.pos.y)
-                .rgba(r, g, b, 1.0)
+                .color(Color::linear(r, g, b, 1.0))
                 .emissive();
 
             if lr > 0.5 {
                 cell = Cell::new(body.pos.x, body.pos.y)
-                    .rgba(r, g, b, 1.0)
+                    .color(Color::linear(r, g, b, 1.0))
                     .light(lr)
                     .intensity(body.mass.sqrt().min(3.0));
             }
@@ -224,7 +224,7 @@ impl App for NBodySim {
                 for i in 0..steps {
                     let t = i as f32 / steps as f32;
                     let p = start + dir * t;
-                    state.draw(Cell::new(p.x, p.y).rgba(0.3, 0.3, 0.5, 0.5).emissive());
+                    state.draw(Cell::new(p.x, p.y).color(Color::linear(0.3, 0.3, 0.5, 0.5)).emissive());
                 }
             }
         }
@@ -246,14 +246,13 @@ impl App for NBodySim {
     }
 
     fn on_mouse(&mut self, state: &mut State, event: MouseEvent) {
-        match event {
-            MouseEvent::Pressed(MouseButton::Left) => {
-                self.drag_start = Some(state.mouse_position());
+        match event.action {
+            MouseAction::Pressed(MouseButton::Left) => {
+                self.drag_start = Some(event.world_pos);
             }
-            MouseEvent::Released(MouseButton::Left) => {
+            MouseAction::Released(MouseButton::Left) => {
                 if let Some(start) = self.drag_start.take() {
-                    let end = state.mouse_position();
-                    let vel = (end - start) * 2.0;
+                    let vel = (event.world_pos - start) * 2.0;
                     self.bodies.push(Body {
                         pos: start,
                         vel,
@@ -261,15 +260,15 @@ impl App for NBodySim {
                     });
                 }
             }
-            MouseEvent::Pressed(MouseButton::Right) => {
-                self.gravity_well = Some(state.mouse_position());
+            MouseAction::Pressed(MouseButton::Right) => {
+                self.gravity_well = Some(event.world_pos);
             }
-            MouseEvent::Released(MouseButton::Right) => {
+            MouseAction::Released(MouseButton::Right) => {
                 self.gravity_well = None;
             }
-            MouseEvent::Moved(_) => {
+            MouseAction::Moved { .. } => {
                 if state.is_mouse_down(MouseButton::Right) {
-                    self.gravity_well = Some(state.mouse_position());
+                    self.gravity_well = Some(event.world_pos);
                 }
             }
             _ => {}

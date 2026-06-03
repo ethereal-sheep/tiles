@@ -1,5 +1,5 @@
 use glam::Vec2;
-use tiles::{App, Cell, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, Rotation, State};
+use tiles::{App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, Rotation, State};
 
 const FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2;
 
@@ -174,7 +174,7 @@ impl App for Boids {
             state.draw(
                 Cell::new(boid.pos.x, boid.pos.y)
                     .rotation(Rotation::Z(rot_val))
-                    .rgba(r, g, b, 1.0),
+                    .color(Color::linear(r, g, b, 1.0)),
             );
         }
     }

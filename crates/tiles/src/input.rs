@@ -32,12 +32,20 @@ pub enum MouseButton {
     Middle,
 }
 
-#[derive(Debug, Clone)]
-pub enum MouseEvent {
+#[derive(Debug, Clone, Copy)]
+pub enum MouseAction {
     Pressed(MouseButton),
     Released(MouseButton),
-    Moved(Vec2),
+    Moved { screen_delta: Vec2, world_delta: Vec2 },
     Scrolled(f32),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MouseEvent {
+    pub action: MouseAction,
+    pub screen_pos: Vec2,
+    pub world_pos: Vec2,
+    pub viewport_pos: Vec2,
 }
 
 pub(crate) struct InputState {
@@ -45,6 +53,8 @@ pub(crate) struct InputState {
     pub mouse_buttons_down: HashSet<MouseButton>,
     pub mouse_screen_pos: Vec2,
     pub mouse_world_pos: Vec2,
+    pub prev_mouse_screen_pos: Vec2,
+    pub prev_mouse_world_pos: Vec2,
     pub scroll_delta: f32,
 }
 
@@ -55,6 +65,8 @@ impl InputState {
             mouse_buttons_down: HashSet::new(),
             mouse_screen_pos: Vec2::ZERO,
             mouse_world_pos: Vec2::ZERO,
+            prev_mouse_screen_pos: Vec2::ZERO,
+            prev_mouse_world_pos: Vec2::ZERO,
             scroll_delta: 0.0,
         }
     }

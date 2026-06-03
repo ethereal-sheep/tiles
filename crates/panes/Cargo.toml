@@ -1,0 +1,8 @@
+[package]
+name = "panes"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tiles = { path = "../tiles" }
+glam = "0.29"

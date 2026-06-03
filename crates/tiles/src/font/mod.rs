@@ -2,69 +2,169 @@ mod generated;
 
 pub use generated::*;
 
+pub struct Glyph {
+    pub width: u8,
+    pub height: u8,
+    pub top: usize,
+    pub bytes_per_row: usize,
+    pub data: &'static [u8],
+}
+
+impl Glyph {
+    pub fn pixel(&self, col: usize, row: usize) -> bool {
+        if col >= self.width as usize || row >= self.height as usize {
+            return false;
+        }
+        let byte_index = row * self.bytes_per_row + col / 8;
+        let bit_index = 7 - (col % 8);
+        if byte_index >= self.data.len() {
+            return false;
+        }
+        (self.data[byte_index] >> bit_index) & 1 == 1
+    }
+}
+
 pub struct Font {
     pub height: usize,
-    bytes_per_row: usize,
-    widths: &'static [u8],
-    glyphs: &'static [u8],
-    first_char: u8,
-    last_char: u8,
+    pub default_gap: usize,
+    glyphs: &'static [Glyph],
 }
 
 impl Font {
     pub const fn new(
         height: usize,
-        bytes_per_row: usize,
-        widths: &'static [u8],
-        glyphs: &'static [u8],
-        first_char: u8,
-        last_char: u8,
+        default_gap: usize,
+        glyphs: &'static [Glyph],
     ) -> Self {
         Self {
             height,
-            bytes_per_row,
-            widths,
+            default_gap,
             glyphs,
-            first_char,
-            last_char,
         }
+    }
+
+    pub fn glyph(&self, ch: char) -> Option<&Glyph> {
+        let code = ch as u32;
+        if code < 32 || code > 126 {
+            return None;
+        }
+        let index = (code - 32) as usize;
+        Some(&self.glyphs[index])
     }
 
     pub fn glyph_width(&self, ch: char) -> usize {
-        let code = ch as u32;
-        if code < self.first_char as u32 || code > self.last_char as u32 {
-            return 0;
-        }
-        let index = (code - self.first_char as u32) as usize;
-        self.widths[index] as usize
+        self.glyph(ch).map(|g| g.width as usize).unwrap_or(0)
     }
 
     pub fn char_advance(&self, ch: char) -> usize {
-        self.glyph_width(ch)
+        let w = self.glyph_width(ch);
+        if w == 0 {
+            return 0;
+        }
+        w + self.default_gap
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn glyph_width_in_range() {
+        let w = TOM_THUMB_3X5.glyph_width('A');
+        assert!(w > 0);
     }
 
-    pub fn glyph(&self, ch: char) -> Option<&[u8]> {
-        let code = ch as u32;
-        if code < self.first_char as u32 || code > self.last_char as u32 {
-            return None;
-        }
-        let index = (code - self.first_char as u32) as usize;
-        let bytes_per_glyph = self.bytes_per_row * self.height;
-        let start = index * bytes_per_glyph;
-        let end = start + bytes_per_glyph;
-        if end > self.glyphs.len() {
-            return None;
-        }
-        Some(&self.glyphs[start..end])
+    #[test]
+    fn glyph_width_out_of_range() {
+        assert_eq!(TOM_THUMB_3X5.glyph_width('\x01'), 0);
+        assert_eq!(TOM_THUMB_3X5.glyph_width('\u{FFFF}'), 0);
     }
 
-    pub fn pixel(&self, glyph_data: &[u8], col: usize, row: usize) -> bool {
-        let raster_width = self.bytes_per_row * 8;
-        if col >= raster_width || row >= self.height {
-            return false;
+    #[test]
+    fn glyph_returns_some_for_printable_ascii() {
+        let font = &MONO_5X7;
+        for ch in ' '..='~' {
+            assert!(font.glyph(ch).is_some(), "Missing glyph for '{ch}'");
         }
-        let byte_index = row * self.bytes_per_row + col / 8;
-        let bit_index = 7 - (col % 8);
-        (glyph_data[byte_index] >> bit_index) & 1 == 1
+    }
+
+    #[test]
+    fn glyph_returns_none_out_of_range() {
+        assert!(TOM_THUMB_3X5.glyph('\x00').is_none());
+        assert!(TOM_THUMB_3X5.glyph('\u{FF}').is_none());
+    }
+
+    #[test]
+    fn glyph_has_tight_dimensions() {
+        let font = &TOM_THUMB_3X5;
+        let g = font.glyph('A').unwrap();
+        assert!(g.width > 0);
+        assert!(g.height > 0);
+        assert!(g.height as usize <= font.height);
+    }
+
+    #[test]
+    fn pixel_reads_correctly() {
+        let font = &TOM_THUMB_3X5;
+        let g = font.glyph('I').unwrap();
+        let mut has_set_pixel = false;
+        for row in 0..g.height as usize {
+            for col in 0..g.width as usize {
+                if g.pixel(col, row) {
+                    has_set_pixel = true;
+                }
+            }
+        }
+        assert!(has_set_pixel, "'I' should have at least one pixel set");
+    }
+
+    #[test]
+    fn pixel_bounds_check() {
+        let font = &MONO_5X7;
+        let g = font.glyph('A').unwrap();
+        assert!(!g.pixel(100, 0));
+        assert!(!g.pixel(0, 100));
+    }
+
+    #[test]
+    fn space_glyph_has_no_lit_pixels() {
+        let font = &MONO_5X7;
+        let g = font.glyph(' ').unwrap();
+        assert_eq!(g.height, 0, "Space has no lit rows");
+        for row in 0..g.height as usize {
+            for col in 0..g.width as usize {
+                assert!(!g.pixel(col, row), "Space should have no lit pixels");
+            }
+        }
+    }
+
+    #[test]
+    fn default_gap_exists() {
+        let _ = TOM_THUMB_3X5.default_gap;
+        let _ = MONO_5X7.default_gap;
+    }
+
+    #[test]
+    fn char_advance_is_width_plus_gap() {
+        let font = &TOM_THUMB_3X5;
+        let g = font.glyph('A').unwrap();
+        assert_eq!(font.char_advance('A'), g.width as usize + font.default_gap);
+    }
+
+    #[test]
+    fn char_advance_mono_uniform() {
+        let font = &MONO_5X7;
+        let adv_a = font.char_advance('A');
+        let adv_i = font.char_advance('I');
+        assert_eq!(adv_a, adv_i, "Mono font should have uniform advance");
+    }
+
+    #[test]
+    fn tight_data_has_correct_length() {
+        let font = &MONO_5X7;
+        let g = font.glyph('A').unwrap();
+        let expected_len = g.bytes_per_row * g.height as usize;
+        assert_eq!(g.data.len(), expected_len);
     }
 }

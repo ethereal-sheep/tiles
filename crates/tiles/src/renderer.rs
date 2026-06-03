@@ -13,6 +13,8 @@ struct Uniforms {
     projection: [[f32; 4]; 4],
     viewport_offset: [f32; 2],
     viewport_size: [f32; 2],
+    viewport_cells: [f32; 2],
+    _pad: [f32; 2],
 }
 
 #[repr(C)]
@@ -29,6 +31,8 @@ struct Uniforms {
     projection: mat4x4<f32>,
     viewport_offset: vec2<f32>,
     viewport_size: vec2<f32>,
+    viewport_cells: vec2<f32>,
+    _pad: vec2<f32>,
 }
 
 struct LightData {
@@ -120,6 +124,39 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     return vec4<f32>(in.color.rgb * illumination, in.color.a);
 }
 
+// Screen-space vertex shader: top-left origin, Y-down, viewport units
+@vertex
+fn vs_screen(@builtin(vertex_index) vi: u32, instance: InstanceIn) -> VertexOut {
+    var unit_quad: array<vec2<f32>, 6>;
+    unit_quad[0] = vec2<f32>(0.0, 0.0);
+    unit_quad[1] = vec2<f32>(1.0, 0.0);
+    unit_quad[2] = vec2<f32>(1.0, 1.0);
+    unit_quad[3] = vec2<f32>(0.0, 0.0);
+    unit_quad[4] = vec2<f32>(1.0, 1.0);
+    unit_quad[5] = vec2<f32>(0.0, 1.0);
+
+    let offset = unit_quad[vi] - vec2<f32>(0.5, 0.5);
+    let local_pos = vec3<f32>(offset.x, offset.y, 0.0);
+    let rotated = quat_rotate(instance.rotation, local_pos);
+
+    // Convert top-left Y-down to NDC: x: [0, vp_w] -> [-1, 1], y: [0, vp_h] -> [1, -1]
+    let world_pos = instance.position + rotated;
+    let ndc_x = (world_pos.x / uniforms.viewport_cells.x) * 2.0 - 1.0;
+    let ndc_y = 1.0 - (world_pos.y / uniforms.viewport_cells.y) * 2.0;
+
+    var out: VertexOut;
+    out.clip_position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
+    out.color = instance.color;
+    out.world_pos = instance.position.xy;
+    out.emissive = 1.0;
+    return out;
+}
+
+@fragment
+fn fs_screen(in: VertexOut) -> @location(0) vec4<f32> {
+    return in.color;
+}
+
 // Bloom vertex shader: expands quad based on light radius
 struct BloomInstanceIn {
     @location(0) position: vec3<f32>,
@@ -182,6 +219,7 @@ pub struct Renderer {
     opaque_pipeline: wgpu::RenderPipeline,
     transparent_pipeline: wgpu::RenderPipeline,
     bloom_pipeline: wgpu::RenderPipeline,
+    screen_pipeline: wgpu::RenderPipeline,
     instance_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
     light_uniform_buffer: wgpu::Buffer,
@@ -421,7 +459,7 @@ impl Renderer {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_bloom",
-                buffers: &[instance_layout],
+                buffers: &[instance_layout.clone()],
                 compilation_options: Default::default(),
             },
             fragment: Some(wgpu::FragmentState {
@@ -463,6 +501,37 @@ impl Renderer {
             cache: None,
         });
 
+        let screen_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("screen_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_screen",
+                buffers: &[instance_layout],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_screen",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
             size: (MAX_INSTANCES * std::mem::size_of::<CellInstance>()) as u64,
@@ -480,6 +549,7 @@ impl Renderer {
             opaque_pipeline,
             transparent_pipeline,
             bloom_pipeline,
+            screen_pipeline,
             instance_buffer,
             uniform_buffer,
             light_uniform_buffer,
@@ -529,12 +599,14 @@ impl Renderer {
         &mut self,
         opaque: &[CellInstance],
         transparent: &[CellInstance],
+        screen: &[CellInstance],
         lights: &[LightData],
         bloom_sources: &[LightData],
         ambient: f32,
         projection: Mat4,
         viewport_offset: Vec2,
         viewport_size: Vec2,
+        viewport_cells: Vec2,
         window_bg: [f32; 4],
         viewport_bg: [f32; 4],
     ) -> Result<(), wgpu::SurfaceError> {
@@ -542,6 +614,8 @@ impl Renderer {
             projection: projection.to_cols_array_2d(),
             viewport_offset: viewport_offset.to_array(),
             viewport_size: viewport_size.to_array(),
+            viewport_cells: viewport_cells.to_array(),
+            _pad: [0.0; 2],
         };
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
@@ -571,11 +645,13 @@ impl Renderer {
         }
 
         // Upload all instances to buffer sequentially
-        let total_instances = opaque.len() + transparent.len() + bloom_instances.len();
+        let world_count = opaque.len() + transparent.len() + bloom_instances.len();
+        let total_instances = world_count + screen.len();
         assert!(total_instances <= MAX_INSTANCES, "Too many instances: {total_instances}");
         self.upload_instances(opaque, 0);
         self.upload_instances(transparent, opaque.len());
         self.upload_instances(&bloom_instances, opaque.len() + transparent.len());
+        self.upload_instances(screen, world_count);
 
         let output = self.surface.get_current_texture()?;
         let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
@@ -666,6 +742,34 @@ impl Renderer {
                 pass.set_pipeline(&self.bloom_pipeline);
                 Self::draw_range(&mut pass, &self.instance_buffer, opaque.len() + transparent.len(), bloom_instances.len());
             }
+        }
+
+        // Screen-space pass: unlit, no depth, alpha-blend in draw order
+        if !screen.is_empty() {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("screen_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            pass.set_scissor_rect(vp_x, vp_y, vp_w.max(1), vp_h.max(1));
+            pass.set_viewport(
+                vp_x as f32, vp_y as f32,
+                vp_w as f32, vp_h as f32,
+                0.0, 1.0,
+            );
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_pipeline(&self.screen_pipeline);
+            Self::draw_range(&mut pass, &self.instance_buffer, world_count, screen.len());
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

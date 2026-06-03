@@ -4,7 +4,7 @@ use beeps::modulator::ModTarget;
 use beeps::source::Waveform;
 use beeps::{AudioEngine, BusId, VoiceId};
 use tiles::font::MONO_5X7;
-use tiles::{App, Cell, Config, KeyCode, KeyEvent, KeyState, State};
+use tiles::{App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, State};
 
 struct SynthDemo {
     engine: AudioEngine,
@@ -86,7 +86,7 @@ impl SynthDemo {
                         if font.pixel(glyph, col, row) {
                             state.draw(
                                 Cell::new(cursor_x + col as f32, y - row as f32)
-                                    .rgba(color[0], color[1], color[2], color[3]),
+                                    .color(Color::linear(color[0], color[1], color[2], color[3])),
                             );
                         }
                     }
@@ -131,7 +131,7 @@ impl App for SynthDemo {
             let kx = piano_x + i as f32 * 5.0;
             for dy in 0..8 {
                 for dx in 0..4 {
-                    state.draw(Cell::new(kx + dx as f32, piano_y - dy as f32).rgba(0.9, 0.9, 0.9, 1.0));
+                    state.draw(Cell::new(kx + dx as f32, piano_y - dy as f32).color(Color::linear(0.9, 0.9, 0.9, 1.0)));
                 }
             }
         }
@@ -143,7 +143,7 @@ impl App for SynthDemo {
             let kx = piano_x + i as f32 * 5.0 + 3.0;
             for dy in 0..5 {
                 for dx in 0..3 {
-                    state.draw(Cell::new(kx + dx as f32, piano_y - dy as f32).rgba(0.15, 0.15, 0.15, 1.0));
+                    state.draw(Cell::new(kx + dx as f32, piano_y - dy as f32).color(Color::linear(0.15, 0.15, 0.15, 1.0)));
                 }
             }
         }

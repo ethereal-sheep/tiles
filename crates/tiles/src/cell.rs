@@ -1,6 +1,8 @@
 use bytemuck::{Pod, Zeroable};
 use glam::{Quat, Vec3};
 
+use crate::color::Color;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct CellInstance {
@@ -65,6 +67,7 @@ impl Rotation {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Cell {
     pub position: Vec3,
     pub color: [f32; 4],
@@ -119,13 +122,8 @@ impl Cell {
         self
     }
 
-    pub fn color(mut self, r: f32, g: f32, b: f32, a: f32) -> Self {
-        self.color = [r, g, b, a];
-        self
-    }
-
-    pub fn rgba(mut self, r: f32, g: f32, b: f32, a: f32) -> Self {
-        self.color = [r, g, b, a];
+    pub fn color(mut self, c: Color) -> Self {
+        self.color = c.to_array();
         self
     }
 
@@ -143,34 +141,6 @@ impl Cell {
         self.light(0.0)
     }
 
-    pub fn rgb8(mut self, r: u8, g: u8, b: u8) -> Self {
-        self.color = [
-            srgb_to_linear(r as f32 / 255.0),
-            srgb_to_linear(g as f32 / 255.0),
-            srgb_to_linear(b as f32 / 255.0),
-            1.0,
-        ];
-        self
-    }
-
-    pub fn rgba8(mut self, r: u8, g: u8, b: u8, a: u8) -> Self {
-        self.color = [
-            srgb_to_linear(r as f32 / 255.0),
-            srgb_to_linear(g as f32 / 255.0),
-            srgb_to_linear(b as f32 / 255.0),
-            a as f32 / 255.0,
-        ];
-        self
-    }
-
-    pub fn hex(mut self, rgb: u32) -> Self {
-        let r = ((rgb >> 16) & 0xFF) as f32 / 255.0;
-        let g = ((rgb >> 8) & 0xFF) as f32 / 255.0;
-        let b = (rgb & 0xFF) as f32 / 255.0;
-        self.color = [srgb_to_linear(r), srgb_to_linear(g), srgb_to_linear(b), 1.0];
-        self
-    }
-
     pub(crate) fn to_instance(&self) -> CellInstance {
         let q = self.quat;
         CellInstance {
@@ -179,6 +149,18 @@ impl Cell {
             color: self.color,
             rotation: [q.x, q.y, q.z, q.w],
             emissive: if self.light_radius >= 0.0 { 1.0 } else { 0.0 },
+            _pad1: [0.0; 3],
+        }
+    }
+
+    pub(crate) fn to_screen_instance(&self) -> CellInstance {
+        let q = self.quat;
+        CellInstance {
+            position: self.position.to_array(),
+            _pad0: 0.0,
+            color: self.color,
+            rotation: [q.x, q.y, q.z, q.w],
+            emissive: 1.0,
             _pad1: [0.0; 3],
         }
     }
@@ -198,10 +180,89 @@ impl Cell {
     }
 }
 
-fn srgb_to_linear(s: f32) -> f32 {
-    if s <= 0.04045 {
-        s / 12.92
-    } else {
-        ((s + 0.055) / 1.055).powf(2.4)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_cell_defaults() {
+        let c = Cell::new(3.0, 5.0);
+        assert_eq!(c.position, Vec3::new(3.0, 5.0, 0.0));
+        assert_eq!(c.color, [1.0, 1.0, 1.0, 1.0]);
+        assert_eq!(c.light_radius, -1.0);
+        assert_eq!(c.intensity, 1.0);
+    }
+
+    #[test]
+    fn new_3d_preserves_z() {
+        let c = Cell::new_3d(1.0, 2.0, -5.0);
+        assert_eq!(c.position.z, -5.0);
+    }
+
+    #[test]
+    fn color_sets_color() {
+        let c = Cell::new(0.0, 0.0).color(Color::linear(0.2, 0.4, 0.6, 0.8));
+        assert_eq!(c.color, [0.2, 0.4, 0.6, 0.8]);
+    }
+
+    #[test]
+    fn is_opaque_check() {
+        assert!(Cell::new(0.0, 0.0).is_opaque());
+        assert!(!Cell::new(0.0, 0.0).color(Color::linear(1.0, 1.0, 1.0, 0.5)).is_opaque());
+    }
+
+    #[test]
+    fn emissive_sets_light_radius_zero() {
+        let c = Cell::new(0.0, 0.0).emissive();
+        assert_eq!(c.light_radius, 0.0);
+    }
+
+    #[test]
+    fn light_sets_radius() {
+        let c = Cell::new(0.0, 0.0).light(5.0);
+        assert_eq!(c.light_radius, 5.0);
+    }
+
+    #[test]
+    fn to_instance_non_emissive() {
+        let c = Cell::new(1.0, 2.0);
+        let i = c.to_instance();
+        assert_eq!(i.position, [1.0, 2.0, 0.0]);
+        assert_eq!(i.emissive, 0.0);
+    }
+
+    #[test]
+    fn to_instance_emissive() {
+        let c = Cell::new(0.0, 0.0).emissive();
+        let i = c.to_instance();
+        assert_eq!(i.emissive, 1.0);
+    }
+
+    #[test]
+    fn to_screen_instance_always_emissive() {
+        let c = Cell::new(5.0, 10.0);
+        let i = c.to_screen_instance();
+        assert_eq!(i.emissive, 1.0);
+        assert_eq!(i.position, [5.0, 10.0, 0.0]);
+    }
+
+    #[test]
+    fn to_light_data_clamps_radius() {
+        let c = Cell::new(0.0, 0.0).light(3.0).intensity(2.0);
+        let ld = c.to_light_data();
+        assert_eq!(ld.radius, 3.0);
+        assert_eq!(ld.intensity, 2.0);
+
+        let c2 = Cell::new(0.0, 0.0);
+        let ld2 = c2.to_light_data();
+        assert_eq!(ld2.radius, 0.0);
+    }
+
+    #[test]
+    fn hex_color() {
+        let c = Cell::new(0.0, 0.0).color(Color::hex(0xFF0000));
+        assert!((c.color[0] - 1.0).abs() < 1e-4);
+        assert!(c.color[1] < 0.01);
+        assert!(c.color[2] < 0.01);
     }
 }

@@ -11,11 +11,13 @@ use winit::{
 use crate::camera::Camera;
 use crate::cell::{Cell, CellInstance, LightData};
 use crate::config::Config;
-use crate::input::{self, InputState, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent};
+use crate::drawable::Drawable;
+use crate::input::{self, InputState, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent};
 use crate::renderer::Renderer;
 
 pub trait App {
     fn init(&mut self, _state: &mut State) {}
+    fn pre_update(&mut self, _state: &mut State) {}
     fn update(&mut self, _state: &mut State) {}
     fn draw(&mut self, _state: &mut State) {}
     fn on_key(&mut self, _state: &mut State, _event: KeyEvent) {}
@@ -26,6 +28,7 @@ pub struct State {
     window: Option<std::sync::Arc<Window>>,
     renderer: Option<Renderer>,
     cells: Vec<Cell>,
+    screen_cells: Vec<Cell>,
     config: Config,
     camera: Camera,
     input: InputState,
@@ -51,6 +54,7 @@ impl State {
             window: None,
             renderer: None,
             cells: Vec::new(),
+            screen_cells: Vec::new(),
             config,
             camera,
             input: InputState::new(),
@@ -71,18 +75,12 @@ impl State {
 
     // --- Drawing ---
 
-    pub fn draw(&mut self, cell: Cell) {
-        self.cells.push(cell);
+    pub fn draw(&mut self, drawable: impl Drawable) {
+        drawable.emit_cells(&mut |cell| self.cells.push(cell));
     }
 
-    pub fn draw_all(&mut self, cells: &[Cell]) {
-        self.cells.extend(cells.iter().map(|c| Cell {
-            position: c.position,
-            color: c.color,
-            quat: c.quat,
-            light_radius: c.light_radius,
-            intensity: c.intensity,
-        }));
+    pub fn draw_screen(&mut self, drawable: impl Drawable) {
+        drawable.emit_cells(&mut |cell| self.screen_cells.push(cell));
     }
 
     // --- Camera ---
@@ -105,6 +103,33 @@ impl State {
 
     pub fn viewport_size(&self) -> Vec2 {
         Vec2::new(self.camera.viewport_width, self.camera.viewport_height)
+    }
+
+    // --- Coordinate conversion ---
+
+    pub fn world_to_screen(&self, world_pos: Vec2) -> Vec2 {
+        let half_w = self.camera.viewport_width / 2.0;
+        let half_h = self.camera.viewport_height / 2.0;
+        let x = world_pos.x - self.camera.position.x + half_w;
+        let y = half_h - (world_pos.y - self.camera.position.y);
+        Vec2::new(x, y)
+    }
+
+    pub fn pixel_to_viewport(&self, pixel_pos: Vec2) -> Vec2 {
+        if let Some(renderer) = &self.renderer {
+            let w = renderer.width();
+            let h = renderer.height();
+            let scale = self.camera.fit_scale(w, h);
+            let viewport_screen_w = self.camera.viewport_width * scale;
+            let viewport_screen_h = self.camera.viewport_height * scale;
+            let offset_x = (w - viewport_screen_w) / 2.0;
+            let offset_y = (h - viewport_screen_h) / 2.0;
+            let vx = (pixel_pos.x - offset_x) / scale;
+            let vy = (pixel_pos.y - offset_y) / scale;
+            Vec2::new(vx, vy)
+        } else {
+            pixel_pos
+        }
     }
 
     // --- Window ---
@@ -174,14 +199,12 @@ impl State {
         if !self.debug {
             return;
         }
-        // TODO: debug line rendering
     }
 
     pub fn debug_text(&mut self, _text: &str, _x: f32, _y: f32) {
         if !self.debug {
             return;
         }
-        // TODO: debug text rendering with bitmap font
     }
 
     // --- Config ---
@@ -278,22 +301,36 @@ impl ApplicationHandler for Runner<'_> {
                     _ => return,
                 };
 
-                let event = match btn_state {
+                let action = match btn_state {
                     ElementState::Pressed => {
                         self.state.input.mouse_buttons_down.insert(mb);
-                        MouseEvent::Pressed(mb)
+                        MouseAction::Pressed(mb)
                     }
                     ElementState::Released => {
                         self.state.input.mouse_buttons_down.remove(&mb);
-                        MouseEvent::Released(mb)
+                        MouseAction::Released(mb)
                     }
                 };
 
-                self.app.on_mouse(&mut self.state, event);
+                let viewport_pos = self.state.pixel_to_viewport(self.state.input.mouse_screen_pos);
+                let mouse_event = MouseEvent {
+                    action,
+                    screen_pos: self.state.input.mouse_screen_pos,
+                    world_pos: self.state.input.mouse_world_pos,
+                    viewport_pos,
+                };
+
+                self.app.on_mouse(&mut self.state, mouse_event);
             }
 
             WindowEvent::CursorMoved { position, .. } => {
                 let screen_pos = Vec2::new(position.x as f32, position.y as f32);
+
+                let prev_screen = self.state.input.mouse_screen_pos;
+                let prev_world = self.state.input.mouse_world_pos;
+
+                self.state.input.prev_mouse_screen_pos = prev_screen;
+                self.state.input.prev_mouse_world_pos = prev_world;
                 self.state.input.mouse_screen_pos = screen_pos;
 
                 if let Some(renderer) = &self.state.renderer {
@@ -304,7 +341,18 @@ impl ApplicationHandler for Runner<'_> {
                 }
 
                 let world_pos = self.state.input.mouse_world_pos;
-                self.app.on_mouse(&mut self.state, MouseEvent::Moved(world_pos));
+                let screen_delta = screen_pos - prev_screen;
+                let world_delta = world_pos - prev_world;
+
+                let viewport_pos = self.state.pixel_to_viewport(screen_pos);
+                let mouse_event = MouseEvent {
+                    action: MouseAction::Moved { screen_delta, world_delta },
+                    screen_pos,
+                    world_pos,
+                    viewport_pos,
+                };
+
+                self.app.on_mouse(&mut self.state, mouse_event);
             }
 
             WindowEvent::MouseWheel { delta, .. } => {
@@ -313,7 +361,16 @@ impl ApplicationHandler for Runner<'_> {
                     winit::event::MouseScrollDelta::PixelDelta(pos) => pos.y as f32 / 100.0,
                 };
                 self.state.input.scroll_delta += scroll;
-                self.app.on_mouse(&mut self.state, MouseEvent::Scrolled(scroll));
+
+                let viewport_pos = self.state.pixel_to_viewport(self.state.input.mouse_screen_pos);
+                let mouse_event = MouseEvent {
+                    action: MouseAction::Scrolled(scroll),
+                    screen_pos: self.state.input.mouse_screen_pos,
+                    world_pos: self.state.input.mouse_world_pos,
+                    viewport_pos,
+                };
+
+                self.app.on_mouse(&mut self.state, mouse_event);
             }
 
             WindowEvent::Resized(size) => {
@@ -340,6 +397,9 @@ impl ApplicationHandler for Runner<'_> {
                 let fixed_dt = self.state.fixed_dt;
                 self.state.dt = fixed_dt;
 
+                // pre_update: once per frame, before simulation ticks
+                self.app.pre_update(&mut self.state);
+
                 while self.state.accumulator >= fixed_dt {
                     self.state.input.begin_frame();
                     self.app.update(&mut self.state);
@@ -350,6 +410,7 @@ impl ApplicationHandler for Runner<'_> {
 
                 // Draw
                 self.state.cells.clear();
+                self.state.screen_cells.clear();
                 self.app.draw(&mut self.state);
 
                 // Extract lights (max 64) — only cells with radius > 0 illuminate surroundings
@@ -389,20 +450,28 @@ impl ApplicationHandler for Runner<'_> {
                     a.position[2].partial_cmp(&b.position[2]).unwrap_or(std::cmp::Ordering::Equal)
                 });
 
+                // Build screen-space instances (draw-order, unlit)
+                let screen_instances: Vec<CellInstance> = self.state.screen_cells.iter()
+                    .map(|cell| cell.to_screen_instance())
+                    .collect();
+
                 if let Some(renderer) = &mut self.state.renderer {
                     let w = renderer.width();
                     let h = renderer.height();
                     let (proj, offset, size) = self.state.camera.projection(w, h);
+                    let vp_cells = Vec2::new(self.state.camera.viewport_width, self.state.camera.viewport_height);
 
                     match renderer.render(
                         &opaque,
                         &transparent,
+                        &screen_instances,
                         &lights,
                         &bloom_sources,
                         self.state.ambient_illumination,
                         proj,
                         offset,
                         size,
+                        vp_cells,
                         self.state.window_bg,
                         self.state.viewport_bg,
                     ) {

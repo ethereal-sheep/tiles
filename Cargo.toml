@@ -1,3 +1,3 @@
 [workspace]
-members = ["crates/tiles", "crates/sandbox", "crates/editor", "crates/beeps"]
+members = ["crates/tiles", "crates/sandbox", "crates/beeps"]
 resolver = "2"

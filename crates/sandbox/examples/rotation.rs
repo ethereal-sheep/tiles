@@ -1,4 +1,4 @@
-use tiles::{App, Cell, Config, KeyCode, KeyEvent, KeyState, MouseEvent, Rotation, State};
+use tiles::{App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, Rotation, State};
 
 struct RotationDemo {
     grid_size: i32,
@@ -215,12 +215,12 @@ impl App for RotationDemo {
                     state.draw(
                         Cell::new(cx, cy)
                             .rotation(rotation)
-                            .rgba(r, g, b, 1.0),
+                            .color(Color::linear(r, g, b, 1.0)),
                     );
                 } else {
                     let hue = self.cells_hue[idx];
                     let (r, g, b) = hue_to_rgb(hue);
-                    state.draw(Cell::new(cx, cy).rgba(r, g, b, 1.0));
+                    state.draw(Cell::new(cx, cy).color(Color::linear(r, g, b, 1.0)));
                 }
             }
         }

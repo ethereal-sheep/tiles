@@ -1,5 +1,5 @@
 use glam::Vec2;
-use tiles::{App, Cell, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, State};
+use tiles::{App, Cell, Color, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent, State};
 use tiles::font::{Font, TOM_THUMB_3X5};
 
 use crate::document::{Document, Palette};
@@ -174,7 +174,7 @@ impl Editor {
                     for dx in 0..self.canvas_scale {
                         state.draw(
                             Cell::new_3d(wx + dx as f32, wy - dy as f32, -1.0)
-                                .rgba(color[0], color[1], color[2], 1.0),
+                                .color(Color::linear(color[0], color[1], color[2], 1.0)),
                         );
                     }
                 }
@@ -200,7 +200,7 @@ impl Editor {
                     for dx in 0..self.canvas_scale {
                         state.draw(
                             Cell::new(wx + dx as f32, wy - dy as f32)
-                                .rgba(color[0], color[1], color[2], color[3]),
+                                .color(Color::linear(color[0], color[1], color[2], color[3])),
                         );
                     }
                 }
@@ -221,10 +221,10 @@ impl Editor {
             for dy in 0..swatch_size {
                 for dx in 0..swatch_size {
                     let mut cell = Cell::new(sx + dx as f32, sy - dy as f32)
-                        .rgba(color[0], color[1], color[2], color[3]);
+                        .color(Color::linear(color[0], color[1], color[2], color[3]));
                     if i as u8 == self.active_color {
                         cell = Cell::new(sx + dx as f32, sy - dy as f32)
-                            .rgba(color[0], color[1], color[2], color[3])
+                            .color(Color::linear(color[0], color[1], color[2], color[3]))
                             .emissive();
                     }
                     state.draw(cell);
@@ -285,12 +285,12 @@ impl Editor {
         let mut cursor_x = x;
         for ch in text.chars() {
             if let Some(glyph) = font.glyph(ch) {
-                for row in 0..font.height {
-                    for col in 0..font.glyph_width(ch) {
-                        if font.pixel(glyph, col, row) {
+                for row in 0..glyph.height as usize {
+                    for col in 0..glyph.width as usize {
+                        if glyph.pixel(col, row) {
                             state.draw(
-                                Cell::new(cursor_x + col as f32, y - row as f32)
-                                    .rgba(color[0], color[1], color[2], color[3]),
+                                Cell::new(cursor_x + col as f32, y - (glyph.top as f32 + row as f32))
+                                    .color(Color::linear(color[0], color[1], color[2], color[3])),
                             );
                         }
                     }
@@ -398,21 +398,19 @@ impl App for Editor {
         }
     }
 
-    fn on_mouse(&mut self, state: &mut State, event: MouseEvent) {
-        match event {
-            MouseEvent::Pressed(MouseButton::Left) => {
+    fn on_mouse(&mut self, _state: &mut State, event: MouseEvent) {
+        match event.action {
+            MouseAction::Pressed(MouseButton::Left) => {
                 if self.space_held {
                     self.panning = true;
-                    self.pan_anchor = state.mouse_position();
+                    self.pan_anchor = event.world_pos;
                 } else {
-                    let pos = state.mouse_position();
-
-                    if let Some(idx) = self.palette_hit(pos) {
+                    if let Some(idx) = self.palette_hit(event.world_pos) {
                         self.active_color = idx;
                         return;
                     }
 
-                    if let Some((x, y)) = self.world_to_canvas(pos) {
+                    if let Some((x, y)) = self.world_to_canvas(event.world_pos) {
                         self.history.save(&self.doc);
                         self.painting = true;
                         self.last_paint_pos = Some((x, y));
@@ -420,12 +418,11 @@ impl App for Editor {
                     }
                 }
             }
-            MouseEvent::Released(MouseButton::Left) => {
+            MouseAction::Released(MouseButton::Left) => {
                 if self.panning {
                     self.panning = false;
                 } else if self.painting {
-                    let pos = state.mouse_position();
-                    if let Some((x, y)) = self.world_to_canvas(pos) {
+                    if let Some((x, y)) = self.world_to_canvas(event.world_pos) {
                         self.finish_drag(x, y);
                     }
                     self.painting = false;
@@ -433,15 +430,14 @@ impl App for Editor {
                     self.last_paint_pos = None;
                 }
             }
-            MouseEvent::Scrolled(delta) => {
+            MouseAction::Scrolled(delta) => {
                 let new_scale = (self.canvas_scale as i32 + delta.signum() as i32).clamp(1, 8) as u32;
                 if new_scale != self.canvas_scale {
-                    let mouse = state.mouse_position();
                     let old_scale = self.canvas_scale as f32;
                     let new_scale_f = new_scale as f32;
 
-                    let local_x = mouse.x - self.canvas_panel.pos.x;
-                    let local_y = mouse.y - self.canvas_panel.pos.y;
+                    let local_x = event.world_pos.x - self.canvas_panel.pos.x;
+                    let local_y = event.world_pos.y - self.canvas_panel.pos.y;
 
                     self.canvas_panel.pos.x += local_x * (1.0 - new_scale_f / old_scale);
                     self.canvas_panel.pos.y += local_y * (1.0 - new_scale_f / old_scale);

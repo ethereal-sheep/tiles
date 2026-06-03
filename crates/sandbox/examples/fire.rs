@@ -1,5 +1,5 @@
 use glam::Vec2;
-use tiles::{App, Cell, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, Rotation, State};
+use tiles::{App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, Rotation, State};
 
 struct FireDemo {
     particles: Vec<FireParticle>,
@@ -144,7 +144,7 @@ impl App for FireDemo {
         for p in self.particles.iter() {
             let (r, g, b, a) = p.color();
 
-            let mut cell = Cell::new(p.pos.x, p.pos.y).rgba(r, g, b, a).emissive();
+            let mut cell = Cell::new(p.pos.x, p.pos.y).color(Color::linear(r, g, b, a)).emissive();
 
             if p.is_body() {
                 let rot = (self.time * 3.0 + p.seed * 2.0).sin() * 0.3;

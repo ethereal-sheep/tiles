@@ -76,6 +76,58 @@ _Avoid_: Playlist, arrangement, song list
 A creative preset in the tracker combining one **Source** with **Modulators** and default parameters (volume, pan). One Instrument maps to one Source type. Layering is achieved by using multiple tracker channels.
 _Avoid_: Patch, program, preset
 
+**Pane**:
+A rectangular screen-space region that contains UI elements. Positioned in viewport coordinates (origin top-left, Y-down). Owns layout state: cursor position, computed size, draw-order rank. A Pane may be movable (via title bar drag) or resizable. Identified by a user-provided string ID.
+_Avoid_: Window (ambiguous with OS window), panel, dialog
+
+**PaneContext**:
+The user-owned object that orchestrates all Panes. Manages focus, draw order, input routing, and stores persistent pane state (position, size) across frames. Receives input via `feed_mouse`/`feed_key`, evaluates layout and interaction in `pre_update`, and emits Cells in draw-order via `render_all`.
+_Avoid_: UI manager, GUI system, UI state
+
+**Widget**:
+A UI element placed inside a **Pane** via the layout cursor. Defined by a trait (`size` + `render`) and eagerly consumed into a positioned rectangle of **Cells**. Built-in Widgets: button, text, slider, checkbox, separator, spacer. User-extensible by implementing the Widget trait.
+_Avoid_: Component, control, node
+
+**Drawable**:
+A trait that produces **Cells** via a visitor callback. The unified interface for submitting visual content to the renderer. **Cell**, **Text**, **Line**, **Fill**, and **Stroke** implement Drawable. The `.colored()` combinator wraps any Drawable to override cell color.
+_Avoid_: Renderable, primitive
+
+**Shape**:
+A trait for closed geometry that can be filled or stroked. Requires `fill_cells`, `stroke_cells`, and `offset`. Provides `.fill()` → **Fill** and `.stroke(width, position)` → **Stroke** builders. **Rect** and **RoundedRect** implement Shape.
+_Avoid_: Drawable (different concept), primitive
+
+**Fill**:
+A wrapper produced by `Shape::fill()` that implements **Drawable** by emitting all interior **Cells** of the wrapped **Shape**.
+_Avoid_: Filled, solid
+
+**Stroke**:
+A wrapper produced by `Shape::stroke(width, position)` that implements **Drawable** by emitting boundary **Cells** of the wrapped **Shape**. Supports inner, outer, and middle positioning. For width > 1, emits layers via repeated `offset` + `stroke_cells`.
+_Avoid_: Outline, border
+
+**StrokePosition**:
+Determines where stroke layers land relative to the **Shape** boundary: Inner (inward), Outer (outward), or Middle (straddles, even bias outward).
+_Avoid_: Alignment, placement
+
+**Text**:
+A builder that produces **Cells** from a **Font** and a string. Holds position, anchor, color, and per-character mappings. Computes its bounding **Rect** eagerly. Ephemeral — built fresh each frame.
+_Avoid_: Label, string renderer, text primitive
+
+**Glyph**:
+A per-character bitmap with pre-computed tight bounding dimensions (width and height of actual lit pixels). Stored in a **Font**'s static glyph array. Not directly drawable — consumed by **Text** internally.
+_Avoid_: Character, letter, char data
+
+**Rect**:
+An axis-aligned bounding box defined by position and size (all f32). Constructed from any corner or from two opposing corners. Provides accessors for edges and corners. Implements **Shape** for fill/stroke. Not directly **Drawable** — use `.fill()` or `.stroke()`.
+_Avoid_: BoundingBox, AABB, bounds
+
+**RoundedRect**:
+A **Rect** with per-corner radii. Constructed via `Rect::rounded(r)`. Supports per-corner overrides (`.top_left(r)`, etc.) and a `.radius(r)` to set all. Implements **Shape**. Radii adjust with `offset`.
+_Avoid_: RoundRect, pill, capsule
+
+**Line**:
+A segment between two endpoints with a configurable width. Implements **Drawable** directly (not **Shape**). Width expansion is centered; even widths bias one side. Rasterized via DDA walk with perpendicular thickening.
+_Avoid_: Segment, stroke (ambiguous with Shape stroke)
+
 ## Example dialogue
 
 > **Dev:** If I spawn 10,000 Cells at random positions, what happens?
