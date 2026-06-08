@@ -14,7 +14,7 @@ mod text;
 
 pub use camera::Camera;
 pub use cell::{Cell, Rotation};
-pub use color::{Color, ColorScale, Theme};
+pub use color::Color;
 pub use config::{Config, ConfigBuilder};
 pub use drawable::{Colored, Drawable};
 pub use input::{KeyCode, KeyState, MouseAction, MouseButton, MouseEvent, KeyEvent};
