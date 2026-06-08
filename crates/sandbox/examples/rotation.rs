@@ -101,7 +101,7 @@ impl RotationDemo {
         local_t
     }
 
-    fn bounce_ease(t: f32, overshoot: f32) -> f32 {
+    fn bounce_ease(t: f32, _overshoot: f32) -> f32 {
         if t <= 0.0 {
             return 0.0;
         }
