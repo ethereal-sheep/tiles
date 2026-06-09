@@ -49,14 +49,14 @@ impl std::fmt::Display for HuePartitionError {
 
 impl std::error::Error for HuePartitionError {}
 
-pub struct LightnessPartionConfig {
+pub struct LightnessPartition {
     num_buckets: usize,
     color_space: ColorSpace,
     distribution: Distribution,
     fuzziness: f32,
 }
 
-impl LightnessPartionConfig {
+impl LightnessPartition {
     pub fn new(num_buckets: usize) -> Self {
         Self {
             num_buckets,
@@ -92,7 +92,7 @@ impl LightnessPartionConfig {
     }
 }
 
-pub struct HuePartitionConfig {
+pub struct HuePartition {
     color_space: ColorSpace,
     num_buckets: usize,
     chroma_threshold: f32,
@@ -100,7 +100,7 @@ pub struct HuePartitionConfig {
     offset: Option<f32>,
 }
 
-impl HuePartitionConfig {
+impl HuePartition {
     pub fn new(num_buckets: usize) -> Self {
         Self {
             color_space: ColorSpace::Oklch,
@@ -733,7 +733,7 @@ mod tests {
     #[test]
     fn lightness_builder_defaults() {
         let colors = vec![Color::hex(0x000000), Color::hex(0xFFFFFF)];
-        let result = LightnessPartionConfig::new(2).partition(&colors).unwrap();
+        let result = LightnessPartition::new(2).partition(&colors).unwrap();
         assert_eq!(result[0], vec![0]);
         assert_eq!(result[1], vec![1]);
     }
@@ -741,7 +741,7 @@ mod tests {
     #[test]
     fn lightness_builder_color_space() {
         let colors = vec![Color::hex(0x000000), Color::hex(0xFFFFFF)];
-        let result = LightnessPartionConfig::new(2)
+        let result = LightnessPartition::new(2)
             .color_space(ColorSpace::Hsv)
             .partition(&colors)
             .unwrap();
@@ -757,8 +757,8 @@ mod tests {
                 Color::rgb8(v, v, v)
             })
             .collect();
-        let uniform = LightnessPartionConfig::new(5).partition(&colors).unwrap();
-        let normal = LightnessPartionConfig::new(5)
+        let uniform = LightnessPartition::new(5).partition(&colors).unwrap();
+        let normal = LightnessPartition::new(5)
             .distribution(Distribution::Normal { sigma: 0.3 })
             .partition(&colors)
             .unwrap();
@@ -774,8 +774,8 @@ mod tests {
                 Color::rgb8(v, v, v)
             })
             .collect();
-        let no_fuzz = LightnessPartionConfig::new(5).partition(&colors).unwrap();
-        let with_fuzz = LightnessPartionConfig::new(5)
+        let no_fuzz = LightnessPartition::new(5).partition(&colors).unwrap();
+        let with_fuzz = LightnessPartition::new(5)
             .fuzziness(0.5)
             .partition(&colors)
             .unwrap();
@@ -787,14 +787,14 @@ mod tests {
     #[test]
     fn lightness_builder_error_zero_buckets() {
         let colors = vec![Color::hex(0x000000)];
-        let result = LightnessPartionConfig::new(0).partition(&colors);
+        let result = LightnessPartition::new(0).partition(&colors);
         assert_eq!(result, Err(PartitionError::BucketCountZero));
     }
 
     #[test]
     fn lightness_builder_error_exceeds_colors() {
         let colors = vec![Color::hex(0xFF0000), Color::hex(0x00FF00)];
-        let result = LightnessPartionConfig::new(3).partition(&colors);
+        let result = LightnessPartition::new(3).partition(&colors);
         assert_eq!(result, Err(PartitionError::BucketCountExceedsColors));
     }
 
@@ -805,7 +805,7 @@ mod tests {
             Color::hex(0x00FF00),
             Color::hex(0x0000FF),
         ];
-        let result = HuePartitionConfig::new(3).partition(&colors).unwrap();
+        let result = HuePartition::new(3).partition(&colors).unwrap();
         assert_eq!(result.len(), 4);
         let chromatic_total: usize = result[..3].iter().map(|b| b.len()).sum();
         assert_eq!(chromatic_total, 3);
@@ -819,7 +819,7 @@ mod tests {
             Color::hex(0x00FF00),
             Color::hex(0x0000FF),
         ];
-        let result = HuePartitionConfig::new(3)
+        let result = HuePartition::new(3)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -829,15 +829,12 @@ mod tests {
 
     #[test]
     fn hue_builder_chroma_threshold() {
-        let colors = vec![
-            Color::hex(0xFF0000),
-            Color::hex(0x808080),
-        ];
-        let low_thresh = HuePartitionConfig::new(2)
+        let colors = vec![Color::hex(0xFF0000), Color::hex(0x808080)];
+        let low_thresh = HuePartition::new(2)
             .chroma_threshold(0.01)
             .partition(&colors)
             .unwrap();
-        let high_thresh = HuePartitionConfig::new(2)
+        let high_thresh = HuePartition::new(2)
             .chroma_threshold(0.99)
             .partition(&colors)
             .unwrap();
@@ -857,8 +854,8 @@ mod tests {
             Color::hex(0x0000FF),
             Color::hex(0x4400FF),
         ];
-        let no_fuzz = HuePartitionConfig::new(3).partition(&colors).unwrap();
-        let with_fuzz = HuePartitionConfig::new(3)
+        let no_fuzz = HuePartition::new(3).partition(&colors).unwrap();
+        let with_fuzz = HuePartition::new(3)
             .fuzziness(1.0)
             .partition(&colors)
             .unwrap();
@@ -870,7 +867,7 @@ mod tests {
     #[test]
     fn hue_builder_error_zero_buckets() {
         let colors = vec![Color::hex(0xFF0000)];
-        let result = HuePartitionConfig::new(0).partition(&colors);
+        let result = HuePartition::new(0).partition(&colors);
         assert_eq!(result, Err(HuePartitionError::BucketCountZero));
     }
 
@@ -878,15 +875,19 @@ mod tests {
 
     #[test]
     fn empty_input_returns_empty_buckets() {
-        let result = LightnessPartionConfig::new(3).partition(&[]).unwrap();
+        let result = LightnessPartition::new(3).partition(&[]).unwrap();
         assert_eq!(result.len(), 3);
         assert!(result.iter().all(|b| b.is_empty()));
     }
 
     #[test]
     fn black_goes_to_first_bucket() {
-        let colors = vec![Color::hex(0x000000), Color::hex(0xFFFFFF), Color::hex(0x808080)];
-        let result = LightnessPartionConfig::new(3)
+        let colors = vec![
+            Color::hex(0x000000),
+            Color::hex(0xFFFFFF),
+            Color::hex(0x808080),
+        ];
+        let result = LightnessPartition::new(3)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -895,8 +896,12 @@ mod tests {
 
     #[test]
     fn white_goes_to_last_bucket() {
-        let colors = vec![Color::hex(0x000000), Color::hex(0xFFFFFF), Color::hex(0x808080)];
-        let result = LightnessPartionConfig::new(3)
+        let colors = vec![
+            Color::hex(0x000000),
+            Color::hex(0xFFFFFF),
+            Color::hex(0x808080),
+        ];
+        let result = LightnessPartition::new(3)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -910,7 +915,7 @@ mod tests {
             Color::hex(0x888888),
             Color::hex(0xEEEEEE),
         ];
-        let result = LightnessPartionConfig::new(3)
+        let result = LightnessPartition::new(3)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -921,8 +926,12 @@ mod tests {
 
     #[test]
     fn single_bucket_collects_all() {
-        let colors = vec![Color::hex(0x000000), Color::hex(0x808080), Color::hex(0xFFFFFF)];
-        let result = LightnessPartionConfig::new(1)
+        let colors = vec![
+            Color::hex(0x000000),
+            Color::hex(0x808080),
+            Color::hex(0xFFFFFF),
+        ];
+        let result = LightnessPartition::new(1)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -938,7 +947,7 @@ mod tests {
             Color::hex(0xCCCCCC),
             Color::hex(0x111111),
         ];
-        let result = LightnessPartionConfig::new(2)
+        let result = LightnessPartition::new(2)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -951,7 +960,8 @@ mod tests {
     #[test]
     fn normal_distribution_middle_bucket_wider() {
         let boundaries_uniform = compute_boundaries(5, Distribution::Uniform, 0.0, 1.0);
-        let boundaries_normal = compute_boundaries(5, Distribution::Normal { sigma: 0.2 }, 0.0, 1.0);
+        let boundaries_normal =
+            compute_boundaries(5, Distribution::Normal { sigma: 0.2 }, 0.0, 1.0);
         let mid_uniform = boundaries_uniform[3] - boundaries_uniform[2];
         let mid_normal = boundaries_normal[3] - boundaries_normal[2];
         assert!(mid_normal > mid_uniform);
@@ -960,7 +970,8 @@ mod tests {
     #[test]
     fn normal_distribution_edge_buckets_narrower() {
         let boundaries_uniform = compute_boundaries(5, Distribution::Uniform, 0.0, 1.0);
-        let boundaries_normal = compute_boundaries(5, Distribution::Normal { sigma: 0.2 }, 0.0, 1.0);
+        let boundaries_normal =
+            compute_boundaries(5, Distribution::Normal { sigma: 0.2 }, 0.0, 1.0);
         let first_uniform = boundaries_uniform[1] - boundaries_uniform[0];
         let first_normal = boundaries_normal[1] - boundaries_normal[0];
         assert!(first_normal < first_uniform);
@@ -983,7 +994,7 @@ mod tests {
             Color::hex(0x999999),
             Color::hex(0xBBBBBB),
         ];
-        let result = LightnessPartionConfig::new(5)
+        let result = LightnessPartition::new(5)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -1038,9 +1049,12 @@ mod tests {
                 Color::rgb8(v, v, v)
             })
             .collect();
-        let result = LightnessPartionConfig::new(5)
+        let result = LightnessPartition::new(5)
             .color_space(ColorSpace::Hsl)
-            .distribution(Distribution::Symmetric { concentration: 1.0, floor: 0.0 })
+            .distribution(Distribution::Symmetric {
+                concentration: 1.0,
+                floor: 0.0,
+            })
             .partition(&colors)
             .unwrap();
         assert_eq!(result[0].len(), result[4].len());
@@ -1062,9 +1076,12 @@ mod tests {
                 Color::rgb8(v, v, v)
             })
             .collect();
-        let result = LightnessPartionConfig::new(5)
+        let result = LightnessPartition::new(5)
             .color_space(ColorSpace::Hsl)
-            .distribution(Distribution::Symmetric { concentration: 2.0, floor: 0.0 })
+            .distribution(Distribution::Symmetric {
+                concentration: 2.0,
+                floor: 0.0,
+            })
             .partition(&colors)
             .unwrap();
         for bucket in &result {
@@ -1075,8 +1092,11 @@ mod tests {
     #[test]
     fn symmetric_preserves_total_count() {
         let colors: Vec<Color> = (0..64).map(|i| Color::hex(i * 0x040404)).collect();
-        let result = LightnessPartionConfig::new(7)
-            .distribution(Distribution::Symmetric { concentration: 1.5, floor: 0.0 })
+        let result = LightnessPartition::new(7)
+            .distribution(Distribution::Symmetric {
+                concentration: 1.5,
+                floor: 0.0,
+            })
             .partition(&colors)
             .unwrap();
         let total: usize = result.iter().map(|b| b.len()).sum();
@@ -1112,7 +1132,7 @@ mod tests {
             Color::hex(0xE8E8E8),
             Color::hex(0xF0F0F0),
         ];
-        let result = LightnessPartionConfig::new(2)
+        let result = LightnessPartition::new(2)
             .color_space(ColorSpace::Hsl)
             .distribution(Distribution::Cluster)
             .partition(&colors)
@@ -1133,7 +1153,7 @@ mod tests {
                 Color::rgb8(v, v, v)
             })
             .collect();
-        let result = LightnessPartionConfig::new(5)
+        let result = LightnessPartition::new(5)
             .distribution(Distribution::Cluster)
             .partition(&colors)
             .unwrap();
@@ -1149,7 +1169,7 @@ mod tests {
                 Color::rgb8(v, v, v)
             })
             .collect();
-        let result = LightnessPartionConfig::new(4)
+        let result = LightnessPartition::new(4)
             .color_space(ColorSpace::Hsl)
             .distribution(Distribution::Cluster)
             .partition(&colors)
@@ -1169,7 +1189,7 @@ mod tests {
             Color::hex(0xF0F0F0),
             Color::hex(0xFAFAFA),
         ];
-        let result = LightnessPartionConfig::new(3)
+        let result = LightnessPartition::new(3)
             .color_space(ColorSpace::Hsv)
             .distribution(Distribution::Cluster)
             .partition(&colors)
@@ -1183,7 +1203,7 @@ mod tests {
 
     #[test]
     fn hue_empty_input_returns_empty_buckets_plus_achromatic() {
-        let result = HuePartitionConfig::new(3).partition(&[]).unwrap();
+        let result = HuePartition::new(3).partition(&[]).unwrap();
         assert_eq!(result.len(), 4);
         assert!(result.iter().all(|b| b.is_empty()));
     }
@@ -1195,7 +1215,7 @@ mod tests {
             Color::hex(0x808080),
             Color::hex(0xFFFFFF),
         ];
-        let result = HuePartitionConfig::new(3)
+        let result = HuePartition::new(3)
             .color_space(ColorSpace::Hsl)
             .chroma_threshold(0.05)
             .partition(&colors)
@@ -1214,7 +1234,7 @@ mod tests {
             Color::hex(0x00FF00),
             Color::hex(0x0000FF),
         ];
-        let result = HuePartitionConfig::new(3)
+        let result = HuePartition::new(3)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -1233,7 +1253,7 @@ mod tests {
             Color::hex(0x0000FF),
             Color::hex(0x0033FF),
         ];
-        let result = HuePartitionConfig::new(2)
+        let result = HuePartition::new(2)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -1252,7 +1272,7 @@ mod tests {
             Color::hex(0x808080),
             Color::hex(0xFFFF00),
         ];
-        let result = HuePartitionConfig::new(4).partition(&colors).unwrap();
+        let result = HuePartition::new(4).partition(&colors).unwrap();
         let total: usize = result.iter().map(|b| b.len()).sum();
         assert_eq!(total, 5);
     }
@@ -1267,7 +1287,7 @@ mod tests {
             Color::hex(0xFFFF00),
             Color::hex(0xFF00FF),
         ];
-        let result = HuePartitionConfig::new(3)
+        let result = HuePartition::new(3)
             .color_space(ColorSpace::Hsl)
             .chroma_threshold(0.05)
             .partition(&colors)
@@ -1285,7 +1305,7 @@ mod tests {
             Color::hex(0x0066FF),
             Color::hex(0x0099FF),
         ];
-        let result = HuePartitionConfig::new(2).partition(&colors).unwrap();
+        let result = HuePartition::new(2).partition(&colors).unwrap();
         let bucket_with_warm = result[..2].iter().find(|b| b.contains(&0)).unwrap();
         assert!(bucket_with_warm.contains(&1));
         let bucket_with_cool = result[..2].iter().find(|b| b.contains(&2)).unwrap();
@@ -1300,7 +1320,7 @@ mod tests {
             Color::hex(0x00FF00),
             Color::hex(0x0000FF),
         ];
-        let result = HuePartitionConfig::new(3)
+        let result = HuePartition::new(3)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -1318,7 +1338,7 @@ mod tests {
                 Color::rgb8(v, v, v)
             })
             .collect();
-        let result = LightnessPartionConfig::new(5)
+        let result = LightnessPartition::new(5)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -1334,11 +1354,11 @@ mod tests {
                 Color::rgb8(v, v, v)
             })
             .collect();
-        let no_fuzz = LightnessPartionConfig::new(5)
+        let no_fuzz = LightnessPartition::new(5)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
-        let with_fuzz = LightnessPartionConfig::new(5)
+        let with_fuzz = LightnessPartition::new(5)
             .color_space(ColorSpace::Hsl)
             .fuzziness(0.5)
             .partition(&colors)
@@ -1355,7 +1375,7 @@ mod tests {
             Color::hex(0x808080),
             Color::hex(0xFFFFFF),
         ];
-        let result = LightnessPartionConfig::new(3)
+        let result = LightnessPartition::new(3)
             .color_space(ColorSpace::Hsl)
             .fuzziness(1.0)
             .partition(&colors)
@@ -1372,7 +1392,7 @@ mod tests {
                 Color::rgb8(v, v, v)
             })
             .collect();
-        let result = LightnessPartionConfig::new(5)
+        let result = LightnessPartition::new(5)
             .fuzziness(0.3)
             .partition(&colors)
             .unwrap();
@@ -1389,12 +1409,12 @@ mod tests {
                 Color::rgb8(v, v, v)
             })
             .collect();
-        let no_fuzz = LightnessPartionConfig::new(4)
+        let no_fuzz = LightnessPartition::new(4)
             .color_space(ColorSpace::Hsl)
             .distribution(Distribution::Cluster)
             .partition(&colors)
             .unwrap();
-        let with_fuzz = LightnessPartionConfig::new(4)
+        let with_fuzz = LightnessPartition::new(4)
             .color_space(ColorSpace::Hsl)
             .distribution(Distribution::Cluster)
             .fuzziness(0.5)
@@ -1413,14 +1433,20 @@ mod tests {
                 Color::rgb8(v, v, v)
             })
             .collect();
-        let no_fuzz = LightnessPartionConfig::new(5)
+        let no_fuzz = LightnessPartition::new(5)
             .color_space(ColorSpace::Hsl)
-            .distribution(Distribution::Symmetric { concentration: 1.0, floor: 0.0 })
+            .distribution(Distribution::Symmetric {
+                concentration: 1.0,
+                floor: 0.0,
+            })
             .partition(&colors)
             .unwrap();
-        let with_fuzz = LightnessPartionConfig::new(5)
+        let with_fuzz = LightnessPartition::new(5)
             .color_space(ColorSpace::Hsl)
-            .distribution(Distribution::Symmetric { concentration: 1.0, floor: 0.0 })
+            .distribution(Distribution::Symmetric {
+                concentration: 1.0,
+                floor: 0.0,
+            })
             .fuzziness(0.5)
             .partition(&colors)
             .unwrap();
@@ -1437,7 +1463,7 @@ mod tests {
             Color::hex(0x0000FF),
             Color::hex(0xFFFF00),
         ];
-        let result = HuePartitionConfig::new(4)
+        let result = HuePartition::new(4)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
@@ -1455,11 +1481,11 @@ mod tests {
             Color::hex(0x0000FF),
             Color::hex(0x0033FF),
         ];
-        let no_fuzz = HuePartitionConfig::new(3)
+        let no_fuzz = HuePartition::new(3)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
-        let with_fuzz = HuePartitionConfig::new(3)
+        let with_fuzz = HuePartition::new(3)
             .color_space(ColorSpace::Hsl)
             .fuzziness(0.8)
             .partition(&colors)
@@ -1479,7 +1505,7 @@ mod tests {
             Color::hex(0x0000FF),
             Color::hex(0x4400FF),
         ];
-        let result = HuePartitionConfig::new(3)
+        let result = HuePartition::new(3)
             .color_space(ColorSpace::Hsl)
             .fuzziness(1.0)
             .partition(&colors)
@@ -1497,7 +1523,7 @@ mod tests {
             Color::hex(0x808080),
             Color::hex(0xFFFF00),
         ];
-        let result = HuePartitionConfig::new(4)
+        let result = HuePartition::new(4)
             .fuzziness(0.5)
             .partition(&colors)
             .unwrap();

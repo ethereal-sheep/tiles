@@ -1,4 +1,4 @@
-use palette::solver::{Distribution, HuePartitionConfig, LightnessPartionConfig};
+use palette::solver::{Distribution, HuePartition, LightnessPartition};
 use tiles::{
     App, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Rect, Shape, State,
 };
@@ -138,13 +138,13 @@ impl App for PalettePartition {
 
 fn main() {
     let palette = make_palette();
-    let lightness_buckets = LightnessPartionConfig::new(NUM_BUCKETS)
+    let lightness_buckets = LightnessPartition::new(NUM_BUCKETS)
         .distribution(Distribution::Normal { sigma: 0.7 })
         .fuzziness(0.3)
         .partition(&palette)
         .unwrap();
 
-    let hue_buckets = HuePartitionConfig::new(NUM_BUCKETS + 6)
+    let hue_buckets = HuePartition::new(NUM_BUCKETS + 6)
         .chroma_threshold(0.03)
         .fuzziness(0.0)
         // .offset(0.0)
