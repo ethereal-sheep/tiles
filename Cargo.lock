@@ -1413,6 +1413,9 @@ dependencies = [
 [[package]]
 name = "palette"
 version = "0.1.0"
+dependencies = [
+ "tiles",
+]
 
 [[package]]
 name = "parking_lot"
@@ -1709,6 +1712,7 @@ version = "0.1.0"
 dependencies = [
  "beeps",
  "glam",
+ "palette",
  "tiles",
 ]
 

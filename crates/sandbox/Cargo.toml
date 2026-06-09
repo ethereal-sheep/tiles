@@ -6,4 +6,5 @@ edition = "2021"
 [dependencies]
 tiles = { path = "../tiles" }
 beeps = { path = "../beeps" }
+palette = { path = "../palette" }
 glam = "0.29"
