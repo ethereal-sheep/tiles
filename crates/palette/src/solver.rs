@@ -82,13 +82,93 @@ impl LightnessPartition {
     }
 
     pub fn partition(self, colors: &[Color]) -> Result<Vec<Vec<usize>>, PartitionError> {
-        partition_by_lightness(
-            colors,
-            self.num_buckets,
-            self.color_space,
-            self.distribution,
-            self.fuzziness,
-        )
+        if colors.is_empty() {
+            if self.num_buckets == 0 {
+                return Err(PartitionError::BucketCountZero);
+            }
+            return Ok(vec![Vec::new(); self.num_buckets]);
+        }
+        Ok(self.build(colors)?.sort(colors))
+    }
+
+    pub fn build(self, colors: &[Color]) -> Result<LightnessBuckets, PartitionError> {
+        if self.num_buckets == 0 {
+            return Err(PartitionError::BucketCountZero);
+        }
+        if !colors.is_empty() && self.num_buckets > colors.len() {
+            return Err(PartitionError::BucketCountExceedsColors);
+        }
+
+        let lightnesses: Vec<f32> = colors.iter().map(|c| lightness(c, self.color_space)).collect();
+        let boundaries = self.compute_boundaries_from(&lightnesses);
+
+        Ok(LightnessBuckets {
+            boundaries,
+            color_space: self.color_space,
+            fuzziness: self.fuzziness,
+        })
+    }
+
+    fn compute_boundaries_from(&self, lightnesses: &[f32]) -> Vec<f32> {
+        let min_l = lightnesses.iter().cloned().fold(f32::INFINITY, f32::min);
+        let max_l = lightnesses.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+
+        match self.distribution {
+            Distribution::Uniform | Distribution::Normal { .. } => {
+                compute_boundaries(self.num_buckets, self.distribution, min_l, max_l)
+            }
+            Distribution::Symmetric { concentration, floor } => {
+                let mut sorted: Vec<f32> = lightnesses.to_vec();
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let counts = symmetric_counts(self.num_buckets, sorted.len(), concentration, floor);
+                rank_boundaries(&sorted, &counts, min_l, max_l)
+            }
+            Distribution::Cluster => {
+                let mut sorted: Vec<f32> = lightnesses.to_vec();
+                sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let breaks = jenks_breaks(&sorted, self.num_buckets);
+                rank_boundaries(&sorted, &breaks, min_l, max_l)
+            }
+        }
+    }
+}
+
+pub struct LightnessBuckets {
+    boundaries: Vec<f32>,
+    color_space: ColorSpace,
+    fuzziness: f32,
+}
+
+impl LightnessBuckets {
+    pub fn num_buckets(&self) -> usize {
+        self.boundaries.len() - 1
+    }
+
+    pub fn sort(&self, colors: &[Color]) -> Vec<Vec<usize>> {
+        let num_buckets = self.num_buckets();
+        let mut buckets = vec![Vec::new(); num_buckets];
+
+        for (i, color) in colors.iter().enumerate() {
+            let l = lightness(color, self.color_space);
+            let idx = find_bucket(&self.boundaries, l);
+            buckets[idx].push(i);
+
+            if self.fuzziness > 0.0 && num_buckets > 1 {
+                let bucket_width = self.boundaries[idx + 1] - self.boundaries[idx];
+                let fuzz_zone = self.fuzziness * bucket_width * 0.5;
+                let dist_to_lower = l - self.boundaries[idx];
+                let dist_to_upper = self.boundaries[idx + 1] - l;
+
+                if dist_to_lower < fuzz_zone && idx > 0 {
+                    buckets[idx - 1].push(i);
+                }
+                if dist_to_upper < fuzz_zone && idx < num_buckets - 1 {
+                    buckets[idx + 1].push(i);
+                }
+            }
+        }
+
+        buckets
     }
 }
 
@@ -132,152 +212,90 @@ impl HuePartition {
     }
 
     pub fn partition(self, colors: &[Color]) -> Result<Vec<Vec<usize>>, HuePartitionError> {
-        partition_by_hue(
-            colors,
-            self.num_buckets,
-            self.color_space,
-            self.chroma_threshold,
-            self.fuzziness,
-            self.offset,
-        )
+        Ok(self.build(colors)?.sort(colors))
+    }
+
+    pub fn build(self, colors: &[Color]) -> Result<HueBuckets, HuePartitionError> {
+        if self.num_buckets == 0 {
+            return Err(HuePartitionError::BucketCountZero);
+        }
+
+        let hues: Vec<f32> = colors
+            .iter()
+            .filter(|c| compute_chroma(c, self.color_space) >= self.chroma_threshold)
+            .map(|c| hue(c, self.color_space))
+            .collect();
+
+        let offset = self.offset.unwrap_or_else(|| find_largest_gap_midpoint(&hues));
+
+        Ok(HueBuckets {
+            offset,
+            num_buckets: self.num_buckets,
+            color_space: self.color_space,
+            chroma_threshold: self.chroma_threshold,
+            fuzziness: self.fuzziness,
+        })
     }
 }
 
-fn partition_by_hue(
-    colors: &[Color],
+pub struct HueBuckets {
+    offset: f32,
     num_buckets: usize,
     color_space: ColorSpace,
     chroma_threshold: f32,
     fuzziness: f32,
-    offset: Option<f32>,
-) -> Result<Vec<Vec<usize>>, HuePartitionError> {
-    if num_buckets == 0 {
-        return Err(HuePartitionError::BucketCountZero);
+}
+
+impl HueBuckets {
+    pub fn num_buckets(&self) -> usize {
+        self.num_buckets
     }
 
-    let mut chromatic_indices = Vec::new();
-    let mut achromatic_indices = Vec::new();
+    /// Sort colors into hue buckets. Returns num_buckets + 1 buckets (last is achromatic).
+    pub fn sort(&self, colors: &[Color]) -> Vec<Vec<usize>> {
+        let mut buckets = vec![Vec::new(); self.num_buckets];
+        let mut achromatic = Vec::new();
+        let bucket_width = 360.0 / self.num_buckets as f32;
+        let fuzz_zone = self.fuzziness * bucket_width * 0.5;
 
-    for (i, color) in colors.iter().enumerate() {
-        let chroma = compute_chroma(color, color_space);
-        if chroma < chroma_threshold {
-            achromatic_indices.push(i);
-        } else {
-            chromatic_indices.push(i);
-        }
-    }
+        for (i, color) in colors.iter().enumerate() {
+            let chroma = compute_chroma(color, self.color_space);
+            if chroma < self.chroma_threshold {
+                achromatic.push(i);
+                continue;
+            }
 
-    let mut buckets = vec![Vec::new(); num_buckets];
+            let hue_val = hue(color, self.color_space);
+            let rotated = (hue_val - self.offset + 360.0) % 360.0;
+            let bucket_idx = ((rotated / 360.0) * self.num_buckets as f32).floor() as usize;
+            let bucket_idx = bucket_idx.min(self.num_buckets - 1);
+            buckets[bucket_idx].push(i);
 
-    if !chromatic_indices.is_empty() {
-        let hues: Vec<f32> = chromatic_indices
-            .iter()
-            .map(|&i| hue(&colors[i], color_space))
-            .collect();
-
-        let offset = offset.unwrap_or_else(|| find_largest_gap_midpoint(&hues));
-        let bucket_width = 360.0 / num_buckets as f32;
-        let fuzz_zone = fuzziness * bucket_width * 0.5;
-
-        for (j, &hue_val) in hues.iter().enumerate() {
-            let rotated = (hue_val - offset + 360.0) % 360.0;
-            let bucket_idx = ((rotated / 360.0) * num_buckets as f32).floor() as usize;
-            let bucket_idx = bucket_idx.min(num_buckets - 1);
-            buckets[bucket_idx].push(chromatic_indices[j]);
-
-            if fuzz_zone > 0.0 && num_buckets > 1 {
+            if fuzz_zone > 0.0 && self.num_buckets > 1 {
                 let bucket_start = bucket_idx as f32 * bucket_width;
                 let bucket_end = bucket_start + bucket_width;
                 let dist_to_lower = rotated - bucket_start;
                 let dist_to_upper = bucket_end - rotated;
 
                 if dist_to_lower < fuzz_zone && bucket_idx > 0 {
-                    buckets[bucket_idx - 1].push(chromatic_indices[j]);
+                    buckets[bucket_idx - 1].push(i);
                 } else if dist_to_lower < fuzz_zone && bucket_idx == 0 {
-                    buckets[num_buckets - 1].push(chromatic_indices[j]);
+                    buckets[self.num_buckets - 1].push(i);
                 }
 
-                if dist_to_upper < fuzz_zone && bucket_idx < num_buckets - 1 {
-                    buckets[bucket_idx + 1].push(chromatic_indices[j]);
-                } else if dist_to_upper < fuzz_zone && bucket_idx == num_buckets - 1 {
-                    buckets[0].push(chromatic_indices[j]);
+                if dist_to_upper < fuzz_zone && bucket_idx < self.num_buckets - 1 {
+                    buckets[bucket_idx + 1].push(i);
+                } else if dist_to_upper < fuzz_zone && bucket_idx == self.num_buckets - 1 {
+                    buckets[0].push(i);
                 }
             }
         }
-    }
 
-    buckets.push(achromatic_indices);
-    Ok(buckets)
+        buckets.push(achromatic);
+        buckets
+    }
 }
 
-fn partition_by_lightness(
-    colors: &[Color],
-    num_buckets: usize,
-    color_space: ColorSpace,
-    distribution: Distribution,
-    fuzziness: f32,
-) -> Result<Vec<Vec<usize>>, PartitionError> {
-    if num_buckets == 0 {
-        return Err(PartitionError::BucketCountZero);
-    }
-    if !colors.is_empty() && num_buckets > colors.len() {
-        return Err(PartitionError::BucketCountExceedsColors);
-    }
-
-    if colors.is_empty() {
-        return Ok(vec![Vec::new(); num_buckets]);
-    }
-
-    let lightnesses: Vec<f32> = colors.iter().map(|c| lightness(c, color_space)).collect();
-
-    if let Distribution::Symmetric {
-        concentration,
-        floor,
-    } = distribution
-    {
-        return Ok(partition_symmetric(
-            &lightnesses,
-            num_buckets,
-            concentration,
-            floor,
-            fuzziness,
-        ));
-    }
-
-    if distribution == Distribution::Cluster {
-        return Ok(partition_cluster(&lightnesses, num_buckets, fuzziness));
-    }
-
-    let min_l = lightnesses.iter().cloned().fold(f32::INFINITY, f32::min);
-    let max_l = lightnesses
-        .iter()
-        .cloned()
-        .fold(f32::NEG_INFINITY, f32::max);
-
-    let boundaries = compute_boundaries(num_buckets, distribution, min_l, max_l);
-    let mut buckets = vec![Vec::new(); num_buckets];
-
-    for (i, &l) in lightnesses.iter().enumerate() {
-        let idx = find_bucket(&boundaries, l);
-        buckets[idx].push(i);
-
-        if fuzziness > 0.0 && num_buckets > 1 {
-            let bucket_width = boundaries[idx + 1] - boundaries[idx];
-            let fuzz_zone = fuzziness * bucket_width * 0.5;
-            let dist_to_lower = l - boundaries[idx];
-            let dist_to_upper = boundaries[idx + 1] - l;
-
-            if dist_to_lower < fuzz_zone && idx > 0 {
-                buckets[idx - 1].push(i);
-            }
-            if dist_to_upper < fuzz_zone && idx < num_buckets - 1 {
-                buckets[idx + 1].push(i);
-            }
-        }
-    }
-
-    Ok(buckets)
-}
 
 fn compute_boundaries(
     num_buckets: usize,
@@ -321,45 +339,29 @@ fn find_bucket(boundaries: &[f32], l: f32) -> usize {
     num_buckets - 1
 }
 
-fn partition_symmetric(
-    lightnesses: &[f32],
-    num_buckets: usize,
-    concentration: f32,
-    floor: f32,
-    fuzziness: f32,
-) -> Vec<Vec<usize>> {
-    let mut sorted_indices: Vec<usize> = (0..lightnesses.len()).collect();
-    sorted_indices.sort_by(|&a, &b| lightnesses[a].partial_cmp(&lightnesses[b]).unwrap());
+fn rank_boundaries(sorted_vals: &[f32], counts: &[usize], min_l: f32, max_l: f32) -> Vec<f32> {
+    let num_buckets = counts.len();
+    let mut boundaries = Vec::with_capacity(num_buckets + 1);
+    boundaries.push(min_l);
 
-    let counts = symmetric_counts(num_buckets, lightnesses.len(), concentration, floor);
-    let mut buckets = Vec::with_capacity(num_buckets);
     let mut offset = 0;
-    for &count in &counts {
-        buckets.push(sorted_indices[offset..offset + count].to_vec());
-        offset += count;
+    for b in 0..num_buckets - 1 {
+        offset += counts[b];
+        let last = sorted_vals[offset - 1];
+        let first = sorted_vals[offset];
+        boundaries.push((last + first) / 2.0);
     }
 
-    if fuzziness > 0.0 && num_buckets > 1 {
-        apply_fuzz_to_sorted_buckets(&mut buckets, lightnesses, &sorted_indices, fuzziness);
-    }
-
-    buckets
+    boundaries.push(max_l);
+    boundaries
 }
 
-fn partition_cluster(lightnesses: &[f32], num_buckets: usize, fuzziness: f32) -> Vec<Vec<usize>> {
-    let n = lightnesses.len();
+fn jenks_breaks(sorted_vals: &[f32], num_buckets: usize) -> Vec<usize> {
+    let n = sorted_vals.len();
 
-    let mut sorted_indices: Vec<usize> = (0..n).collect();
-    sorted_indices.sort_by(|&a, &b| lightnesses[a].partial_cmp(&lightnesses[b]).unwrap());
-    let sorted_vals: Vec<f32> = sorted_indices.iter().map(|&i| lightnesses[i]).collect();
-
-    // Jenks natural breaks (Fisher-Jenks) via dynamic programming
-    // variance_combinations[k][i] = minimum sum of squared deviations
-    // for classifying sorted_vals[0..=i] into k+1 classes
     let mut variance = vec![vec![f64::MAX; n]; num_buckets];
     let mut backtrack = vec![vec![0usize; n]; num_buckets];
 
-    // Base case: 1 class (k=0) — variance of sorted_vals[0..=i]
     let mut sum = 0.0_f64;
     let mut sum_sq = 0.0_f64;
     for i in 0..n {
@@ -369,7 +371,6 @@ fn partition_cluster(lightnesses: &[f32], num_buckets: usize, fuzziness: f32) ->
         variance[0][i] = sum_sq - (sum * sum) / count;
     }
 
-    // Fill DP for k=1..num_buckets-1
     for k in 1..num_buckets {
         for i in k..n {
             let mut s = 0.0_f64;
@@ -388,7 +389,6 @@ fn partition_cluster(lightnesses: &[f32], num_buckets: usize, fuzziness: f32) ->
         }
     }
 
-    // Trace back to find class boundaries
     let mut breaks = vec![0usize; num_buckets];
     breaks[num_buckets - 1] = n;
     let mut k = num_buckets - 1;
@@ -399,75 +399,15 @@ fn partition_cluster(lightnesses: &[f32], num_buckets: usize, fuzziness: f32) ->
         k -= 1;
     }
 
-    // Build buckets from breaks
-    let mut buckets = Vec::with_capacity(num_buckets);
+    let mut counts = Vec::with_capacity(num_buckets);
     let mut start = 0;
     for &end in &breaks {
-        buckets.push(sorted_indices[start..end].to_vec());
+        counts.push(end - start);
         start = end;
     }
-
-    if fuzziness > 0.0 && num_buckets > 1 {
-        apply_fuzz_to_sorted_buckets(&mut buckets, lightnesses, &sorted_indices, fuzziness);
-    }
-
-    buckets
+    counts
 }
 
-fn apply_fuzz_to_sorted_buckets(
-    buckets: &mut [Vec<usize>],
-    values: &[f32],
-    sorted_indices: &[usize],
-    fuzziness: f32,
-) {
-    let num_buckets = buckets.len();
-    let original_sizes: Vec<usize> = buckets.iter().map(|b| b.len()).collect();
-    let mut offset = 0;
-
-    for b in 0..num_buckets - 1 {
-        let next_offset = offset + original_sizes[b];
-
-        let last_in_bucket = sorted_indices[next_offset - 1];
-        let first_in_next = sorted_indices[next_offset];
-        let boundary_val = (values[last_in_bucket] + values[first_in_next]) / 2.0;
-
-        let bucket_min = values[sorted_indices[offset]];
-        let bucket_max = values[sorted_indices[next_offset - 1]];
-        let next_min = values[sorted_indices[next_offset]];
-        let next_end_idx = next_offset + original_sizes[b + 1] - 1;
-        let next_max = values[sorted_indices[next_end_idx]];
-
-        let left_width = bucket_max - bucket_min;
-        let right_width = next_max - next_min;
-        let avg_width = (left_width + right_width) / 2.0;
-        let fuzz_zone = if avg_width > 0.0 {
-            fuzziness * avg_width * 0.5
-        } else {
-            0.0
-        };
-
-        if fuzz_zone > 0.0 {
-            // Colors in current bucket near upper boundary → copy to next
-            for &idx in &buckets[b].clone() {
-                if values[idx] > boundary_val - fuzz_zone && values[idx] <= boundary_val {
-                    if !buckets[b + 1].contains(&idx) {
-                        buckets[b + 1].push(idx);
-                    }
-                }
-            }
-            // Colors in next bucket near lower boundary → copy to current
-            for &idx in &buckets[b + 1].clone() {
-                if values[idx] < boundary_val + fuzz_zone && values[idx] >= boundary_val {
-                    if !buckets[b].contains(&idx) {
-                        buckets[b].push(idx);
-                    }
-                }
-            }
-        }
-
-        offset = next_offset;
-    }
-}
 
 fn symmetric_counts(
     num_buckets: usize,
@@ -869,6 +809,178 @@ mod tests {
         let colors = vec![Color::hex(0xFF0000)];
         let result = HuePartition::new(0).partition(&colors);
         assert_eq!(result, Err(HuePartitionError::BucketCountZero));
+    }
+
+    // --- sort tests ---
+
+    #[test]
+    fn lightness_sort_matches_partition() {
+        let colors: Vec<Color> = (0..20)
+            .map(|i| {
+                let v = (i as f32 / 19.0 * 255.0) as u8;
+                Color::rgb8(v, v, v)
+            })
+            .collect();
+        let partition_result = LightnessPartition::new(4).partition(&colors).unwrap();
+        let buckets = LightnessPartition::new(4).build(&colors).unwrap();
+        let sort_result = buckets.sort(&colors);
+        assert_eq!(partition_result, sort_result);
+    }
+
+    #[test]
+    fn lightness_sort_subset_uses_full_boundaries() {
+        let full: Vec<Color> = (0..20)
+            .map(|i| {
+                let v = (i as f32 / 19.0 * 255.0) as u8;
+                Color::rgb8(v, v, v)
+            })
+            .collect();
+        let buckets = LightnessPartition::new(4).build(&full).unwrap();
+        // Sort only the dark half
+        let dark: Vec<Color> = full[..5].to_vec();
+        let result = buckets.sort(&dark);
+        // All dark colors should land in first bucket(s), none in last
+        assert!(result[3].is_empty());
+        let total: usize = result.iter().map(|b| b.len()).sum();
+        assert_eq!(total, 5);
+    }
+
+    #[test]
+    fn lightness_sort_preserves_all_colors() {
+        let colors: Vec<Color> = (0..30)
+            .map(|i| {
+                let v = (i as f32 / 29.0 * 255.0) as u8;
+                Color::rgb8(v, v, v)
+            })
+            .collect();
+        let buckets = LightnessPartition::new(5).build(&colors).unwrap();
+        let result = buckets.sort(&colors);
+        let total: usize = result.iter().map(|b| b.len()).sum();
+        assert_eq!(total, 30);
+    }
+
+    #[test]
+    fn lightness_sort_with_fuzziness() {
+        let colors: Vec<Color> = (0..20)
+            .map(|i| {
+                let v = (i as f32 / 19.0 * 255.0) as u8;
+                Color::rgb8(v, v, v)
+            })
+            .collect();
+        let no_fuzz = LightnessPartition::new(4).build(&colors).unwrap();
+        let with_fuzz = LightnessPartition::new(4)
+            .fuzziness(0.5)
+            .build(&colors)
+            .unwrap();
+        let total_no: usize = no_fuzz.sort(&colors).iter().map(|b| b.len()).sum();
+        let total_with: usize = with_fuzz.sort(&colors).iter().map(|b| b.len()).sum();
+        assert!(total_with > total_no);
+    }
+
+    #[test]
+    fn hue_sort_matches_partition() {
+        let colors = vec![
+            Color::hex(0xFF0000),
+            Color::hex(0x00FF00),
+            Color::hex(0x0000FF),
+            Color::hex(0x808080),
+        ];
+        let partition_result = HuePartition::new(3)
+            .offset(0.0)
+            .partition(&colors)
+            .unwrap();
+        let buckets = HuePartition::new(3).offset(0.0).build(&colors).unwrap();
+        let sort_result = buckets.sort(&colors);
+        assert_eq!(partition_result, sort_result);
+    }
+
+    #[test]
+    fn hue_sort_subset_uses_full_offset() {
+        let full = vec![
+            Color::hex(0xFF0000),
+            Color::hex(0x00FF00),
+            Color::hex(0x0000FF),
+            Color::hex(0xFFFF00),
+            Color::hex(0xFF00FF),
+            Color::hex(0x00FFFF),
+        ];
+        let buckets = HuePartition::new(3).build(&full).unwrap();
+        // Sort only a subset
+        let subset = vec![Color::hex(0xFF0000), Color::hex(0x0000FF)];
+        let result = buckets.sort(&subset);
+        let chromatic_total: usize = result[..3].iter().map(|b| b.len()).sum();
+        assert_eq!(chromatic_total, 2);
+        // They should be in different buckets
+        let non_empty: Vec<_> = result[..3].iter().filter(|b| !b.is_empty()).collect();
+        assert_eq!(non_empty.len(), 2);
+    }
+
+    #[test]
+    fn hue_sort_preserves_all_colors() {
+        let colors = vec![
+            Color::hex(0xFF0000),
+            Color::hex(0x00FF00),
+            Color::hex(0x0000FF),
+            Color::hex(0x808080),
+            Color::hex(0x333333),
+        ];
+        let buckets = HuePartition::new(4).build(&colors).unwrap();
+        let result = buckets.sort(&colors);
+        let total: usize = result.iter().map(|b| b.len()).sum();
+        assert_eq!(total, 5);
+    }
+
+    #[test]
+    fn hue_sort_achromatic_to_last_bucket() {
+        let colors = vec![
+            Color::hex(0xFF0000),
+            Color::hex(0x808080),
+            Color::hex(0x000000),
+        ];
+        let buckets = HuePartition::new(3).build(&colors).unwrap();
+        let result = buckets.sort(&colors);
+        assert_eq!(result.len(), 4);
+        assert_eq!(result[3].len(), 2);
+    }
+
+    #[test]
+    fn hue_sort_with_fuzziness() {
+        let colors = vec![
+            Color::hex(0xFF0000),
+            Color::hex(0xFF4400),
+            Color::hex(0x00FF00),
+            Color::hex(0x00FF44),
+            Color::hex(0x0000FF),
+            Color::hex(0x4400FF),
+        ];
+        let no_fuzz = HuePartition::new(3).offset(0.0).build(&colors).unwrap();
+        let with_fuzz = HuePartition::new(3)
+            .offset(0.0)
+            .fuzziness(1.0)
+            .build(&colors)
+            .unwrap();
+        let total_no: usize = no_fuzz.sort(&colors)[..3].iter().map(|b| b.len()).sum();
+        let total_with: usize = with_fuzz.sort(&colors)[..3].iter().map(|b| b.len()).sum();
+        assert!(total_with > total_no);
+    }
+
+    #[test]
+    fn lightness_buckets_num_buckets() {
+        let colors: Vec<Color> = (0..10)
+            .map(|i| {
+                let v = (i as f32 / 9.0 * 255.0) as u8;
+                Color::rgb8(v, v, v)
+            })
+            .collect();
+        let buckets = LightnessPartition::new(7).build(&colors).unwrap();
+        assert_eq!(buckets.num_buckets(), 7);
+    }
+
+    #[test]
+    fn hue_buckets_num_buckets() {
+        let colors = vec![Color::hex(0xFF0000), Color::hex(0x00FF00)];
+        let buckets = HuePartition::new(5).build(&colors).unwrap();
+        assert_eq!(buckets.num_buckets(), 5);
     }
 
     // --- lightness partition tests ---
