@@ -1,4 +1,4 @@
-use palette::solver::{partition_by_hue, partition_by_lightness, ColorSpace, Distribution};
+use palette::solver::{Distribution, HuePartitionConfig, LightnessPartionConfig};
 use tiles::{
     App, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Rect, Shape, State,
 };
@@ -138,17 +138,17 @@ impl App for PalettePartition {
 
 fn main() {
     let palette = make_palette();
-    let lightness_buckets = partition_by_lightness(
-        &palette,
-        ColorSpace::Oklch,
-        NUM_BUCKETS,
-        Distribution::Normal { sigma: 0.7 },
-        0.5,
-    )
-    .unwrap();
+    let lightness_buckets = LightnessPartionConfig::new(NUM_BUCKETS)
+        .distribution(Distribution::Normal { sigma: 0.7 })
+        .fuzziness(0.5)
+        .partition(&palette)
+        .unwrap();
 
-    let hue_buckets =
-        partition_by_hue(&palette, ColorSpace::Oklch, NUM_BUCKETS, 0.01, 0.3).unwrap();
+    let hue_buckets = HuePartitionConfig::new(NUM_BUCKETS)
+        .chroma_threshold(0.01)
+        .fuzziness(0.3)
+        .partition(&palette)
+        .unwrap();
 
     let config = Config::builder()
         .title("Palette Partition")
