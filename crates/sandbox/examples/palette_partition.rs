@@ -140,13 +140,14 @@ fn main() {
     let palette = make_palette();
     let lightness_buckets = LightnessPartionConfig::new(NUM_BUCKETS)
         .distribution(Distribution::Normal { sigma: 0.7 })
-        .fuzziness(0.5)
+        .fuzziness(0.3)
         .partition(&palette)
         .unwrap();
 
-    let hue_buckets = HuePartitionConfig::new(NUM_BUCKETS)
-        .chroma_threshold(0.01)
-        .fuzziness(0.3)
+    let hue_buckets = HuePartitionConfig::new(NUM_BUCKETS + 6)
+        .chroma_threshold(0.03)
+        .fuzziness(0.0)
+        // .offset(0.0)
         .partition(&palette)
         .unwrap();
 

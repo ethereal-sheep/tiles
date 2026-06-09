@@ -97,6 +97,7 @@ pub struct HuePartitionConfig {
     num_buckets: usize,
     chroma_threshold: f32,
     fuzziness: f32,
+    offset: Option<f32>,
 }
 
 impl HuePartitionConfig {
@@ -106,6 +107,7 @@ impl HuePartitionConfig {
             num_buckets,
             chroma_threshold: 0.02,
             fuzziness: 0.0,
+            offset: None,
         }
     }
 
@@ -124,6 +126,11 @@ impl HuePartitionConfig {
         self
     }
 
+    pub fn offset(mut self, offset: f32) -> Self {
+        self.offset = Some(offset);
+        self
+    }
+
     pub fn partition(self, colors: &[Color]) -> Result<Vec<Vec<usize>>, HuePartitionError> {
         partition_by_hue(
             colors,
@@ -131,6 +138,7 @@ impl HuePartitionConfig {
             self.color_space,
             self.chroma_threshold,
             self.fuzziness,
+            self.offset,
         )
     }
 }
@@ -141,6 +149,7 @@ fn partition_by_hue(
     color_space: ColorSpace,
     chroma_threshold: f32,
     fuzziness: f32,
+    offset: Option<f32>,
 ) -> Result<Vec<Vec<usize>>, HuePartitionError> {
     if num_buckets == 0 {
         return Err(HuePartitionError::BucketCountZero);
@@ -166,7 +175,7 @@ fn partition_by_hue(
             .map(|&i| hue(&colors[i], color_space))
             .collect();
 
-        let offset = find_largest_gap_midpoint(&hues);
+        let offset = offset.unwrap_or_else(|| find_largest_gap_midpoint(&hues));
         let bucket_width = 360.0 / num_buckets as f32;
         let fuzz_zone = fuzziness * bucket_width * 0.5;
 
