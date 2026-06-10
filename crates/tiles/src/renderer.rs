@@ -15,6 +15,7 @@ struct Uniforms {
     viewport_size: [f32; 2],
     viewport_cells: [f32; 2],
     _pad: [f32; 2],
+    viewport_bg: [f32; 4],
 }
 
 #[repr(C)]
@@ -33,6 +34,7 @@ struct Uniforms {
     viewport_size: vec2<f32>,
     viewport_cells: vec2<f32>,
     _pad: vec2<f32>,
+    viewport_bg: vec4<f32>,
 }
 
 struct LightData {
@@ -209,6 +211,21 @@ fn fs_bloom(in: BloomVertexOut) -> @location(0) vec4<f32> {
     }
     return vec4<f32>(in.color.rgb, alpha);
 }
+
+// Fullscreen triangle for viewport clear
+@vertex
+fn vs_fullscreen(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32> {
+    var positions: array<vec2<f32>, 3>;
+    positions[0] = vec2<f32>(-1.0, -3.0);
+    positions[1] = vec2<f32>(-1.0,  1.0);
+    positions[2] = vec2<f32>( 3.0,  1.0);
+    return vec4<f32>(positions[vi], 0.0, 1.0);
+}
+
+@fragment
+fn fs_viewport_clear() -> @location(0) vec4<f32> {
+    return uniforms.viewport_bg;
+}
 "#;
 
 pub struct Renderer {
@@ -220,6 +237,7 @@ pub struct Renderer {
     transparent_pipeline: wgpu::RenderPipeline,
     bloom_pipeline: wgpu::RenderPipeline,
     screen_pipeline: wgpu::RenderPipeline,
+    viewport_clear_pipeline: wgpu::RenderPipeline,
     instance_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
     light_uniform_buffer: wgpu::Buffer,
@@ -532,6 +550,43 @@ impl Renderer {
             cache: None,
         });
 
+        let viewport_clear_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("viewport_clear_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_fullscreen",
+                buffers: &[],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_viewport_clear",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
             size: (MAX_INSTANCES * std::mem::size_of::<CellInstance>()) as u64,
@@ -550,6 +605,7 @@ impl Renderer {
             transparent_pipeline,
             bloom_pipeline,
             screen_pipeline,
+            viewport_clear_pipeline,
             instance_buffer,
             uniform_buffer,
             light_uniform_buffer,
@@ -616,6 +672,7 @@ impl Renderer {
             viewport_size: viewport_size.to_array(),
             viewport_cells: viewport_cells.to_array(),
             _pad: [0.0; 2],
+            viewport_bg,
         };
         self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
@@ -696,12 +753,7 @@ impl Renderer {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: viewport_bg[0] as f64,
-                            g: viewport_bg[1] as f64,
-                            b: viewport_bg[2] as f64,
-                            a: viewport_bg[3] as f64,
-                        }),
+                        load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -724,6 +776,10 @@ impl Renderer {
                 0.0, 1.0,
             );
             pass.set_bind_group(0, &self.bind_group, &[]);
+
+            // Fill viewport region with viewport background color
+            pass.set_pipeline(&self.viewport_clear_pipeline);
+            pass.draw(0..3, 0..1);
 
             // Opaque pass
             if !opaque.is_empty() {
