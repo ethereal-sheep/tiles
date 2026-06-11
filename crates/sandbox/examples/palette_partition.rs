@@ -1,9 +1,8 @@
 use std::collections::HashSet;
 
 use palette::solver::{
-    Buckets,
-    ColorSpace::{Hsl, Oklch},
-    HueBuckets, HuePartition, LightnessBuckets, LightnessPartition, Partition,
+    Buckets, ColorSpace::Oklch, HueBuckets, HuePartition, LightnessBuckets, LightnessPartition,
+    Partition,
 };
 use tiles::{
     App, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, Line, MouseEvent, Rect, Shape,
