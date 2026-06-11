@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use palette::solver::{
     Buckets,
     ColorSpace::{Hsl, Oklch},
@@ -86,8 +88,9 @@ fn make_palette() -> Vec<Color> {
 fn combined_partition(palette: &[Color], hue_offset: f32) -> Vec<Vec<Vec<Color>>> {
     let hue_buckets: HueBuckets = HuePartition::new(HUE_BUCKETS)
         .color_space(Oklch)
-        .chroma_threshold(0.03)
+        .chroma_threshold(0.05)
         .offset(hue_offset)
+        .fuzziness(0.3)
         .build(palette)
         .unwrap();
 
@@ -146,18 +149,19 @@ struct Dag {
 
 type Path = Vec<usize>;
 
+const MAX_HUE_FAMILIES: u32 = 3;
+
 fn find_paths(dag: &Dag, edge_count: usize) -> Vec<Path> {
     let mut paths = Vec::new();
     let mut seen = std::collections::HashSet::new();
     let target_len = edge_count + 1;
     let num_nodes = dag.nodes.len();
 
-    // Stack: (path, hue_mask, hue_transition_happened)
     for start in 0..num_nodes {
-        let mut stack: Vec<(Vec<usize>, u64, bool)> =
-            vec![(vec![start], 1u64 << dag.nodes[start].hue_idx, false)];
+        let mut stack: Vec<(Vec<usize>, u64)> =
+            vec![(vec![start], 1u64 << dag.nodes[start].hue_idx)];
 
-        while let Some((path, hue_mask, transitioned)) = stack.pop() {
+        while let Some((path, hue_mask)) = stack.pop() {
             if path.len() == target_len {
                 let color_key: Vec<[u32; 3]> = path
                     .iter()
@@ -167,46 +171,96 @@ fn find_paths(dag: &Dag, edge_count: usize) -> Vec<Path> {
                     })
                     .collect();
                 if seen.insert(color_key) {
+                    // let peak_idx = path
+                    //     .iter()
+                    //     .enumerate()
+                    //     .max_by(|(_, a), (_, b)| {
+                    //         chroma(&dag.nodes[**a].color)
+                    //             .partial_cmp(&chroma(&dag.nodes[**b].color))
+                    //             .unwrap()
+                    //     })
+                    //     .map(|(i, _)| i)
+                    //     .unwrap_or(0);
+                    // if peak_idx == 2 || peak_idx == 3 {
                     paths.push(path);
+                    // }
                 }
                 continue;
             }
 
             let current = *path.last().unwrap();
-            let current_hue = dag.nodes[current].hue_idx;
-            let edge_idx = path.len() - 1;
 
             for &next in &dag.adjacency[current] {
                 let next_hue = dag.nodes[next].hue_idx;
                 let next_mask = hue_mask | (1u64 << next_hue);
-                if next_mask.count_ones() > 2 {
+                if next_mask.count_ones() > MAX_HUE_FAMILIES {
                     continue;
-                }
-
-                let is_hue_change = next_hue != current_hue;
-                if is_hue_change && transitioned {
-                    // Already had a transition; only allow another at the last edge
-                    if edge_idx != edge_count - 1 {
-                        continue;
-                    }
-                }
-                if is_hue_change && !transitioned {
-                    // First transition: only allow at first or last edge
-                    if edge_idx != 0 && edge_idx != edge_count - 1 {
-                        continue;
-                    }
                 }
 
                 let mut new_path = path.clone();
                 new_path.push(next);
-                stack.push((new_path, next_mask, transitioned || is_hue_change));
+                stack.push((new_path, next_mask));
             }
         }
     }
 
-    paths
+    paths.sort_by(|a, b| score_path(b, dag).partial_cmp(&score_path(a, dag)).unwrap());
+
+    // Cull paths whose odd-indexed colors (1,3,5) match an already-seen set
+    let mut odd_seen = std::collections::HashSet::new();
+    paths.retain(|path| {
+        let key: Vec<[u32; 3]> = path
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| i % 2 == 0)
+            .map(|(_, &n)| {
+                let c = &dag.nodes[n].color;
+                [c.r.to_bits(), c.g.to_bits(), c.b.to_bits()]
+            })
+            .collect();
+        odd_seen.insert(key)
+    });
+
+    // Group similar ramps (same hue family at each position), keep up to 3 per group
+    let mut groups: Vec<Vec<Path>> = Vec::new();
+    for path in paths {
+        let hue_sig: HashSet<usize> = path.iter().map(|&n| dag.nodes[n].hue_idx).collect();
+        let mut placed = false;
+        for group in &mut groups {
+            let group_sig: HashSet<usize> =
+                group[0].iter().map(|&n| dag.nodes[n].hue_idx).collect();
+            if hue_sig == group_sig {
+                if group.len() < 1 {
+                    group.push(path.clone());
+                }
+                placed = true;
+                break;
+            }
+        }
+        if !placed {
+            groups.push(vec![path]);
+        }
+    }
+
+    let mut selected: Vec<Path> = Vec::new();
+    for group in groups {
+        for path in group {
+            selected.push(path);
+            if selected.len() >= MAX_PATHS {
+                break;
+            }
+        }
+    }
+
+    selected.sort_by(|a, b| {
+        let ha = hue_degrees(&dag.nodes[a[a.len() / 2]].color);
+        let hb = hue_degrees(&dag.nodes[b[b.len() / 2]].color);
+        ha.partial_cmp(&hb).unwrap()
+    });
+    selected
 }
 
+const MAX_PATHS: usize = 64;
 const MAX_CHROMA_STEP: f32 = 0.5;
 
 fn linear_to_srgb(l: f32) -> f32 {
@@ -222,6 +276,62 @@ fn chroma(c: &Color) -> f32 {
     let g = linear_to_srgb(c.g);
     let b = linear_to_srgb(c.b);
     r.max(g).max(b) - r.min(g).min(b)
+}
+
+fn lightness(c: &Color) -> f32 {
+    let l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b;
+    let m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b;
+    let s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b;
+    0.2104542553 * l.cbrt() + 0.7936177850 * m.cbrt() - 0.0040720468 * s.cbrt()
+}
+
+fn hue_degrees(c: &Color) -> f32 {
+    let l = 0.4122214708 * c.r + 0.5363325363 * c.g + 0.0514459929 * c.b;
+    let m = 0.2119034982 * c.r + 0.6806995451 * c.g + 0.1073969566 * c.b;
+    let s = 0.0883024619 * c.r + 0.2817188376 * c.g + 0.6299787005 * c.b;
+    let l_ = l.cbrt();
+    let m_ = m.cbrt();
+    let s_ = s.cbrt();
+    let a = 1.9779984951 * l_ - 2.4285922050 * m_ + 0.4505937099 * s_;
+    let b = 0.0259040371 * l_ + 0.7827717662 * m_ - 0.8086757660 * s_;
+    b.atan2(a).to_degrees().rem_euclid(360.0)
+}
+
+fn score_path(path: &[usize], dag: &Dag) -> f32 {
+    let n = path.len();
+    if n < 2 {
+        return 0.0;
+    }
+
+    let lightnesses: Vec<f32> = path
+        .iter()
+        .map(|&i| lightness(&dag.nodes[i].color))
+        .collect();
+    let chromas: Vec<f32> = path.iter().map(|&i| chroma(&dag.nodes[i].color)).collect();
+
+    // Even lightness steps
+    let l_steps: Vec<f32> = (1..n)
+        .map(|i| (lightnesses[i] - lightnesses[i - 1]).abs())
+        .collect();
+    let mean_l = l_steps.iter().sum::<f32>() / l_steps.len() as f32;
+    let evenness = if mean_l > 0.001 {
+        let var = l_steps.iter().map(|s| (s - mean_l).powi(2)).sum::<f32>() / l_steps.len() as f32;
+        1.0 / (1.0 + var / (mean_l * mean_l))
+    } else {
+        0.0
+    };
+
+    // Chroma smoothness
+    let c_steps: Vec<f32> = (1..n)
+        .map(|i| (chromas[i] - chromas[i - 1]).abs())
+        .collect();
+    let mean_c = c_steps.iter().sum::<f32>() / c_steps.len() as f32;
+    let smoothness = {
+        let var = c_steps.iter().map(|s| (s - mean_c).powi(2)).sum::<f32>() / c_steps.len() as f32;
+        1.0 / (1.0 + var * 10.0)
+    };
+
+    evenness + smoothness
 }
 
 fn build_dag(grid: &[Vec<Vec<Color>>]) -> Dag {
@@ -396,7 +506,7 @@ impl App for PalettePartition {
         // Draw paths below the DAG
         let path_ox = MARGIN + 10.0;
         let path_oy = 160.0;
-        let path_step = SWATCH_SIZE as f32 + GAP;
+        let path_step = SWATCH_SIZE as f32;
         let path_row_height = SWATCH_SIZE as f32 + GAP;
         // let max_path_rows = ((256.0 - path_oy) / path_row_height) as usize;
 
