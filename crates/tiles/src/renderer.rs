@@ -8,7 +8,7 @@ const MAX_INSTANCES: usize = 131072;
 const MAX_LIGHTS: usize = 64;
 
 #[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
+#[derive(Copy, Clone)]
 struct Uniforms {
     projection: [[f32; 4]; 4],
     viewport_offset: [f32; 2],
@@ -18,14 +18,20 @@ struct Uniforms {
     viewport_bg: [f32; 4],
 }
 
+unsafe impl Pod for Uniforms {}
+unsafe impl Zeroable for Uniforms {}
+
 #[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable)]
+#[derive(Copy, Clone)]
 struct LightUniforms {
     lights: [LightData; MAX_LIGHTS],
     light_count: u32,
     ambient: f32,
     _pad: [f32; 2],
 }
+
+unsafe impl Pod for LightUniforms {}
+unsafe impl Zeroable for LightUniforms {}
 
 const SHADER_SRC: &str = r#"
 struct Uniforms {
@@ -550,42 +556,43 @@ impl Renderer {
             cache: None,
         });
 
-        let viewport_clear_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("viewport_clear_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_fullscreen",
-                buffers: &[],
-                compilation_options: Default::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_viewport_clear",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: None,
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: Default::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: wgpu::TextureFormat::Depth32Float,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Always,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        let viewport_clear_pipeline =
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("viewport_clear_pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vs_fullscreen",
+                    buffers: &[],
+                    compilation_options: Default::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "fs_viewport_clear",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: Default::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: wgpu::TextureFormat::Depth32Float,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Always,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState::default(),
+                multiview: None,
+                cache: None,
+            });
 
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
@@ -674,11 +681,18 @@ impl Renderer {
             _pad: [0.0; 2],
             viewport_bg,
         };
-        self.queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
+        self.queue
+            .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));
 
         // Write light uniforms
         let mut light_uniforms = LightUniforms {
-            lights: [LightData { position: [0.0; 2], radius: 0.0, intensity: 0.0, color: [0.0; 3], _pad: 0.0 }; MAX_LIGHTS],
+            lights: [LightData {
+                position: [0.0; 2],
+                radius: 0.0,
+                intensity: 0.0,
+                color: [0.0; 3],
+                _pad: 0.0,
+            }; MAX_LIGHTS],
             light_count: lights.len().min(MAX_LIGHTS) as u32,
             ambient,
             _pad: [0.0; 2],
@@ -686,7 +700,11 @@ impl Renderer {
         for (i, light) in lights.iter().take(MAX_LIGHTS).enumerate() {
             light_uniforms.lights[i] = *light;
         }
-        self.queue.write_buffer(&self.light_uniform_buffer, 0, bytemuck::bytes_of(&light_uniforms));
+        self.queue.write_buffer(
+            &self.light_uniform_buffer,
+            0,
+            bytemuck::bytes_of(&light_uniforms),
+        );
 
         // Build bloom instances from bloom sources
         let mut bloom_instances: Vec<CellInstance> = Vec::new();
@@ -694,7 +712,12 @@ impl Renderer {
             bloom_instances.push(CellInstance {
                 position: [source.position[0], source.position[1], 0.0],
                 _pad0: 0.0,
-                color: [source.color[0], source.color[1], source.color[2], source.intensity * 0.4],
+                color: [
+                    source.color[0],
+                    source.color[1],
+                    source.color[2],
+                    source.intensity * 0.4,
+                ],
                 rotation: [0.0, 0.0, 0.0, 1.0],
                 emissive: source.radius,
                 _pad1: [0.0; 3],
@@ -704,18 +727,25 @@ impl Renderer {
         // Upload all instances to buffer sequentially
         let world_count = opaque.len() + transparent.len() + bloom_instances.len();
         let total_instances = world_count + screen.len();
-        assert!(total_instances <= MAX_INSTANCES, "Too many instances: {total_instances}");
+        assert!(
+            total_instances <= MAX_INSTANCES,
+            "Too many instances: {total_instances}"
+        );
         self.upload_instances(opaque, 0);
         self.upload_instances(transparent, opaque.len());
         self.upload_instances(&bloom_instances, opaque.len() + transparent.len());
         self.upload_instances(screen, world_count);
 
         let output = self.surface.get_current_texture()?;
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output
+            .texture
+            .create_view(&wgpu::TextureViewDescriptor::default());
 
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("frame_encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("frame_encoder"),
+            });
 
         // Clear full window with window background color
         {
@@ -770,11 +800,7 @@ impl Renderer {
             });
 
             pass.set_scissor_rect(vp_x, vp_y, vp_w.max(1), vp_h.max(1));
-            pass.set_viewport(
-                vp_x as f32, vp_y as f32,
-                vp_w as f32, vp_h as f32,
-                0.0, 1.0,
-            );
+            pass.set_viewport(vp_x as f32, vp_y as f32, vp_w as f32, vp_h as f32, 0.0, 1.0);
             pass.set_bind_group(0, &self.bind_group, &[]);
 
             // Fill viewport region with viewport background color
@@ -790,13 +816,23 @@ impl Renderer {
             // Transparent pass
             if !transparent.is_empty() {
                 pass.set_pipeline(&self.transparent_pipeline);
-                Self::draw_range(&mut pass, &self.instance_buffer, opaque.len(), transparent.len());
+                Self::draw_range(
+                    &mut pass,
+                    &self.instance_buffer,
+                    opaque.len(),
+                    transparent.len(),
+                );
             }
 
             // Bloom pass (additive)
             if !bloom_instances.is_empty() {
                 pass.set_pipeline(&self.bloom_pipeline);
-                Self::draw_range(&mut pass, &self.instance_buffer, opaque.len() + transparent.len(), bloom_instances.len());
+                Self::draw_range(
+                    &mut pass,
+                    &self.instance_buffer,
+                    opaque.len() + transparent.len(),
+                    bloom_instances.len(),
+                );
             }
         }
 
@@ -818,11 +854,7 @@ impl Renderer {
             });
 
             pass.set_scissor_rect(vp_x, vp_y, vp_w.max(1), vp_h.max(1));
-            pass.set_viewport(
-                vp_x as f32, vp_y as f32,
-                vp_w as f32, vp_h as f32,
-                0.0, 1.0,
-            );
+            pass.set_viewport(vp_x as f32, vp_y as f32, vp_w as f32, vp_h as f32, 0.0, 1.0);
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.set_pipeline(&self.screen_pipeline);
             Self::draw_range(&mut pass, &self.instance_buffer, world_count, screen.len());
@@ -839,7 +871,8 @@ impl Renderer {
         }
         let byte_offset = (offset * std::mem::size_of::<CellInstance>()) as u64;
         let data = bytemuck::cast_slice(instances);
-        self.queue.write_buffer(&self.instance_buffer, byte_offset, data);
+        self.queue
+            .write_buffer(&self.instance_buffer, byte_offset, data);
     }
 
     fn draw_range<'a>(

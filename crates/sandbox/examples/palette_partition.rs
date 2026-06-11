@@ -1,5 +1,6 @@
 use palette::solver::{
-    ColorSpace::Hsl, HueBuckets, HuePartition, LightnessBuckets, LightnessPartition,
+    Buckets, ColorSpace::Hsl, HueBuckets, HuePartition, LightnessBuckets, LightnessPartition,
+    Partition,
 };
 use tiles::{
     App, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Rect, Shape, State, Text,

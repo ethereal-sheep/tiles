@@ -1452,6 +1452,7 @@ mod tests {
         let colors = vec![red1, red2, Color::hex(0x00FF00), Color::hex(0x0000FF)];
         let result = HuePartition::new(3)
             .color_space(ColorSpace::Hsl)
+            .offset(0.0)
             .partition(&colors)
             .unwrap();
         let bucket_with_first_red = result[..3].iter().find(|b| b.contains(&red1)).unwrap();
