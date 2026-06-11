@@ -163,7 +163,6 @@ fn ensure_valid_ident(s: &str) -> String {
 
 struct BdfFont {
     height: usize,
-    max_dwidth: usize,
     is_mono: bool,
     a_bbx_w: usize,
     a_bbx_h: usize,
@@ -171,8 +170,6 @@ struct BdfFont {
 }
 
 struct GlyphData {
-    #[allow(dead_code)]
-    grid: Vec<Vec<bool>>,
     dwidth: usize,
     tight_width: u8,
     tight_height: u8,
@@ -181,7 +178,11 @@ struct GlyphData {
     tight_data: Vec<u8>,
 }
 
-fn compute_tight_bounds(grid: &[Vec<bool>], cell_h: usize, cell_w: usize) -> (u8, u8, usize, usize) {
+fn compute_tight_bounds(
+    grid: &[Vec<bool>],
+    cell_h: usize,
+    cell_w: usize,
+) -> (u8, u8, usize, usize) {
     let mut min_col = cell_w;
     let mut max_col = 0usize;
     let mut min_row = cell_h;
@@ -416,7 +417,6 @@ fn parse_bdf(path: &Path) -> Option<BdfFont> {
             glyphs.insert(
                 code,
                 GlyphData {
-                    grid: grid.clone(),
                     dwidth: dw,
                     tight_width: final_width,
                     tight_height,
@@ -429,7 +429,6 @@ fn parse_bdf(path: &Path) -> Option<BdfFont> {
             glyphs.insert(
                 code,
                 GlyphData {
-                    grid: vec![vec![false; cell_w]; cell_h],
                     dwidth: dw,
                     tight_width: 0,
                     tight_height: 0,
@@ -443,7 +442,6 @@ fn parse_bdf(path: &Path) -> Option<BdfFont> {
 
     Some(BdfFont {
         height: cell_h,
-        max_dwidth: cell_w,
         is_mono,
         a_bbx_w,
         a_bbx_h,
