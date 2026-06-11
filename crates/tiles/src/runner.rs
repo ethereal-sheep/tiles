@@ -12,7 +12,9 @@ use crate::camera::Camera;
 use crate::cell::{Cell, CellInstance, LightData};
 use crate::config::Config;
 use crate::drawable::Drawable;
-use crate::input::{self, InputState, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent};
+use crate::input::{
+    self, InputState, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent,
+};
 use crate::renderer::Renderer;
 
 pub trait App {
@@ -223,7 +225,10 @@ impl State {
     }
 }
 
-pub(crate) fn run_app(app: &mut (impl App + 'static), config: Config) -> Result<(), winit::error::EventLoopError> {
+pub(crate) fn run_app(
+    app: &mut (impl App + 'static),
+    config: Config,
+) -> Result<(), winit::error::EventLoopError> {
     let state = State::new(config);
     let event_loop = EventLoop::new().unwrap();
 
@@ -264,12 +269,7 @@ impl ApplicationHandler for Runner<'_> {
         self.app.init(&mut self.state);
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _id: WindowId,
-        event: WindowEvent,
-    ) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         if self.state.quit {
             event_loop.exit();
             return;
@@ -286,14 +286,28 @@ impl ApplicationHandler for Runner<'_> {
                 };
 
                 match key_state {
-                    KeyState::Pressed => { self.state.input.keys_down.insert(key); }
-                    KeyState::Released => { self.state.input.keys_down.remove(&key); }
+                    KeyState::Pressed => {
+                        self.state.input.keys_down.insert(key);
+                    }
+                    KeyState::Released => {
+                        self.state.input.keys_down.remove(&key);
+                    }
                 }
 
-                self.app.on_key(&mut self.state, KeyEvent { key, state: key_state });
+                self.app.on_key(
+                    &mut self.state,
+                    KeyEvent {
+                        key,
+                        state: key_state,
+                    },
+                );
             }
 
-            WindowEvent::MouseInput { state: btn_state, button, .. } => {
+            WindowEvent::MouseInput {
+                state: btn_state,
+                button,
+                ..
+            } => {
                 let mb = match button {
                     winit::event::MouseButton::Left => MouseButton::Left,
                     winit::event::MouseButton::Right => MouseButton::Right,
@@ -312,7 +326,9 @@ impl ApplicationHandler for Runner<'_> {
                     }
                 };
 
-                let viewport_pos = self.state.pixel_to_viewport(self.state.input.mouse_screen_pos);
+                let viewport_pos = self
+                    .state
+                    .pixel_to_viewport(self.state.input.mouse_screen_pos);
                 let mouse_event = MouseEvent {
                     action,
                     screen_pos: self.state.input.mouse_screen_pos,
@@ -346,7 +362,10 @@ impl ApplicationHandler for Runner<'_> {
 
                 let viewport_pos = self.state.pixel_to_viewport(screen_pos);
                 let mouse_event = MouseEvent {
-                    action: MouseAction::Moved { screen_delta, world_delta },
+                    action: MouseAction::Moved {
+                        screen_delta,
+                        world_delta,
+                    },
                     screen_pos,
                     world_pos,
                     viewport_pos,
@@ -362,7 +381,9 @@ impl ApplicationHandler for Runner<'_> {
                 };
                 self.state.input.scroll_delta += scroll;
 
-                let viewport_pos = self.state.pixel_to_viewport(self.state.input.mouse_screen_pos);
+                let viewport_pos = self
+                    .state
+                    .pixel_to_viewport(self.state.input.mouse_screen_pos);
                 let mouse_event = MouseEvent {
                     action: MouseAction::Scrolled(scroll),
                     screen_pos: self.state.input.mouse_screen_pos,
@@ -447,11 +468,16 @@ impl ApplicationHandler for Runner<'_> {
                 }
 
                 transparent.sort_by(|a, b| {
-                    a.position[2].partial_cmp(&b.position[2]).unwrap_or(std::cmp::Ordering::Equal)
+                    a.position[2]
+                        .partial_cmp(&b.position[2])
+                        .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
                 // Build screen-space instances (draw-order, unlit)
-                let screen_instances: Vec<CellInstance> = self.state.screen_cells.iter()
+                let screen_instances: Vec<CellInstance> = self
+                    .state
+                    .screen_cells
+                    .iter()
                     .map(|cell| cell.to_screen_instance())
                     .collect();
 
@@ -459,7 +485,10 @@ impl ApplicationHandler for Runner<'_> {
                     let w = renderer.width();
                     let h = renderer.height();
                     let (proj, offset, size) = self.state.camera.projection(w, h);
-                    let vp_cells = Vec2::new(self.state.camera.viewport_width, self.state.camera.viewport_height);
+                    let vp_cells = Vec2::new(
+                        self.state.camera.viewport_width,
+                        self.state.camera.viewport_height,
+                    );
 
                     match renderer.render(
                         &opaque,

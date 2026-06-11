@@ -1,13 +1,15 @@
-use palette::solver::{HueBuckets, HuePartition, LightnessBuckets, LightnessPartition};
+use palette::solver::{
+    ColorSpace::Hsl, HueBuckets, HuePartition, LightnessBuckets, LightnessPartition,
+};
 use tiles::{
-    App, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Rect, Shape, State,
+    App, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Rect, Shape, State, Text,
 };
 
 const SWATCH_SIZE: u32 = 4;
-const GAP: f32 = 0.0;
+const GAP: f32 = 1.0;
 const MARGIN: f32 = 0.0;
-const LIGHTNESS_BUCKETS: usize = 6;
-const HUE_BUCKETS: usize = 9;
+const LIGHTNESS_BUCKETS: usize = 5;
+const HUE_BUCKETS: usize = 6;
 
 fn make_palette() -> Vec<Color> {
     vec![
@@ -78,18 +80,16 @@ fn make_palette() -> Vec<Color> {
     ]
 }
 
-/// Build buckets from the full palette, then sort: hue first, lightness within each hue group.
-/// Returns a 2D grid: grid[hue_row][lightness_col] = Vec<usize>
-fn combined_partition(palette: &[Color]) -> Vec<Vec<Vec<usize>>> {
+fn combined_partition(palette: &[Color], hue_offset: f32) -> Vec<Vec<Vec<Color>>> {
     let hue_buckets: HueBuckets = HuePartition::new(HUE_BUCKETS)
+        .color_space(Hsl)
         .chroma_threshold(0.03)
-        .fuzziness(0.3)
-        // .offset(0.0)
+        .offset(hue_offset)
         .build(palette)
         .unwrap();
 
     let lightness_buckets: LightnessBuckets = LightnessPartition::new(LIGHTNESS_BUCKETS)
-        .distribution(palette::solver::Distribution::Normal { sigma: 0.7 })
+        .distribution(palette::solver::Distribution::Normal { sigma: 0.5 })
         .build(palette)
         .unwrap();
 
@@ -98,63 +98,86 @@ fn combined_partition(palette: &[Color]) -> Vec<Vec<Vec<usize>>> {
     let mut grid = Vec::new();
 
     for h_bucket in &hue_sorted {
-        let sub_palette: Vec<Color> = h_bucket.iter().map(|&i| palette[i]).collect();
-        let l_sorted = lightness_buckets.sort(&sub_palette);
-
-        let row: Vec<Vec<usize>> = l_sorted
-            .iter()
-            .map(|l_bucket| l_bucket.iter().map(|&local| h_bucket[local]).collect())
-            .collect();
-
-        grid.push(row);
+        let l_sorted = lightness_buckets.sort(h_bucket);
+        grid.push(l_sorted);
     }
+
+    let found = (|| {
+        for c in palette.iter() {
+            for v1 in grid.iter() {
+                for v2 in v1 {
+                    for vc in v2 {
+                        if c == vc {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    })();
+
+    assert!(found);
 
     grid
 }
 
+const HUE_STEP: f32 = 10.0;
+
 struct PalettePartition {
     palette: Vec<Color>,
-    grid: Vec<Vec<Vec<usize>>>,
+    hue_offset: f32,
+    grid: Vec<Vec<Vec<Color>>>,
 }
 
 impl App for PalettePartition {
     fn init(&mut self, state: &mut State) {
-        state.set_viewport_background(0.05, 0.05, 0.08, 1.0);
-        state.set_window_background(0.0, 0.0, 0.0, 1.0);
+        state.set_viewport_background(0.0, 0.0, 0.0, 1.0);
+        state.set_window_background(0.12, 0.12, 0.15, 1.0);
         state.set_ambient_illumination(1.0);
     }
 
     fn update(&mut self, _state: &mut State) {}
 
     fn draw(&mut self, state: &mut State) {
-        state.set_viewport_background(0.0, 0.0, 0.0, 1.0);
+        let offset_string = format!("{}", self.hue_offset);
+        state.draw_screen(Text::new(&tiles::font::TINY5_4X5, offset_string));
+
         let step = SWATCH_SIZE as f32 + GAP;
-        let mut count = 0;
-        let mut y = MARGIN - 20.0;
+        let mut y = MARGIN;
 
         for (j, row) in self.grid.iter().enumerate() {
+            y = step * j as f32 + GAP * 4.0 + 100.0;
             for (col_group, cell) in row.iter().enumerate() {
                 let x_base = MARGIN + col_group as f32 * (step * 12.0);
 
-                for (i, &color_idx) in cell.iter().enumerate() {
+                for (i, &color) in cell.iter().enumerate() {
                     let x = x_base + i as f32 * step;
-                    let color = self.palette[color_idx];
                     state.draw_screen(
                         Rect::from_top_left(x, y, SWATCH_SIZE, SWATCH_SIZE)
                             .fill()
                             .color(color),
                     );
-                    count += 1;
                 }
             }
-
-            y = step * j as f32 + GAP * 4.0 + 20.0;
         }
     }
 
     fn on_key(&mut self, state: &mut State, event: KeyEvent) {
-        if event.state == KeyState::Pressed && event.key == KeyCode::Escape {
-            state.quit = true;
+        if event.state != KeyState::Pressed {
+            return;
+        }
+        match event.key {
+            KeyCode::Escape => state.quit = true,
+            KeyCode::Right => {
+                self.hue_offset = (self.hue_offset + HUE_STEP) % 360.0;
+                self.grid = combined_partition(&self.palette, self.hue_offset);
+            }
+            KeyCode::Left => {
+                self.hue_offset = (self.hue_offset - HUE_STEP + 360.0) % 360.0;
+                self.grid = combined_partition(&self.palette, self.hue_offset);
+            }
+            _ => {}
         }
     }
 
@@ -163,15 +186,24 @@ impl App for PalettePartition {
 
 fn main() {
     let palette = make_palette();
-    let grid = combined_partition(&palette);
+    let hue_offset = 0.0;
+    let grid = combined_partition(&palette, hue_offset);
 
-    let config = Config::builder()
+    let config: Config = Config::builder()
         .title("Palette Partition")
-        .width(1024)
-        .height(768)
+        .width(512)
+        .height(512)
         .viewport(256.0, 256.0)
         .no_file()
         .build();
 
-    tiles::run(PalettePartition { palette, grid }, config).unwrap();
+    tiles::run(
+        PalettePartition {
+            palette,
+            hue_offset,
+            grid,
+        },
+        config,
+    )
+    .unwrap();
 }

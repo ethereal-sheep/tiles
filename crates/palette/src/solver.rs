@@ -81,7 +81,7 @@ impl LightnessPartition {
         self
     }
 
-    pub fn partition(self, colors: &[Color]) -> Result<Vec<Vec<usize>>, PartitionError> {
+    pub fn partition(self, colors: &[Color]) -> Result<Vec<Vec<Color>>, PartitionError> {
         if colors.is_empty() {
             if self.num_buckets == 0 {
                 return Err(PartitionError::BucketCountZero);
@@ -99,7 +99,10 @@ impl LightnessPartition {
             return Err(PartitionError::BucketCountExceedsColors);
         }
 
-        let lightnesses: Vec<f32> = colors.iter().map(|c| lightness(c, self.color_space)).collect();
+        let lightnesses: Vec<f32> = colors
+            .iter()
+            .map(|c| lightness(c, self.color_space))
+            .collect();
         let boundaries = self.compute_boundaries_from(&lightnesses);
 
         Ok(LightnessBuckets {
@@ -111,13 +114,19 @@ impl LightnessPartition {
 
     fn compute_boundaries_from(&self, lightnesses: &[f32]) -> Vec<f32> {
         let min_l = lightnesses.iter().cloned().fold(f32::INFINITY, f32::min);
-        let max_l = lightnesses.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let max_l = lightnesses
+            .iter()
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
 
         match self.distribution {
             Distribution::Uniform | Distribution::Normal { .. } => {
                 compute_boundaries(self.num_buckets, self.distribution, min_l, max_l)
             }
-            Distribution::Symmetric { concentration, floor } => {
+            Distribution::Symmetric {
+                concentration,
+                floor,
+            } => {
                 let mut sorted: Vec<f32> = lightnesses.to_vec();
                 sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
                 let counts = symmetric_counts(self.num_buckets, sorted.len(), concentration, floor);
@@ -144,14 +153,14 @@ impl LightnessBuckets {
         self.boundaries.len() - 1
     }
 
-    pub fn sort(&self, colors: &[Color]) -> Vec<Vec<usize>> {
+    pub fn sort(&self, colors: &[Color]) -> Vec<Vec<Color>> {
         let num_buckets = self.num_buckets();
         let mut buckets = vec![Vec::new(); num_buckets];
 
-        for (i, color) in colors.iter().enumerate() {
+        for color in colors.iter() {
             let l = lightness(color, self.color_space);
             let idx = find_bucket(&self.boundaries, l);
-            buckets[idx].push(i);
+            buckets[idx].push(*color);
 
             if self.fuzziness > 0.0 && num_buckets > 1 {
                 let bucket_width = self.boundaries[idx + 1] - self.boundaries[idx];
@@ -160,10 +169,10 @@ impl LightnessBuckets {
                 let dist_to_upper = self.boundaries[idx + 1] - l;
 
                 if dist_to_lower < fuzz_zone && idx > 0 {
-                    buckets[idx - 1].push(i);
+                    buckets[idx - 1].push(*color);
                 }
                 if dist_to_upper < fuzz_zone && idx < num_buckets - 1 {
-                    buckets[idx + 1].push(i);
+                    buckets[idx + 1].push(*color);
                 }
             }
         }
@@ -211,7 +220,7 @@ impl HuePartition {
         self
     }
 
-    pub fn partition(self, colors: &[Color]) -> Result<Vec<Vec<usize>>, HuePartitionError> {
+    pub fn partition(self, colors: &[Color]) -> Result<Vec<Vec<Color>>, HuePartitionError> {
         Ok(self.build(colors)?.sort(colors))
     }
 
@@ -226,7 +235,9 @@ impl HuePartition {
             .map(|c| hue(c, self.color_space))
             .collect();
 
-        let offset = self.offset.unwrap_or_else(|| find_largest_gap_midpoint(&hues));
+        let offset = self
+            .offset
+            .unwrap_or_else(|| find_largest_gap_midpoint(&hues));
 
         Ok(HueBuckets {
             offset,
@@ -251,25 +262,24 @@ impl HueBuckets {
         self.num_buckets
     }
 
-    /// Sort colors into hue buckets. Returns num_buckets + 1 buckets (last is achromatic).
-    pub fn sort(&self, colors: &[Color]) -> Vec<Vec<usize>> {
+    pub fn sort(&self, colors: &[Color]) -> Vec<Vec<Color>> {
         let mut buckets = vec![Vec::new(); self.num_buckets];
         let mut achromatic = Vec::new();
         let bucket_width = 360.0 / self.num_buckets as f32;
         let fuzz_zone = self.fuzziness * bucket_width * 0.5;
 
-        for (i, color) in colors.iter().enumerate() {
+        for color in colors.iter() {
             let chroma = compute_chroma(color, self.color_space);
             if chroma < self.chroma_threshold {
-                achromatic.push(i);
+                achromatic.push(*color);
                 continue;
             }
 
             let hue_val = hue(color, self.color_space);
-            let rotated = (hue_val - self.offset + 360.0) % 360.0;
+            let rotated = (hue_val - self.offset - bucket_width * 0.5 + 360.0) % 360.0;
             let bucket_idx = ((rotated / 360.0) * self.num_buckets as f32).floor() as usize;
             let bucket_idx = bucket_idx.min(self.num_buckets - 1);
-            buckets[bucket_idx].push(i);
+            buckets[bucket_idx].push(*color);
 
             if fuzz_zone > 0.0 && self.num_buckets > 1 {
                 let bucket_start = bucket_idx as f32 * bucket_width;
@@ -278,15 +288,15 @@ impl HueBuckets {
                 let dist_to_upper = bucket_end - rotated;
 
                 if dist_to_lower < fuzz_zone && bucket_idx > 0 {
-                    buckets[bucket_idx - 1].push(i);
+                    buckets[bucket_idx - 1].push(*color);
                 } else if dist_to_lower < fuzz_zone && bucket_idx == 0 {
-                    buckets[self.num_buckets - 1].push(i);
+                    buckets[self.num_buckets - 1].push(*color);
                 }
 
                 if dist_to_upper < fuzz_zone && bucket_idx < self.num_buckets - 1 {
-                    buckets[bucket_idx + 1].push(i);
+                    buckets[bucket_idx + 1].push(*color);
                 } else if dist_to_upper < fuzz_zone && bucket_idx == self.num_buckets - 1 {
-                    buckets[0].push(i);
+                    buckets[0].push(*color);
                 }
             }
         }
@@ -295,7 +305,6 @@ impl HueBuckets {
         buckets
     }
 }
-
 
 fn compute_boundaries(
     num_buckets: usize,
@@ -407,7 +416,6 @@ fn jenks_breaks(sorted_vals: &[f32], num_buckets: usize) -> Vec<usize> {
     }
     counts
 }
-
 
 fn symmetric_counts(
     num_buckets: usize,
@@ -672,21 +680,25 @@ mod tests {
 
     #[test]
     fn lightness_builder_defaults() {
-        let colors = vec![Color::hex(0x000000), Color::hex(0xFFFFFF)];
+        let black = Color::hex(0x000000);
+        let white = Color::hex(0xFFFFFF);
+        let colors = vec![black, white];
         let result = LightnessPartition::new(2).partition(&colors).unwrap();
-        assert_eq!(result[0], vec![0]);
-        assert_eq!(result[1], vec![1]);
+        assert_eq!(result[0], vec![black]);
+        assert_eq!(result[1], vec![white]);
     }
 
     #[test]
     fn lightness_builder_color_space() {
-        let colors = vec![Color::hex(0x000000), Color::hex(0xFFFFFF)];
+        let black = Color::hex(0x000000);
+        let white = Color::hex(0xFFFFFF);
+        let colors = vec![black, white];
         let result = LightnessPartition::new(2)
             .color_space(ColorSpace::Hsv)
             .partition(&colors)
             .unwrap();
-        assert_eq!(result[0], vec![0]);
-        assert_eq!(result[1], vec![1]);
+        assert_eq!(result[0], vec![black]);
+        assert_eq!(result[1], vec![white]);
     }
 
     #[test]
@@ -702,7 +714,6 @@ mod tests {
             .distribution(Distribution::Normal { sigma: 0.3 })
             .partition(&colors)
             .unwrap();
-        // Normal should give wider center bucket
         assert!(normal[2].len() > uniform[2].len());
     }
 
@@ -778,9 +789,7 @@ mod tests {
             .chroma_threshold(0.99)
             .partition(&colors)
             .unwrap();
-        // With high threshold, both colors are achromatic
         assert_eq!(high_thresh[2].len(), 2);
-        // With low threshold, gray is achromatic but red is not
         assert_eq!(low_thresh[2].len(), 1);
     }
 
@@ -836,10 +845,8 @@ mod tests {
             })
             .collect();
         let buckets = LightnessPartition::new(4).build(&full).unwrap();
-        // Sort only the dark half
         let dark: Vec<Color> = full[..5].to_vec();
         let result = buckets.sort(&dark);
-        // All dark colors should land in first bucket(s), none in last
         assert!(result[3].is_empty());
         let total: usize = result.iter().map(|b| b.len()).sum();
         assert_eq!(total, 5);
@@ -885,10 +892,7 @@ mod tests {
             Color::hex(0x0000FF),
             Color::hex(0x808080),
         ];
-        let partition_result = HuePartition::new(3)
-            .offset(0.0)
-            .partition(&colors)
-            .unwrap();
+        let partition_result = HuePartition::new(3).offset(0.0).partition(&colors).unwrap();
         let buckets = HuePartition::new(3).offset(0.0).build(&colors).unwrap();
         let sort_result = buckets.sort(&colors);
         assert_eq!(partition_result, sort_result);
@@ -905,12 +909,10 @@ mod tests {
             Color::hex(0x00FFFF),
         ];
         let buckets = HuePartition::new(3).build(&full).unwrap();
-        // Sort only a subset
         let subset = vec![Color::hex(0xFF0000), Color::hex(0x0000FF)];
         let result = buckets.sort(&subset);
         let chromatic_total: usize = result[..3].iter().map(|b| b.len()).sum();
         assert_eq!(chromatic_total, 2);
-        // They should be in different buckets
         let non_empty: Vec<_> = result[..3].iter().filter(|b| !b.is_empty()).collect();
         assert_eq!(non_empty.len(), 2);
     }
@@ -979,8 +981,8 @@ mod tests {
     #[test]
     fn hue_buckets_num_buckets() {
         let colors = vec![Color::hex(0xFF0000), Color::hex(0x00FF00)];
-        let buckets = HuePartition::new(5).build(&colors).unwrap();
-        assert_eq!(buckets.num_buckets(), 5);
+        let buckets = HuePartition::new(6).build(&colors).unwrap();
+        assert_eq!(buckets.num_buckets(), 6);
     }
 
     // --- lightness partition tests ---
@@ -994,46 +996,39 @@ mod tests {
 
     #[test]
     fn black_goes_to_first_bucket() {
-        let colors = vec![
-            Color::hex(0x000000),
-            Color::hex(0xFFFFFF),
-            Color::hex(0x808080),
-        ];
+        let black = Color::hex(0x000000);
+        let colors = vec![black, Color::hex(0xFFFFFF), Color::hex(0x808080)];
         let result = LightnessPartition::new(3)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
-        assert!(result[0].contains(&0));
+        assert!(result[0].contains(&black));
     }
 
     #[test]
     fn white_goes_to_last_bucket() {
-        let colors = vec![
-            Color::hex(0x000000),
-            Color::hex(0xFFFFFF),
-            Color::hex(0x808080),
-        ];
+        let white = Color::hex(0xFFFFFF);
+        let colors = vec![Color::hex(0x000000), white, Color::hex(0x808080)];
         let result = LightnessPartition::new(3)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
-        assert!(result[2].contains(&1));
+        assert!(result[2].contains(&white));
     }
 
     #[test]
     fn partitions_dark_mid_light() {
-        let colors = vec![
-            Color::hex(0x111111),
-            Color::hex(0x888888),
-            Color::hex(0xEEEEEE),
-        ];
+        let dark = Color::hex(0x111111);
+        let mid = Color::hex(0x888888);
+        let light = Color::hex(0xEEEEEE);
+        let colors = vec![dark, mid, light];
         let result = LightnessPartition::new(3)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
-        assert!(result[0].contains(&0));
-        assert!(result[1].contains(&1));
-        assert!(result[2].contains(&2));
+        assert!(result[0].contains(&dark));
+        assert!(result[1].contains(&mid));
+        assert!(result[2].contains(&light));
     }
 
     #[test]
@@ -1048,25 +1043,24 @@ mod tests {
             .partition(&colors)
             .unwrap();
         assert_eq!(result.len(), 1);
-        assert_eq!(result[0], vec![0, 1, 2]);
+        assert_eq!(result[0].len(), 3);
     }
 
     #[test]
-    fn indices_reference_original_positions() {
-        let colors = vec![
-            Color::hex(0xFFFFFF),
-            Color::hex(0x000000),
-            Color::hex(0xCCCCCC),
-            Color::hex(0x111111),
-        ];
+    fn dark_and_light_in_correct_buckets() {
+        let white = Color::hex(0xFFFFFF);
+        let black = Color::hex(0x000000);
+        let light_gray = Color::hex(0xCCCCCC);
+        let dark_gray = Color::hex(0x111111);
+        let colors = vec![white, black, light_gray, dark_gray];
         let result = LightnessPartition::new(2)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
-        assert!(result[0].contains(&1));
-        assert!(result[0].contains(&3));
-        assert!(result[1].contains(&0));
-        assert!(result[1].contains(&2));
+        assert!(result[0].contains(&black));
+        assert!(result[0].contains(&dark_gray));
+        assert!(result[1].contains(&white));
+        assert!(result[1].contains(&light_gray));
     }
 
     #[test]
@@ -1236,25 +1230,30 @@ mod tests {
 
     #[test]
     fn cluster_groups_similar_lightness() {
-        let colors = vec![
+        let darks = [
             Color::hex(0x101010),
             Color::hex(0x141414),
             Color::hex(0x181818),
+        ];
+        let lights = [
             Color::hex(0xE0E0E0),
             Color::hex(0xE8E8E8),
             Color::hex(0xF0F0F0),
+        ];
+        let colors = vec![
+            darks[0], darks[1], darks[2], lights[0], lights[1], lights[2],
         ];
         let result = LightnessPartition::new(2)
             .color_space(ColorSpace::Hsl)
             .distribution(Distribution::Cluster)
             .partition(&colors)
             .unwrap();
-        assert!(result[0].contains(&0));
-        assert!(result[0].contains(&1));
-        assert!(result[0].contains(&2));
-        assert!(result[1].contains(&3));
-        assert!(result[1].contains(&4));
-        assert!(result[1].contains(&5));
+        for d in &darks {
+            assert!(result[0].contains(d));
+        }
+        for l in &lights {
+            assert!(result[1].contains(l));
+        }
     }
 
     #[test]
@@ -1322,11 +1321,10 @@ mod tests {
 
     #[test]
     fn hue_grays_go_to_achromatic_bucket() {
-        let colors = vec![
-            Color::hex(0x000000),
-            Color::hex(0x808080),
-            Color::hex(0xFFFFFF),
-        ];
+        let black = Color::hex(0x000000);
+        let gray = Color::hex(0x808080);
+        let white = Color::hex(0xFFFFFF);
+        let colors = vec![black, gray, white];
         let result = HuePartition::new(3)
             .color_space(ColorSpace::Hsl)
             .chroma_threshold(0.05)
@@ -1334,9 +1332,9 @@ mod tests {
             .unwrap();
         let achromatic = &result[3];
         assert_eq!(achromatic.len(), 3);
-        assert!(achromatic.contains(&0));
-        assert!(achromatic.contains(&1));
-        assert!(achromatic.contains(&2));
+        assert!(achromatic.contains(&black));
+        assert!(achromatic.contains(&gray));
+        assert!(achromatic.contains(&white));
     }
 
     #[test]
@@ -1359,20 +1357,19 @@ mod tests {
 
     #[test]
     fn hue_similar_hues_share_bucket() {
-        let colors = vec![
-            Color::hex(0xFF0000),
-            Color::hex(0xFF3300),
-            Color::hex(0x0000FF),
-            Color::hex(0x0033FF),
-        ];
+        let red = Color::hex(0xFF0000);
+        let red_orange = Color::hex(0xFF3300);
+        let blue = Color::hex(0x0000FF);
+        let blue_ish = Color::hex(0x0033FF);
+        let colors = vec![red, red_orange, blue, blue_ish];
         let result = HuePartition::new(2)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
-        let bucket_with_red = result[..2].iter().find(|b| b.contains(&0)).unwrap();
-        assert!(bucket_with_red.contains(&1));
-        let bucket_with_blue = result[..2].iter().find(|b| b.contains(&2)).unwrap();
-        assert!(bucket_with_blue.contains(&3));
+        let bucket_with_red = result[..2].iter().find(|b| b.contains(&red)).unwrap();
+        assert!(bucket_with_red.contains(&red_orange));
+        let bucket_with_blue = result[..2].iter().find(|b| b.contains(&blue)).unwrap();
+        assert!(bucket_with_blue.contains(&blue_ish));
     }
 
     #[test]
@@ -1390,7 +1387,7 @@ mod tests {
     }
 
     #[test]
-    fn hue_all_indices_present_once() {
+    fn hue_all_colors_present_once() {
         let colors = vec![
             Color::hex(0xFF0000),
             Color::hex(0x00FF00),
@@ -1404,40 +1401,38 @@ mod tests {
             .chroma_threshold(0.05)
             .partition(&colors)
             .unwrap();
-        let mut all_indices: Vec<usize> = result.iter().flatten().copied().collect();
-        all_indices.sort();
-        assert_eq!(all_indices, vec![0, 1, 2, 3, 4, 5]);
+        let all: Vec<Color> = result.iter().flatten().copied().collect();
+        assert_eq!(all.len(), 6);
+        for c in &colors {
+            assert!(all.contains(c));
+        }
     }
 
     #[test]
     fn hue_oklch_separates_warm_cool() {
-        let colors = vec![
-            Color::hex(0xFF4400),
-            Color::hex(0xFF0000),
-            Color::hex(0x0066FF),
-            Color::hex(0x0099FF),
-        ];
+        let warm1 = Color::hex(0xFF4400);
+        let warm2 = Color::hex(0xFF0000);
+        let cool1 = Color::hex(0x0066FF);
+        let cool2 = Color::hex(0x0099FF);
+        let colors = vec![warm1, warm2, cool1, cool2];
         let result = HuePartition::new(2).partition(&colors).unwrap();
-        let bucket_with_warm = result[..2].iter().find(|b| b.contains(&0)).unwrap();
-        assert!(bucket_with_warm.contains(&1));
-        let bucket_with_cool = result[..2].iter().find(|b| b.contains(&2)).unwrap();
-        assert!(bucket_with_cool.contains(&3));
+        let bucket_with_warm = result[..2].iter().find(|b| b.contains(&warm1)).unwrap();
+        assert!(bucket_with_warm.contains(&warm2));
+        let bucket_with_cool = result[..2].iter().find(|b| b.contains(&cool1)).unwrap();
+        assert!(bucket_with_cool.contains(&cool2));
     }
 
     #[test]
     fn hue_wrap_around_keeps_reds_together() {
-        let colors = vec![
-            Color::hex(0xFF1A1A),
-            Color::hex(0xFF0033),
-            Color::hex(0x00FF00),
-            Color::hex(0x0000FF),
-        ];
+        let red1 = Color::hex(0xFF1A1A);
+        let red2 = Color::hex(0xFF0033);
+        let colors = vec![red1, red2, Color::hex(0x00FF00), Color::hex(0x0000FF)];
         let result = HuePartition::new(3)
             .color_space(ColorSpace::Hsl)
             .partition(&colors)
             .unwrap();
-        let bucket_with_first_red = result[..3].iter().find(|b| b.contains(&0)).unwrap();
-        assert!(bucket_with_first_red.contains(&1));
+        let bucket_with_first_red = result[..3].iter().find(|b| b.contains(&red1)).unwrap();
+        assert!(bucket_with_first_red.contains(&red2));
     }
 
     // --- fuzziness tests ---
@@ -1482,22 +1477,19 @@ mod tests {
 
     #[test]
     fn lightness_fuzz_boundary_color_appears_in_two_buckets() {
-        let colors = vec![
-            Color::hex(0x000000),
-            Color::hex(0x808080),
-            Color::hex(0xFFFFFF),
-        ];
+        let mid = Color::hex(0x808080);
+        let colors = vec![Color::hex(0x000000), mid, Color::hex(0xFFFFFF)];
         let result = LightnessPartition::new(3)
             .color_space(ColorSpace::Hsl)
             .fuzziness(1.0)
             .partition(&colors)
             .unwrap();
-        let mid_appearances: usize = result.iter().filter(|b| b.contains(&1)).count();
+        let mid_appearances: usize = result.iter().filter(|b| b.contains(&mid)).count();
         assert!(mid_appearances >= 2);
     }
 
     #[test]
-    fn lightness_fuzz_all_indices_still_present() {
+    fn lightness_fuzz_all_colors_still_present() {
         let colors: Vec<Color> = (0..15)
             .map(|i| {
                 let v = (i as f32 / 14.0 * 255.0) as u8;
@@ -1508,8 +1500,9 @@ mod tests {
             .fuzziness(0.3)
             .partition(&colors)
             .unwrap();
-        for i in 0..15 {
-            assert!(result.iter().any(|b| b.contains(&i)));
+        let all: Vec<Color> = result.iter().flatten().copied().collect();
+        for c in &colors {
+            assert!(all.contains(c));
         }
     }
 
@@ -1627,7 +1620,7 @@ mod tests {
     }
 
     #[test]
-    fn hue_fuzz_all_indices_still_present() {
+    fn hue_fuzz_all_colors_still_present() {
         let colors = vec![
             Color::hex(0xFF0000),
             Color::hex(0x00FF00),
@@ -1639,8 +1632,9 @@ mod tests {
             .fuzziness(0.5)
             .partition(&colors)
             .unwrap();
-        for i in 0..5 {
-            assert!(result.iter().any(|b| b.contains(&i)));
+        let all: Vec<Color> = result.iter().flatten().copied().collect();
+        for c in &colors {
+            assert!(all.contains(c));
         }
     }
 }
