@@ -1,5 +1,18 @@
 use tiles::Color;
 
+pub trait Buckets {
+    fn num_buckets(&self) -> usize;
+    fn sort(&self, colors: &[Color]) -> Vec<Vec<Color>>;
+}
+
+pub trait Partition {
+    type Buckets: Buckets;
+    type Error;
+
+    fn build(self, colors: &[Color]) -> Result<Self::Buckets, Self::Error>;
+    fn partition(self, colors: &[Color]) -> Result<Vec<Vec<Color>>, Self::Error>;
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ColorSpace {
     Hsl,
@@ -81,37 +94,6 @@ impl LightnessPartition {
         self
     }
 
-    pub fn partition(self, colors: &[Color]) -> Result<Vec<Vec<Color>>, PartitionError> {
-        if colors.is_empty() {
-            if self.num_buckets == 0 {
-                return Err(PartitionError::BucketCountZero);
-            }
-            return Ok(vec![Vec::new(); self.num_buckets]);
-        }
-        Ok(self.build(colors)?.sort(colors))
-    }
-
-    pub fn build(self, colors: &[Color]) -> Result<LightnessBuckets, PartitionError> {
-        if self.num_buckets == 0 {
-            return Err(PartitionError::BucketCountZero);
-        }
-        if !colors.is_empty() && self.num_buckets > colors.len() {
-            return Err(PartitionError::BucketCountExceedsColors);
-        }
-
-        let lightnesses: Vec<f32> = colors
-            .iter()
-            .map(|c| lightness(c, self.color_space))
-            .collect();
-        let boundaries = self.compute_boundaries_from(&lightnesses);
-
-        Ok(LightnessBuckets {
-            boundaries,
-            color_space: self.color_space,
-            fuzziness: self.fuzziness,
-        })
-    }
-
     fn compute_boundaries_from(&self, lightnesses: &[f32]) -> Vec<f32> {
         let min_l = lightnesses.iter().cloned().fold(f32::INFINITY, f32::min);
         let max_l = lightnesses
@@ -142,18 +124,54 @@ impl LightnessPartition {
     }
 }
 
+impl Partition for LightnessPartition {
+    type Buckets = LightnessBuckets;
+    type Error = PartitionError;
+
+    fn build(self, colors: &[Color]) -> Result<LightnessBuckets, PartitionError> {
+        if self.num_buckets == 0 {
+            return Err(PartitionError::BucketCountZero);
+        }
+        if !colors.is_empty() && self.num_buckets > colors.len() {
+            return Err(PartitionError::BucketCountExceedsColors);
+        }
+
+        let lightnesses: Vec<f32> = colors
+            .iter()
+            .map(|c| lightness(c, self.color_space))
+            .collect();
+        let boundaries = self.compute_boundaries_from(&lightnesses);
+
+        Ok(LightnessBuckets {
+            boundaries,
+            color_space: self.color_space,
+            fuzziness: self.fuzziness,
+        })
+    }
+
+    fn partition(self, colors: &[Color]) -> Result<Vec<Vec<Color>>, PartitionError> {
+        if colors.is_empty() {
+            if self.num_buckets == 0 {
+                return Err(PartitionError::BucketCountZero);
+            }
+            return Ok(vec![Vec::new(); self.num_buckets]);
+        }
+        Ok(self.build(colors)?.sort(colors))
+    }
+}
+
 pub struct LightnessBuckets {
     boundaries: Vec<f32>,
     color_space: ColorSpace,
     fuzziness: f32,
 }
 
-impl LightnessBuckets {
-    pub fn num_buckets(&self) -> usize {
+impl Buckets for LightnessBuckets {
+    fn num_buckets(&self) -> usize {
         self.boundaries.len() - 1
     }
 
-    pub fn sort(&self, colors: &[Color]) -> Vec<Vec<Color>> {
+    fn sort(&self, colors: &[Color]) -> Vec<Vec<Color>> {
         let num_buckets = self.num_buckets();
         let mut buckets = vec![Vec::new(); num_buckets];
 
@@ -219,12 +237,13 @@ impl HuePartition {
         self.offset = Some(offset);
         self
     }
+}
 
-    pub fn partition(self, colors: &[Color]) -> Result<Vec<Vec<Color>>, HuePartitionError> {
-        Ok(self.build(colors)?.sort(colors))
-    }
+impl Partition for HuePartition {
+    type Buckets = HueBuckets;
+    type Error = HuePartitionError;
 
-    pub fn build(self, colors: &[Color]) -> Result<HueBuckets, HuePartitionError> {
+    fn build(self, colors: &[Color]) -> Result<HueBuckets, HuePartitionError> {
         if self.num_buckets == 0 {
             return Err(HuePartitionError::BucketCountZero);
         }
@@ -247,6 +266,10 @@ impl HuePartition {
             fuzziness: self.fuzziness,
         })
     }
+
+    fn partition(self, colors: &[Color]) -> Result<Vec<Vec<Color>>, HuePartitionError> {
+        Ok(self.build(colors)?.sort(colors))
+    }
 }
 
 pub struct HueBuckets {
@@ -257,12 +280,12 @@ pub struct HueBuckets {
     fuzziness: f32,
 }
 
-impl HueBuckets {
-    pub fn num_buckets(&self) -> usize {
+impl Buckets for HueBuckets {
+    fn num_buckets(&self) -> usize {
         self.num_buckets
     }
 
-    pub fn sort(&self, colors: &[Color]) -> Vec<Vec<Color>> {
+    fn sort(&self, colors: &[Color]) -> Vec<Vec<Color>> {
         let mut buckets = vec![Vec::new(); self.num_buckets];
         let mut achromatic = Vec::new();
         let bucket_width = 360.0 / self.num_buckets as f32;
