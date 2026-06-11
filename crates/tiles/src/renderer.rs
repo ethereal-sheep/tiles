@@ -11,11 +11,11 @@ const MAX_LIGHTS: usize = 64;
 #[derive(Copy, Clone)]
 struct Uniforms {
     projection: [[f32; 4]; 4],
+    viewport_bg: [f32; 4],
     viewport_offset: [f32; 2],
     viewport_size: [f32; 2],
     viewport_cells: [f32; 2],
     _pad: [f32; 2],
-    viewport_bg: [f32; 4],
 }
 
 unsafe impl Pod for Uniforms {}
@@ -36,11 +36,11 @@ unsafe impl Zeroable for LightUniforms {}
 const SHADER_SRC: &str = r#"
 struct Uniforms {
     projection: mat4x4<f32>,
+    viewport_bg: vec4<f32>,
     viewport_offset: vec2<f32>,
     viewport_size: vec2<f32>,
     viewport_cells: vec2<f32>,
     _pad: vec2<f32>,
-    viewport_bg: vec4<f32>,
 }
 
 struct LightData {
@@ -675,11 +675,11 @@ impl Renderer {
     ) -> Result<(), wgpu::SurfaceError> {
         let uniforms = Uniforms {
             projection: projection.to_cols_array_2d(),
+            viewport_bg,
             viewport_offset: viewport_offset.to_array(),
             viewport_size: viewport_size.to_array(),
             viewport_cells: viewport_cells.to_array(),
             _pad: [0.0; 2],
-            viewport_bg,
         };
         self.queue
             .write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&uniforms));

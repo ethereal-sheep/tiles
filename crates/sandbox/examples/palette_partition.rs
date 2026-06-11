@@ -94,10 +94,9 @@ fn combined_partition(palette: &[Color], hue_offset: f32) -> Vec<Vec<Vec<Color>>
         .build(palette)
         .unwrap();
 
-    let hue_sorted = hue_buckets.sort(palette);
-
     let mut grid = Vec::new();
 
+    let hue_sorted = hue_buckets.sort(palette);
     for h_bucket in &hue_sorted {
         let l_sorted = lightness_buckets.sort(h_bucket);
         grid.push(l_sorted);
