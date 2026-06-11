@@ -78,11 +78,35 @@ impl State {
     // --- Drawing ---
 
     pub fn draw(&mut self, drawable: impl Drawable) {
-        drawable.emit_cells(&mut |cell| self.cells.push(cell));
+        let half_w = self.camera.viewport_width / 2.0;
+        let half_h = self.camera.viewport_height / 2.0;
+        let min_x = self.camera.position.x - half_w - 1.0;
+        let max_x = self.camera.position.x + half_w + 1.0;
+        let min_y = self.camera.position.y - half_h - 1.0;
+        let max_y = self.camera.position.y + half_h + 1.0;
+        drawable.emit_cells(&mut |cell| {
+            if cell.position.x >= min_x
+                && cell.position.x <= max_x
+                && cell.position.y >= min_y
+                && cell.position.y <= max_y
+            {
+                self.cells.push(cell);
+            }
+        });
     }
 
     pub fn draw_screen(&mut self, drawable: impl Drawable) {
-        drawable.emit_cells(&mut |cell| self.screen_cells.push(cell));
+        let vw = self.camera.viewport_width;
+        let vh = self.camera.viewport_height;
+        drawable.emit_cells(&mut |cell| {
+            if cell.position.x >= -1.0
+                && cell.position.x <= vw
+                && cell.position.y >= -1.0
+                && cell.position.y <= vh
+            {
+                self.screen_cells.push(cell);
+            }
+        });
     }
 
     // --- Camera ---
