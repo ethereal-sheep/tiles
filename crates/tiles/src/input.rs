@@ -1,15 +1,71 @@
 use glam::Vec2;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyCode {
-    A, B, C, D, E, F, G, H, I, J, K, L, M,
-    N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
-    Key0, Key1, Key2, Key3, Key4, Key5, Key6, Key7, Key8, Key9,
-    Space, Enter, Escape, Backspace, Tab,
-    Left, Right, Up, Down,
-    LShift, RShift, LCtrl, RCtrl, LAlt, RAlt,
-    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    A,
+    B,
+    C,
+    D,
+    E,
+    F,
+    G,
+    H,
+    I,
+    J,
+    K,
+    L,
+    M,
+    N,
+    O,
+    P,
+    Q,
+    R,
+    S,
+    T,
+    U,
+    V,
+    W,
+    X,
+    Y,
+    Z,
+    Key0,
+    Key1,
+    Key2,
+    Key3,
+    Key4,
+    Key5,
+    Key6,
+    Key7,
+    Key8,
+    Key9,
+    Space,
+    Enter,
+    Escape,
+    Backspace,
+    Tab,
+    Left,
+    Right,
+    Up,
+    Down,
+    LShift,
+    RShift,
+    LCtrl,
+    RCtrl,
+    LAlt,
+    RAlt,
+    F1,
+    F2,
+    F3,
+    F4,
+    F5,
+    F6,
+    F7,
+    F8,
+    F9,
+    F10,
+    F11,
+    F12,
     Unknown,
 }
 
@@ -36,7 +92,10 @@ pub enum MouseButton {
 pub enum MouseAction {
     Pressed(MouseButton),
     Released(MouseButton),
-    Moved { screen_delta: Vec2, world_delta: Vec2 },
+    Moved {
+        screen_delta: Vec2,
+        world_delta: Vec2,
+    },
     Scrolled(f32),
 }
 
@@ -56,6 +115,8 @@ pub(crate) struct InputState {
     pub prev_mouse_screen_pos: Vec2,
     pub prev_mouse_world_pos: Vec2,
     pub scroll_delta: f32,
+    pub keys_states: HashMap<KeyCode, ButtonState>,
+    pub mouse_buttons_states: HashMap<MouseButton, ButtonState>,
 }
 
 impl InputState {
@@ -68,11 +129,483 @@ impl InputState {
             prev_mouse_screen_pos: Vec2::ZERO,
             prev_mouse_world_pos: Vec2::ZERO,
             scroll_delta: 0.0,
+            keys_states: HashMap::new(),
+            mouse_buttons_states: HashMap::new(),
         }
     }
 
     pub fn begin_frame(&mut self) {
         self.scroll_delta = 0.0;
+    }
+
+    pub fn update(&mut self, dt: f32, elapsed: f32) {
+        for (_, state) in self.keys_states.iter_mut() {
+            state.update(dt, elapsed);
+        }
+        for (_, state) in self.mouse_buttons_states.iter_mut() {
+            state.update(dt, elapsed);
+        }
+    }
+
+    pub fn reset(&mut self) {
+        for (_, state) in self.keys_states.iter_mut() {
+            state.reset();
+        }
+        for (_, state) in self.mouse_buttons_states.iter_mut() {
+            state.reset();
+        }
+    }
+
+    pub fn is_key_down(&self, key: KeyCode) -> bool {
+        self.keys_states
+            .get(&key)
+            .is_some_and(|state| state.is_down())
+    }
+
+    pub fn is_key_pressed(&self, key: KeyCode) -> bool {
+        self.keys_states
+            .get(&key)
+            .is_some_and(|state| state.is_pressed())
+    }
+
+    pub fn is_key_released(&self, key: KeyCode) -> bool {
+        self.keys_states
+            .get(&key)
+            .is_some_and(|state| state.is_released())
+    }
+
+    pub fn is_key_clicked(&self, key: KeyCode) -> bool {
+        self.keys_states
+            .get(&key)
+            .is_some_and(|state| state.is_clicked())
+    }
+
+    pub fn is_key_double_clicked(&self, key: KeyCode) -> bool {
+        self.keys_states
+            .get(&key)
+            .is_some_and(|state| state.is_double_clicked())
+    }
+
+    pub fn is_key_held(&self, key: KeyCode) -> bool {
+        self.keys_states
+            .get(&key)
+            .is_some_and(|state| state.is_held())
+    }
+
+    pub fn is_key_released_after_hold(&self, key: KeyCode) -> bool {
+        self.keys_states
+            .get(&key)
+            .is_some_and(|state| state.is_released_after_hold())
+    }
+
+    pub fn is_mouse_down(&self, mouse: MouseButton) -> bool {
+        self.mouse_buttons_states
+            .get(&mouse)
+            .is_some_and(|state| state.is_down())
+    }
+
+    pub fn is_mouse_pressed(&self, mouse: MouseButton) -> bool {
+        self.mouse_buttons_states
+            .get(&mouse)
+            .is_some_and(|state| state.is_pressed())
+    }
+
+    pub fn is_mouse_released(&self, mouse: MouseButton) -> bool {
+        self.mouse_buttons_states
+            .get(&mouse)
+            .is_some_and(|state| state.is_released())
+    }
+
+    pub fn is_mouse_clicked(&self, mouse: MouseButton) -> bool {
+        self.mouse_buttons_states
+            .get(&mouse)
+            .is_some_and(|state| state.is_clicked())
+    }
+
+    pub fn is_mouse_double_clicked(&self, mouse: MouseButton) -> bool {
+        self.mouse_buttons_states
+            .get(&mouse)
+            .is_some_and(|state| state.is_double_clicked())
+    }
+
+    pub fn is_mouse_held(&self, mouse: MouseButton) -> bool {
+        self.mouse_buttons_states
+            .get(&mouse)
+            .is_some_and(|state| state.is_held())
+    }
+
+    pub fn is_mouse_released_after_hold(&self, mouse: MouseButton) -> bool {
+        self.mouse_buttons_states
+            .get(&mouse)
+            .is_some_and(|state| state.is_released_after_hold())
+    }
+}
+
+/// Threshold in seconds before a held button is considered a "hold"
+pub const HOLD_THRESHOLD_SECS: f32 = 0.4;
+
+/// Threshold in seconds between two clicks to count as a double-click
+pub const DOUBLE_CLICK_THRESHOLD_SECS: f32 = 0.25;
+
+#[derive(Debug, Clone)]
+pub struct ButtonState {
+    pub held_duration: f32,
+    pub last_release_time: f32,
+    pub press_count: u8,
+    pub pressed_this_frame: bool,
+    pub released_this_frame: bool,
+    pub is_down: bool,
+}
+
+impl ButtonState {
+    pub fn new() -> Self {
+        Self {
+            held_duration: 0.0,
+            last_release_time: f32::NEG_INFINITY,
+            press_count: 0,
+            pressed_this_frame: false,
+            released_this_frame: false,
+            is_down: false,
+        }
+    }
+
+    pub fn update(&mut self, dt: f32, elapsed: f32) {
+        if self.pressed_this_frame {
+            self.held_duration = 0.0;
+        }
+
+        if self.is_down {
+            self.held_duration += dt;
+        }
+
+        if self.released_this_frame {
+            let since_last = elapsed - self.last_release_time;
+            if since_last <= DOUBLE_CLICK_THRESHOLD_SECS {
+                self.press_count = self.press_count.saturating_add(1);
+            } else {
+                self.press_count = 1;
+            }
+            self.last_release_time = elapsed;
+        } else if !self.is_down {
+            // Reset click streak if window has expired
+            if elapsed - self.last_release_time > DOUBLE_CLICK_THRESHOLD_SECS {
+                self.press_count = 0;
+            }
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.pressed_this_frame = false;
+        self.released_this_frame = false;
+    }
+
+    pub fn is_down(&self) -> bool {
+        self.is_down
+    }
+
+    pub fn is_pressed(&self) -> bool {
+        self.pressed_this_frame
+    }
+
+    pub fn is_released(&self) -> bool {
+        self.released_this_frame
+    }
+
+    pub fn is_clicked(&self) -> bool {
+        self.is_released() && self.held_duration < HOLD_THRESHOLD_SECS
+    }
+
+    pub fn is_double_clicked(&self) -> bool {
+        self.is_clicked() && self.press_count >= 2
+    }
+
+    pub fn is_held(&self) -> bool {
+        self.held_duration >= HOLD_THRESHOLD_SECS
+    }
+
+    pub fn is_released_after_hold(&self) -> bool {
+        self.is_released() && self.held_duration >= HOLD_THRESHOLD_SECS
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_button() -> ButtonState {
+        ButtonState::new()
+    }
+
+    fn press(state: &mut ButtonState) {
+        state.pressed_this_frame = true;
+        state.is_down = true;
+    }
+
+    fn release(state: &mut ButtonState) {
+        state.released_this_frame = true;
+        state.is_down = false;
+    }
+
+    #[test]
+    fn new_button_state_is_idle() {
+        let s = make_button();
+        assert!(!s.is_down());
+        assert!(!s.is_pressed());
+        assert!(!s.is_released());
+        assert!(!s.is_clicked());
+        assert!(!s.is_double_clicked());
+        assert!(!s.is_held());
+        assert!(!s.is_released_after_hold());
+        assert_eq!(s.press_count, 0);
+    }
+
+    #[test]
+    fn press_and_quick_release_is_click() {
+        let mut s = make_button();
+
+        // Frame 1: press
+        press(&mut s);
+        s.update(0.016, 1.0);
+        assert!(s.is_pressed());
+        assert!(s.is_down());
+        assert!(!s.is_clicked());
+
+        s.reset();
+
+        // Frame 2: release after short hold
+        release(&mut s);
+        s.update(0.016, 1.016);
+        assert!(s.is_released());
+        assert!(s.is_clicked());
+        assert!(!s.is_held());
+        assert!(!s.is_released_after_hold());
+        assert_eq!(s.press_count, 1);
+    }
+
+    #[test]
+    fn hold_past_threshold() {
+        let mut s = make_button();
+
+        press(&mut s);
+        s.update(0.016, 1.0);
+        s.reset();
+
+        // Simulate frames until hold threshold is passed
+        let mut elapsed = 1.016;
+        for _ in 0..30 {
+            s.update(0.016, elapsed);
+            elapsed += 0.016;
+        }
+
+        assert!(s.is_down());
+        assert!(s.is_held());
+        assert!(s.held_duration >= HOLD_THRESHOLD_SECS);
+    }
+
+    #[test]
+    fn release_after_hold() {
+        let mut s = make_button();
+
+        press(&mut s);
+        s.update(0.016, 1.0);
+        s.reset();
+
+        // Hold for 0.5s
+        let mut elapsed = 1.016;
+        for _ in 0..31 {
+            s.update(0.016, elapsed);
+            elapsed += 0.016;
+        }
+
+        // Release
+        release(&mut s);
+        s.update(0.016, elapsed);
+
+        assert!(s.is_released());
+        assert!(s.is_released_after_hold());
+        assert!(!s.is_clicked()); // not a click because it was held
+    }
+
+    #[test]
+    fn double_click() {
+        let mut s = make_button();
+        let mut elapsed = 1.0;
+
+        // First click
+        press(&mut s);
+        s.update(0.016, elapsed);
+        s.reset();
+        elapsed += 0.016;
+
+        release(&mut s);
+        s.update(0.016, elapsed);
+        s.reset();
+        elapsed += 0.05; // short gap
+
+        // Second click
+        press(&mut s);
+        s.update(0.016, elapsed);
+        s.reset();
+        elapsed += 0.016;
+
+        release(&mut s);
+        s.update(0.016, elapsed);
+
+        assert!(s.is_clicked());
+        assert!(s.is_double_clicked());
+        assert_eq!(s.press_count, 2);
+    }
+
+    #[test]
+    fn double_click_window_expires() {
+        let mut s = make_button();
+        let mut elapsed = 1.0;
+
+        // First click
+        press(&mut s);
+        s.update(0.016, elapsed);
+        s.reset();
+        elapsed += 0.016;
+
+        release(&mut s);
+        s.update(0.016, elapsed);
+        s.reset();
+        elapsed += 0.5; // long gap — exceeds DOUBLE_CLICK_THRESHOLD_SECS
+
+        // Let the streak expire
+        s.update(0.016, elapsed);
+        s.reset();
+        elapsed += 0.016;
+
+        // Second click
+        press(&mut s);
+        s.update(0.016, elapsed);
+        s.reset();
+        elapsed += 0.016;
+
+        release(&mut s);
+        s.update(0.016, elapsed);
+
+        assert!(s.is_clicked());
+        assert!(!s.is_double_clicked());
+        assert_eq!(s.press_count, 1);
+    }
+
+    #[test]
+    fn reset_clears_frame_flags() {
+        let mut s = make_button();
+
+        press(&mut s);
+        s.update(0.016, 1.0);
+        assert!(s.is_pressed());
+
+        s.reset();
+        assert!(!s.is_pressed());
+        assert!(!s.is_released());
+    }
+
+    #[test]
+    fn held_duration_resets_on_new_press() {
+        let mut s = make_button();
+        let mut elapsed = 1.0;
+
+        // First press, hold a bit
+        press(&mut s);
+        s.update(0.016, elapsed);
+        s.reset();
+        elapsed += 0.016;
+
+        s.update(0.1, elapsed);
+        elapsed += 0.1;
+        assert!(s.held_duration > 0.0);
+
+        // Release
+        release(&mut s);
+        s.update(0.016, elapsed);
+        s.reset();
+        elapsed += 0.5;
+
+        // New press should reset held_duration
+        press(&mut s);
+        s.update(0.016, elapsed);
+        assert_eq!(s.held_duration, 0.016);
+    }
+
+    #[test]
+    fn input_state_key_queries() {
+        let mut input = InputState::new();
+
+        assert!(!input.is_key_down(KeyCode::A));
+        assert!(!input.is_key_pressed(KeyCode::A));
+
+        // Simulate pressing A
+        let state = input.keys_states.entry(KeyCode::A).or_insert(ButtonState::new());
+        state.pressed_this_frame = true;
+        state.is_down = true;
+        state.update(0.016, 1.0);
+
+        assert!(input.is_key_down(KeyCode::A));
+        assert!(input.is_key_pressed(KeyCode::A));
+        assert!(!input.is_key_released(KeyCode::A));
+    }
+
+    #[test]
+    fn input_state_mouse_queries() {
+        let mut input = InputState::new();
+
+        assert!(!input.is_mouse_down(MouseButton::Left));
+
+        let state = input
+            .mouse_buttons_states
+            .entry(MouseButton::Left)
+            .or_insert(ButtonState::new());
+        state.pressed_this_frame = true;
+        state.is_down = true;
+        state.update(0.016, 1.0);
+
+        assert!(input.is_mouse_down(MouseButton::Left));
+        assert!(input.is_mouse_pressed(MouseButton::Left));
+    }
+
+    #[test]
+    fn input_state_begin_frame_resets_scroll() {
+        let mut input = InputState::new();
+        input.scroll_delta = 3.0;
+        input.begin_frame();
+        assert_eq!(input.scroll_delta, 0.0);
+    }
+
+    #[test]
+    fn input_state_update_propagates_to_button_states() {
+        let mut input = InputState::new();
+
+        let state = input.keys_states.entry(KeyCode::Space).or_insert(ButtonState::new());
+        state.pressed_this_frame = true;
+        state.is_down = true;
+
+        input.update(0.016, 1.0);
+
+        assert_eq!(input.keys_states[&KeyCode::Space].held_duration, 0.016);
+    }
+
+    #[test]
+    fn input_state_reset_clears_all_frame_flags() {
+        let mut input = InputState::new();
+
+        let state = input.keys_states.entry(KeyCode::W).or_insert(ButtonState::new());
+        state.pressed_this_frame = true;
+        state.is_down = true;
+
+        let mstate = input
+            .mouse_buttons_states
+            .entry(MouseButton::Right)
+            .or_insert(ButtonState::new());
+        mstate.released_this_frame = true;
+
+        input.reset();
+
+        assert!(!input.keys_states[&KeyCode::W].pressed_this_frame);
+        assert!(!input.mouse_buttons_states[&MouseButton::Right].released_this_frame);
     }
 }
 

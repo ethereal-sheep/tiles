@@ -8,7 +8,6 @@ use winit::{
     window::{Window, WindowId},
 };
 
-use crate::camera::Camera;
 use crate::cell::{Cell, CellInstance, LightData};
 use crate::config::Config;
 use crate::drawable::Drawable;
@@ -16,6 +15,7 @@ use crate::input::{
     self, InputState, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent,
 };
 use crate::renderer::Renderer;
+use crate::{camera::Camera, input::ButtonState};
 
 pub trait App {
     fn init(&mut self, _state: &mut State) {}
@@ -34,10 +34,6 @@ pub struct State {
     config: Config,
     camera: Camera,
     input: InputState,
-    pub dt: f32,
-    pub elapsed: f32,
-    pub alpha: f32,
-    pub quit: bool,
     timer: Option<Instant>,
     start: Option<Instant>,
     accumulator: f32,
@@ -46,6 +42,10 @@ pub struct State {
     window_bg: [f32; 4],
     viewport_bg: [f32; 4],
     ambient_illumination: f32,
+    pub dt: f32,
+    pub elapsed: f32,
+    pub alpha: f32,
+    pub quit: bool,
 }
 
 impl State {
@@ -200,11 +200,59 @@ impl State {
     // --- Input (polled) ---
 
     pub fn is_key_down(&self, key: KeyCode) -> bool {
-        self.input.keys_down.contains(&key)
+        self.input.is_key_down(key)
     }
 
-    pub fn is_mouse_down(&self, button: MouseButton) -> bool {
-        self.input.mouse_buttons_down.contains(&button)
+    pub fn is_key_pressed(&self, key: KeyCode) -> bool {
+        self.input.is_key_pressed(key)
+    }
+
+    pub fn is_key_released(&self, key: KeyCode) -> bool {
+        self.input.is_key_released(key)
+    }
+
+    pub fn is_key_clicked(&self, key: KeyCode) -> bool {
+        self.input.is_key_clicked(key)
+    }
+
+    pub fn is_key_double_clicked(&self, key: KeyCode) -> bool {
+        self.input.is_key_double_clicked(key)
+    }
+
+    pub fn is_key_held(&self, key: KeyCode) -> bool {
+        self.input.is_key_held(key)
+    }
+
+    pub fn is_key_released_after_hold(&self, key: KeyCode) -> bool {
+        self.input.is_key_released_after_hold(key)
+    }
+
+    pub fn is_mouse_down(&self, mouse: MouseButton) -> bool {
+        self.input.is_mouse_down(mouse)
+    }
+
+    pub fn is_mouse_pressed(&self, mouse: MouseButton) -> bool {
+        self.input.is_mouse_pressed(mouse)
+    }
+
+    pub fn is_mouse_released(&self, mouse: MouseButton) -> bool {
+        self.input.is_mouse_released(mouse)
+    }
+
+    pub fn is_mouse_clicked(&self, mouse: MouseButton) -> bool {
+        self.input.is_mouse_clicked(mouse)
+    }
+
+    pub fn is_mouse_double_clicked(&self, mouse: MouseButton) -> bool {
+        self.input.is_mouse_double_clicked(mouse)
+    }
+
+    pub fn is_mouse_held(&self, mouse: MouseButton) -> bool {
+        self.input.is_mouse_held(mouse)
+    }
+
+    pub fn is_mouse_released_after_hold(&self, mouse: MouseButton) -> bool {
+        self.input.is_mouse_released_after_hold(mouse)
     }
 
     pub fn mouse_position(&self) -> Vec2 {
@@ -312,9 +360,21 @@ impl ApplicationHandler for Runner<'_> {
                 match key_state {
                     KeyState::Pressed => {
                         self.state.input.keys_down.insert(key);
+                        self.state
+                            .input
+                            .keys_states
+                            .entry(key)
+                            .or_insert(ButtonState::new())
+                            .pressed_this_frame = true;
                     }
                     KeyState::Released => {
                         self.state.input.keys_down.remove(&key);
+                        self.state
+                            .input
+                            .keys_states
+                            .entry(key)
+                            .or_insert(ButtonState::new())
+                            .pressed_this_frame = false;
                     }
                 }
 
@@ -342,10 +402,26 @@ impl ApplicationHandler for Runner<'_> {
                 let action = match btn_state {
                     ElementState::Pressed => {
                         self.state.input.mouse_buttons_down.insert(mb);
+                        let state = self
+                            .state
+                            .input
+                            .mouse_buttons_states
+                            .entry(mb)
+                            .or_insert(ButtonState::new());
+                        state.is_down = true;
+                        state.pressed_this_frame = true;
                         MouseAction::Pressed(mb)
                     }
                     ElementState::Released => {
                         self.state.input.mouse_buttons_down.remove(&mb);
+                        let state = self
+                            .state
+                            .input
+                            .mouse_buttons_states
+                            .entry(mb)
+                            .or_insert(ButtonState::new());
+                        state.is_down = false;
+                        state.pressed_this_frame = false;
                         MouseAction::Released(mb)
                     }
                 };
@@ -442,6 +518,8 @@ impl ApplicationHandler for Runner<'_> {
                 let fixed_dt = self.state.fixed_dt;
                 self.state.dt = fixed_dt;
 
+                self.state.input.update(self.state.dt, self.state.elapsed);
+
                 // pre_update: once per frame, before simulation ticks
                 self.app.pre_update(&mut self.state);
 
@@ -537,6 +615,8 @@ impl ApplicationHandler for Runner<'_> {
                         Err(e) => eprintln!("Surface error: {e:?}"),
                     }
                 }
+
+                self.state.input.reset();
 
                 if let Some(w) = &self.state.window {
                     w.request_redraw();
