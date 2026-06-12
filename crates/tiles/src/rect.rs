@@ -159,7 +159,7 @@ impl Rect {
     }
 
     pub fn contains_point(&self, x: f32, y: f32) -> bool {
-        x >= self.x && x <= self.x + self.w as f32 && y >= self.y && y <= self.y + self.h as f32
+        x >= self.x && x < self.x + self.w as f32 && y >= self.y && y < self.y + self.h as f32
     }
 }
 
@@ -237,6 +237,12 @@ impl RoundedRect {
     pub fn radius(mut self, radius: u32) -> Self {
         self.radii = [radius; 4];
         self
+    }
+
+    pub fn contains_point(&self, x: f32, y: f32) -> bool {
+        let px = (x - self.x).floor() as i32;
+        let py = (y - self.y).floor() as i32;
+        self.contains(px, py)
     }
 
     fn clamped_radii(&self) -> [i32; 4] {
@@ -528,5 +534,98 @@ mod tests {
         let mut count = 0;
         r.fill_cells(&mut |_, _| count += 1);
         assert_eq!(count, 25);
+    }
+
+    #[test]
+    fn rect_contains_point_inside() {
+        let r = Rect::from_top_left(10.0, 10.0, 20, 20);
+        assert!(r.contains_point(15.0, 15.0));
+        assert!(r.contains_point(20.0, 20.0));
+    }
+
+    #[test]
+    fn rect_contains_point_edges() {
+        let r = Rect::from_top_left(10.0, 10.0, 20, 20);
+        assert!(r.contains_point(10.0, 10.0));
+        assert!(r.contains_point(29.9, 29.9));
+        assert!(r.contains_point(10.0, 29.9));
+        assert!(r.contains_point(29.9, 10.0));
+        // Far edges are exclusive (pixel grid: pixel 30 doesn't exist in a 20-wide rect at 10)
+        assert!(!r.contains_point(30.0, 15.0));
+        assert!(!r.contains_point(15.0, 30.0));
+    }
+
+    #[test]
+    fn rect_contains_point_outside() {
+        let r = Rect::from_top_left(10.0, 10.0, 20, 20);
+        assert!(!r.contains_point(9.9, 15.0));
+        assert!(!r.contains_point(30.0, 15.0));
+        assert!(!r.contains_point(15.0, 9.9));
+        assert!(!r.contains_point(15.0, 30.0));
+    }
+
+    #[test]
+    fn rect_contains_point_zero_size() {
+        let r = Rect::from_top_left(5.0, 5.0, 0, 0);
+        assert!(!r.contains_point(5.0, 5.0));
+    }
+
+    #[test]
+    fn rounded_rect_contains_point_center() {
+        let r = Rect::from_top_left(0.0, 0.0, 20, 20).rounded(5);
+        assert!(r.contains_point(10.0, 10.0));
+    }
+
+    #[test]
+    fn rounded_rect_contains_point_excludes_corners() {
+        let r = Rect::from_top_left(0.0, 0.0, 20, 20).rounded(5);
+        assert!(!r.contains_point(0.0, 0.0));
+        assert!(!r.contains_point(19.0, 0.0));
+        assert!(!r.contains_point(0.0, 19.0));
+        assert!(!r.contains_point(19.0, 19.0));
+    }
+
+    #[test]
+    fn rounded_rect_contains_point_flat_edges() {
+        let r = Rect::from_top_left(0.0, 0.0, 20, 20).rounded(5);
+        assert!(r.contains_point(10.0, 0.0));
+        assert!(r.contains_point(0.0, 10.0));
+        assert!(r.contains_point(10.0, 19.0));
+        assert!(r.contains_point(19.0, 10.0));
+    }
+
+    #[test]
+    fn rounded_rect_contains_point_outside() {
+        let r = Rect::from_top_left(10.0, 10.0, 20, 20).rounded(3);
+        assert!(!r.contains_point(5.0, 5.0));
+        assert!(!r.contains_point(35.0, 35.0));
+    }
+
+    #[test]
+    fn rounded_rect_contains_point_with_offset() {
+        let r = Rect::from_top_left(10.0, 10.0, 20, 20).rounded(4);
+        assert!(r.contains_point(20.0, 20.0));
+        assert!(!r.contains_point(10.0, 10.0));
+        assert!(!r.contains_point(30.0, 30.0));
+        assert!(r.contains_point(15.0, 10.0));
+    }
+
+    #[test]
+    fn rounded_rect_zero_radius_matches_rect() {
+        let rect = Rect::from_top_left(5.0, 5.0, 10, 10);
+        let rounded = rect.rounded(0);
+        for x in 0..20 {
+            for y in 0..20 {
+                let fx = x as f32;
+                let fy = y as f32;
+                assert_eq!(
+                    rect.contains_point(fx, fy),
+                    rounded.contains_point(fx, fy),
+                    "mismatch at ({}, {})",
+                    fx,
+                    fy
+                );
+            }
+        }
     }
 }
