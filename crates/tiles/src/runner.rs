@@ -12,10 +12,12 @@ use crate::cell::{Cell, CellInstance, LightData};
 use crate::config::Config;
 use crate::drawable::Drawable;
 use crate::input::{
-    self, InputState, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent,
+    self, ButtonState, InputState, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton,
+    MouseEvent, RectInputState,
 };
+use crate::rect::Rect;
 use crate::renderer::Renderer;
-use crate::{camera::Camera, input::ButtonState};
+use crate::camera::Camera;
 
 pub trait App {
     fn init(&mut self, _state: &mut State) {}
@@ -263,6 +265,14 @@ impl State {
         self.input.mouse_screen_pos
     }
 
+    pub fn test_rect_world(&self, rect: &Rect) -> RectInputState {
+        self.input.test_rect_world(rect)
+    }
+
+    pub fn test_rect_screen(&self, rect: &Rect) -> RectInputState {
+        self.input.test_rect_screen(rect)
+    }
+
     // --- Debug ---
 
     pub fn set_debug(&mut self, enabled: bool) {
@@ -410,6 +420,12 @@ impl ApplicationHandler for Runner<'_> {
                             .or_insert(ButtonState::new());
                         state.is_down = true;
                         state.pressed_this_frame = true;
+                        if mb == MouseButton::Left {
+                            self.state.input.left_press_screen_pos =
+                                self.state.input.mouse_screen_pos;
+                            self.state.input.left_press_world_pos =
+                                self.state.input.mouse_world_pos;
+                        }
                         MouseAction::Pressed(mb)
                     }
                     ElementState::Released => {

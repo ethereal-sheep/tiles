@@ -17,7 +17,7 @@ pub use cell::{Cell, Rotation};
 pub use color::Color;
 pub use config::{Config, ConfigBuilder};
 pub use drawable::{Colored, Drawable};
-pub use input::{KeyCode, KeyState, MouseAction, MouseButton, MouseEvent, KeyEvent};
+pub use input::{KeyCode, KeyState, MouseAction, MouseButton, MouseEvent, KeyEvent, RectInputState};
 pub use line::Line;
 pub use rect::{Rect, RoundedRect};
 pub use runner::{App, State};

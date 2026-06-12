@@ -14,15 +14,30 @@ impl Rect {
     }
 
     pub fn from_top_right(x: f32, y: f32, w: u32, h: u32) -> Self {
-        Self { x: x - w as f32, y, w, h }
+        Self {
+            x: x - w as f32,
+            y,
+            w,
+            h,
+        }
     }
 
     pub fn from_bottom_left(x: f32, y: f32, w: u32, h: u32) -> Self {
-        Self { x, y: y - h as f32, w, h }
+        Self {
+            x,
+            y: y - h as f32,
+            w,
+            h,
+        }
     }
 
     pub fn from_bottom_right(x: f32, y: f32, w: u32, h: u32) -> Self {
-        Self { x: x - w as f32, y: y - h as f32, w, h }
+        Self {
+            x: x - w as f32,
+            y: y - h as f32,
+            w,
+            h,
+        }
     }
 
     pub fn from_corners(x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
@@ -141,6 +156,10 @@ impl Rect {
             h: self.h,
             radii: [radius; 4],
         }
+    }
+
+    pub fn contains_point(&self, x: f32, y: f32) -> bool {
+        x >= self.x && x <= self.x + self.w as f32 && y >= self.y && y <= self.y + self.h as f32
     }
 }
 
