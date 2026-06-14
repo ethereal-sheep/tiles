@@ -11,6 +11,7 @@ pub enum StrokePosition {
 }
 
 pub trait Shape: Sized {
+    fn contains_point(&self, x: f32, y: f32) -> bool;
     fn fill_cells(&self, f: &mut impl FnMut(f32, f32));
     fn stroke_cells(&self, f: &mut impl FnMut(f32, f32));
     fn offset(&self, amount: i32) -> Self;

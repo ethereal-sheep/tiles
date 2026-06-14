@@ -158,12 +158,13 @@ impl Rect {
         }
     }
 
-    pub fn contains_point(&self, x: f32, y: f32) -> bool {
-        x >= self.x && x < self.x + self.w as f32 && y >= self.y && y < self.y + self.h as f32
-    }
 }
 
 impl Shape for Rect {
+    fn contains_point(&self, x: f32, y: f32) -> bool {
+        x >= self.x && x < self.x + self.w as f32 && y >= self.y && y < self.y + self.h as f32
+    }
+
     fn fill_cells(&self, f: &mut impl FnMut(f32, f32)) {
         let x0 = self.x.floor() as i32;
         let y0 = self.y.floor() as i32;
@@ -239,12 +240,6 @@ impl RoundedRect {
         self
     }
 
-    pub fn contains_point(&self, x: f32, y: f32) -> bool {
-        let px = (x - self.x).floor() as i32;
-        let py = (y - self.y).floor() as i32;
-        self.contains(px, py)
-    }
-
     fn clamped_radii(&self) -> [i32; 4] {
         let max_r = (self.w as i32 / 2).min(self.h as i32 / 2).max(0);
         [
@@ -295,6 +290,12 @@ impl RoundedRect {
 }
 
 impl Shape for RoundedRect {
+    fn contains_point(&self, x: f32, y: f32) -> bool {
+        let px = (x - self.x).floor() as i32;
+        let py = (y - self.y).floor() as i32;
+        self.contains(px, py)
+    }
+
     fn fill_cells(&self, f: &mut impl FnMut(f32, f32)) {
         let x0 = self.x.floor() as i32;
         let y0 = self.y.floor() as i32;

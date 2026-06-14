@@ -8,16 +8,17 @@ use winit::{
     window::{Window, WindowId},
 };
 
+use crate::camera::Camera;
 use crate::cell::{Cell, CellInstance, LightData};
 use crate::config::Config;
 use crate::drawable::Drawable;
+use crate::element::{self, HitState};
 use crate::input::{
     self, ButtonState, InputState, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton,
-    MouseEvent, RectInputState,
+    MouseEvent,
 };
-use crate::rect::Rect;
 use crate::renderer::Renderer;
-use crate::camera::Camera;
+use crate::shape::Shape;
 
 pub trait App {
     fn init(&mut self, _state: &mut State) {}
@@ -33,6 +34,8 @@ pub struct State {
     renderer: Option<Renderer>,
     cells: Vec<Cell>,
     screen_cells: Vec<Cell>,
+    world_overlay_cells: Vec<Cell>,
+    screen_overlay_cells: Vec<Cell>,
     config: Config,
     camera: Camera,
     input: InputState,
@@ -59,6 +62,8 @@ impl State {
             renderer: None,
             cells: Vec::new(),
             screen_cells: Vec::new(),
+            world_overlay_cells: Vec::new(),
+            screen_overlay_cells: Vec::new(),
             config,
             camera,
             input: InputState::new(),
@@ -265,12 +270,42 @@ impl State {
         self.input.mouse_screen_pos
     }
 
-    pub fn test_rect_world(&self, rect: &Rect) -> RectInputState {
-        self.input.test_rect_world(rect)
+    pub fn test_shape_world(&self, shape: &impl Shape) -> HitState {
+        element::test_shape(&self.input, shape, false)
     }
 
-    pub fn test_rect_screen(&self, rect: &Rect) -> RectInputState {
-        self.input.test_rect_screen(rect)
+    pub fn test_shape_screen(&self, shape: &impl Shape) -> HitState {
+        element::test_shape(&self.input, shape, true)
+    }
+
+    pub fn draw_world_overlay(&mut self, drawable: impl Drawable) {
+        let min_x = self.camera.position.x - self.camera.viewport_width / 2.0 - 1.0;
+        let max_x = self.camera.position.x + self.camera.viewport_width / 2.0 + 1.0;
+        let min_y = self.camera.position.y - self.camera.viewport_height / 2.0 - 1.0;
+        let max_y = self.camera.position.y + self.camera.viewport_height / 2.0 + 1.0;
+        drawable.emit_cells(&mut |cell| {
+            if cell.position.x >= min_x
+                && cell.position.x <= max_x
+                && cell.position.y >= min_y
+                && cell.position.y <= max_y
+            {
+                self.world_overlay_cells.push(cell);
+            }
+        });
+    }
+
+    pub fn draw_screen_overlay(&mut self, drawable: impl Drawable) {
+        let vw = self.camera.viewport_width;
+        let vh = self.camera.viewport_height;
+        drawable.emit_cells(&mut |cell| {
+            if cell.position.x >= -1.0
+                && cell.position.x <= vw
+                && cell.position.y >= -1.0
+                && cell.position.y <= vh
+            {
+                self.screen_overlay_cells.push(cell);
+            }
+        });
     }
 
     // --- Debug ---
@@ -536,6 +571,10 @@ impl ApplicationHandler for Runner<'_> {
 
                 self.state.input.update(self.state.dt, self.state.elapsed);
 
+                // Clear overlay buffers before pre_update populates them
+                self.state.world_overlay_cells.clear();
+                self.state.screen_overlay_cells.clear();
+
                 // pre_update: once per frame, before simulation ticks
                 self.app.pre_update(&mut self.state);
 
@@ -591,13 +630,23 @@ impl ApplicationHandler for Runner<'_> {
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
+                // World overlay renders after all world cells
+                for cell in &self.state.world_overlay_cells {
+                    transparent.push(cell.to_instance());
+                }
+
                 // Build screen-space instances (draw-order, unlit)
-                let screen_instances: Vec<CellInstance> = self
+                let mut screen_instances: Vec<CellInstance> = self
                     .state
                     .screen_cells
                     .iter()
                     .map(|cell| cell.to_screen_instance())
                     .collect();
+
+                // Screen overlay renders after all screen cells
+                for cell in &self.state.screen_overlay_cells {
+                    screen_instances.push(cell.to_screen_instance());
+                }
 
                 if let Some(renderer) = &mut self.state.renderer {
                     let w = renderer.width();

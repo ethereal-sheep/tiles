@@ -88,6 +88,22 @@ _Avoid_: UI manager, GUI system, UI state
 A UI element placed inside a **Pane** via the layout cursor. Defined by a trait (`size` + `render`) and eagerly consumed into a positioned rectangle of **Cells**. Built-in Widgets: button, text, slider, checkbox, separator, spacer. User-extensible by implementing the Widget trait.
 _Avoid_: Component, control, node
 
+**Element**:
+A user-implemented interactive visual with a **Shape** and an appearance that varies by **ElementState**. Defined by a trait (`shape` + `draw`) with default methods (`handle_screen`, `handle_world`) that hit-test, compute visual state, draw to the overlay buffer, and return **HitState**. Lives in the tiles crate.
+_Avoid_: Widget (panes concept), component, control
+
+**ElementState**:
+The visual state of an **Element**: Default, Hovered, Pressed, or Captured. Derived from **HitState** by the Element trait's default methods. Captured means the press originated inside but the cursor has since left the **Shape**.
+_Avoid_: InputState (internal engine concept), interaction state
+
+**HitState**:
+The result of hit-testing a **Shape** against current input. Provides methods (`is_hovered`, `is_clicked`, `is_dragging`, etc.) over private fields. Constructed internally by `test_shape_screen` / `test_shape_world`. Replaces the former RectInputState.
+_Avoid_: RectInputState, InputState, interaction result
+
+**DragInfo**:
+Data returned by `HitState::is_dragging()` when a drag is active. Contains delta and origin in both screen and world coordinates.
+_Avoid_: DragState, drag data
+
 **Drawable**:
 A trait that produces **Cells** via a visitor callback. The unified interface for submitting visual content to the renderer. **Cell**, **Text**, **Line**, **Fill**, and **Stroke** implement Drawable. The `.colored()` combinator wraps any Drawable to override cell color.
 _Avoid_: Renderable, primitive
