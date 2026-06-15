@@ -1,7 +1,7 @@
 use glam::Vec2;
 
 use crate::drawable::Drawable;
-use crate::input::{InputState, MouseButton, DRAG_MIN_PIXELS, HOLD_THRESHOLD_SECS};
+use crate::input::{InputState, MouseButton, HOLD_THRESHOLD_SECS};
 use crate::runner::State;
 use crate::shape::Shape;
 
@@ -17,8 +17,11 @@ pub enum ElementState {
 pub struct DragInfo {
     pub delta_screen: Vec2,
     pub delta_world: Vec2,
+    pub total_delta_screen: Vec2,
+    pub total_delta_world: Vec2,
     pub origin_screen: Vec2,
     pub origin_world: Vec2,
+    pub drag_duration: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -27,6 +30,7 @@ pub struct HitState {
     just_entered: bool,
     just_left: bool,
     is_down: bool,
+    is_drag_end: bool,
     pressed: bool,
     released: bool,
     clicked: bool,
@@ -37,9 +41,10 @@ pub struct HitState {
     middle_clicked: bool,
     drag_delta_screen: Vec2,
     drag_delta_world: Vec2,
+    drag_total_delta_screen: Vec2,
+    drag_total_delta_world: Vec2,
     drag_origin_screen: Vec2,
     drag_origin_world: Vec2,
-    is_dragging: bool,
     scroll_delta: f32,
 }
 
@@ -89,16 +94,27 @@ impl HitState {
     }
 
     pub fn is_dragging(&self) -> Option<DragInfo> {
-        if self.is_dragging {
-            Some(DragInfo {
-                delta_screen: self.drag_delta_screen,
-                delta_world: self.drag_delta_world,
-                origin_screen: self.drag_origin_screen,
-                origin_world: self.drag_origin_world,
-            })
-        } else {
-            None
-        }
+        self.is_down.then(|| DragInfo {
+            delta_screen: self.drag_delta_screen,
+            delta_world: self.drag_delta_world,
+            total_delta_screen: self.drag_total_delta_screen,
+            total_delta_world: self.drag_total_delta_world,
+            origin_screen: self.drag_origin_screen,
+            origin_world: self.drag_origin_world,
+            drag_duration: self.held_duration,
+        })
+    }
+
+    pub fn is_drag_end(&self) -> Option<DragInfo> {
+        self.is_drag_end.then(|| DragInfo {
+            delta_screen: self.drag_delta_screen,
+            delta_world: self.drag_delta_world,
+            total_delta_screen: self.drag_total_delta_screen,
+            total_delta_world: self.drag_total_delta_world,
+            origin_screen: self.drag_origin_screen,
+            origin_world: self.drag_origin_world,
+            drag_duration: self.held_duration,
+        })
     }
 
     pub fn is_right_clicked(&self) -> bool {
@@ -151,7 +167,7 @@ pub(crate) fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool
     let press_was_inside = shape.contains_point(press_pos.x, press_pos.y);
 
     let pressed = hovered && left_pressed_this_frame;
-    let released = left_released_this_frame && press_was_inside;
+    let released = hovered && left_released_this_frame;
     let clicked = released && hovered && left_held_duration < HOLD_THRESHOLD_SECS;
     let double_clicked = clicked && left.is_some_and(|s| s.press_count >= 2);
 
@@ -166,22 +182,13 @@ pub(crate) fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool
     let middle_clicked = hovered
         && middle.is_some_and(|s| s.released_this_frame && s.held_duration < HOLD_THRESHOLD_SECS);
 
-    let drag_delta_screen = if left_down && press_was_inside {
-        input.mouse_screen_pos - input.prev_mouse_screen_pos
-    } else {
-        Vec2::ZERO
-    };
-    let drag_delta_world = if left_down && press_was_inside {
-        input.mouse_world_pos - input.prev_mouse_world_pos
-    } else {
-        Vec2::ZERO
-    };
+    let drag_delta_screen = input.mouse_screen_pos - input.prev_mouse_screen_pos;
+    let drag_delta_world = input.mouse_world_pos - input.prev_mouse_world_pos;
     let drag_origin_screen = input.left_press_screen_pos;
     let drag_origin_world = input.left_press_world_pos;
-    let is_dragging = left_down
-        && press_was_inside
-        && (input.mouse_screen_pos - input.left_press_screen_pos).length() >= DRAG_MIN_PIXELS;
-
+    let drag_total_delta_screen = input.mouse_screen_pos - input.left_press_screen_pos;
+    let drag_total_delta_world = input.mouse_world_pos - input.left_press_world_pos;
+    let is_drag_end = left_released_this_frame;
     let scroll_delta = if hovered { input.scroll_delta } else { 0.0 };
 
     HitState {
@@ -189,6 +196,7 @@ pub(crate) fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool
         just_entered,
         just_left,
         is_down,
+        is_drag_end,
         pressed,
         released,
         clicked,
@@ -199,9 +207,10 @@ pub(crate) fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool
         middle_clicked,
         drag_delta_screen,
         drag_delta_world,
+        drag_total_delta_screen,
+        drag_total_delta_world,
         drag_origin_screen,
         drag_origin_world,
-        is_dragging,
         scroll_delta,
     }
 }

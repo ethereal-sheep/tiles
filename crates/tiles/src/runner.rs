@@ -472,7 +472,7 @@ impl ApplicationHandler for Runner<'_> {
                             .entry(mb)
                             .or_insert(ButtonState::new());
                         state.is_down = false;
-                        state.pressed_this_frame = false;
+                        state.released_this_frame = true;
                         MouseAction::Released(mb)
                     }
                 };

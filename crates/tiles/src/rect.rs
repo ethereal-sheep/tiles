@@ -148,6 +148,28 @@ impl Rect {
         }
     }
 
+    pub fn translate(self, delta: glam::Vec2) -> Self {
+        Self {
+            x: self.x + delta.x,
+            y: self.y + delta.y,
+            ..self
+        }
+    }
+
+    pub fn translate_x(self, dx: f32) -> Self {
+        Self {
+            x: self.x + dx,
+            ..self
+        }
+    }
+
+    pub fn translate_y(self, dy: f32) -> Self {
+        Self {
+            y: self.y + dy,
+            ..self
+        }
+    }
+
     pub fn rounded(self, radius: u32) -> RoundedRect {
         RoundedRect {
             x: self.x,

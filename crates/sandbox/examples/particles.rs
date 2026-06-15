@@ -1,5 +1,7 @@
 use glam::Vec2;
-use tiles::{App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, State};
+use tiles::{
+    App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, State,
+};
 
 struct Sandbox {
     particles: Vec<Particle>,
@@ -58,6 +60,8 @@ impl App for Sandbox {
         state.set_viewport_background(0.02, 0.02, 0.04, 1.0);
         state.set_window_background(0.0, 0.0, 0.0, 1.0);
     }
+
+    fn pre_update(&mut self, _state: &mut State) {}
 
     fn update(&mut self, state: &mut State) {
         let dt = state.dt;
@@ -138,17 +142,11 @@ impl Sandbox {
         let (vel, max_life) = match self.mode {
             Mode::Fountain => {
                 let spread = 15.0;
-                let vel = Vec2::new(
-                    noise(seed) * spread,
-                    40.0 + noise(seed + 1.0) * 10.0,
-                );
+                let vel = Vec2::new(noise(seed) * spread, 40.0 + noise(seed + 1.0) * 10.0);
                 (vel, 3.0 + noise(seed + 2.0).abs())
             }
             Mode::Rain => {
-                let vel = Vec2::new(
-                    noise(seed) * 2.0,
-                    -20.0 - noise(seed + 1.0).abs() * 30.0,
-                );
+                let vel = Vec2::new(noise(seed) * 2.0, -20.0 - noise(seed + 1.0).abs() * 30.0);
                 let pos_offset = Vec2::new(noise(seed + 3.0) * 60.0, 60.0);
                 return Particle {
                     pos: origin + pos_offset,

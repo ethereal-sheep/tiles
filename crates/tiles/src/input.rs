@@ -104,7 +104,6 @@ pub struct MouseEvent {
     pub action: MouseAction,
     pub screen_pos: Vec2,
     pub world_pos: Vec2,
-    pub viewport_pos: Vec2,
 }
 
 pub(crate) struct InputState {
@@ -243,13 +242,10 @@ impl InputState {
             .get(&mouse)
             .is_some_and(|state| state.is_released_after_hold())
     }
-
 }
 
 pub const HOLD_THRESHOLD_SECS: f32 = 0.4;
 pub const DOUBLE_CLICK_THRESHOLD_SECS: f32 = 0.25;
-pub const DRAG_MIN_PIXELS: f32 = 4.0;
-
 
 #[derive(Debug, Clone)]
 pub struct ButtonState {
@@ -543,7 +539,10 @@ mod tests {
         assert!(!input.is_key_pressed(KeyCode::A));
 
         // Simulate pressing A
-        let state = input.keys_states.entry(KeyCode::A).or_insert(ButtonState::new());
+        let state = input
+            .keys_states
+            .entry(KeyCode::A)
+            .or_insert(ButtonState::new());
         state.pressed_this_frame = true;
         state.is_down = true;
         state.update(0.016, 1.0);
@@ -583,7 +582,10 @@ mod tests {
     fn input_state_update_propagates_to_button_states() {
         let mut input = InputState::new();
 
-        let state = input.keys_states.entry(KeyCode::Space).or_insert(ButtonState::new());
+        let state = input
+            .keys_states
+            .entry(KeyCode::Space)
+            .or_insert(ButtonState::new());
         state.pressed_this_frame = true;
         state.is_down = true;
 
@@ -596,7 +598,10 @@ mod tests {
     fn input_state_reset_clears_all_frame_flags() {
         let mut input = InputState::new();
 
-        let state = input.keys_states.entry(KeyCode::W).or_insert(ButtonState::new());
+        let state = input
+            .keys_states
+            .entry(KeyCode::W)
+            .or_insert(ButtonState::new());
         state.pressed_this_frame = true;
         state.is_down = true;
 
@@ -611,7 +616,6 @@ mod tests {
         assert!(!input.keys_states[&KeyCode::W].pressed_this_frame);
         assert!(!input.mouse_buttons_states[&MouseButton::Right].released_this_frame);
     }
-
 }
 
 pub(crate) fn translate_key(key: winit::keyboard::PhysicalKey) -> KeyCode {
