@@ -21,24 +21,24 @@ pub struct DragInfo {
     pub total_delta_world: Vec2,
     pub origin_screen: Vec2,
     pub origin_world: Vec2,
-    pub drag_duration: f32,
+    pub elapsed: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct HitState {
-    hovered: bool,
-    just_entered: bool,
-    just_left: bool,
+    is_hovered: bool,
+    has_entered: bool,
+    has_left: bool,
     is_down: bool,
     is_drag_end: bool,
-    pressed: bool,
-    released: bool,
-    clicked: bool,
-    double_clicked: bool,
+    is_pressed: bool,
+    is_released: bool,
+    is_clicked: bool,
+    is_double_clicked: bool,
     held_duration: f32,
-    released_after_hold: bool,
-    right_clicked: bool,
-    middle_clicked: bool,
+    is_released_after_hold: bool,
+    is_right_clicked: bool,
+    is_middle_clicked: bool,
     drag_delta_screen: Vec2,
     drag_delta_world: Vec2,
     drag_total_delta_screen: Vec2,
@@ -50,15 +50,15 @@ pub struct HitState {
 
 impl HitState {
     pub fn is_hovered(&self) -> bool {
-        self.hovered
+        self.is_hovered
     }
 
     pub fn has_entered(&self) -> bool {
-        self.just_entered
+        self.has_entered
     }
 
     pub fn has_left(&self) -> bool {
-        self.just_left
+        self.has_left
     }
 
     pub fn is_down(&self) -> bool {
@@ -66,19 +66,19 @@ impl HitState {
     }
 
     pub fn is_pressed(&self) -> bool {
-        self.pressed
+        self.is_pressed
     }
 
     pub fn is_released(&self) -> bool {
-        self.released
+        self.is_released
     }
 
     pub fn is_clicked(&self) -> bool {
-        self.clicked
+        self.is_clicked
     }
 
     pub fn is_double_clicked(&self) -> bool {
-        self.double_clicked
+        self.is_double_clicked
     }
 
     pub fn is_held(&self) -> Option<f32> {
@@ -90,7 +90,7 @@ impl HitState {
     }
 
     pub fn is_released_after_hold(&self) -> bool {
-        self.released_after_hold
+        self.is_released_after_hold
     }
 
     pub fn is_dragging(&self) -> Option<DragInfo> {
@@ -101,7 +101,7 @@ impl HitState {
             total_delta_world: self.drag_total_delta_world,
             origin_screen: self.drag_origin_screen,
             origin_world: self.drag_origin_world,
-            drag_duration: self.held_duration,
+            elapsed: self.held_duration,
         })
     }
 
@@ -113,16 +113,16 @@ impl HitState {
             total_delta_world: self.drag_total_delta_world,
             origin_screen: self.drag_origin_screen,
             origin_world: self.drag_origin_world,
-            drag_duration: self.held_duration,
+            elapsed: self.held_duration,
         })
     }
 
     pub fn is_right_clicked(&self) -> bool {
-        self.right_clicked
+        self.is_right_clicked
     }
 
     pub fn is_middle_clicked(&self) -> bool {
-        self.middle_clicked
+        self.is_middle_clicked
     }
 
     pub fn is_scrolling(&self) -> Option<f32> {
@@ -153,10 +153,10 @@ pub(crate) fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool
         input.left_press_world_pos
     };
 
-    let hovered = shape.contains_point(mouse_pos.x, mouse_pos.y);
+    let is_hovered = shape.contains_point(mouse_pos.x, mouse_pos.y);
     let was_hovered = shape.contains_point(prev_mouse_pos.x, prev_mouse_pos.y);
-    let just_entered = hovered && !was_hovered;
-    let just_left = !hovered && was_hovered;
+    let has_entered = is_hovered && !was_hovered;
+    let has_left = !is_hovered && was_hovered;
 
     let left = input.mouse_buttons_states.get(&MouseButton::Left);
     let left_down = left.is_some_and(|s| s.is_down());
@@ -166,20 +166,20 @@ pub(crate) fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool
 
     let press_was_inside = shape.contains_point(press_pos.x, press_pos.y);
 
-    let pressed = hovered && left_pressed_this_frame;
-    let released = hovered && left_released_this_frame;
-    let clicked = released && hovered && left_held_duration < HOLD_THRESHOLD_SECS;
-    let double_clicked = clicked && left.is_some_and(|s| s.press_count >= 2);
+    let is_pressed = is_hovered && left_pressed_this_frame;
+    let is_released = is_hovered && left_released_this_frame;
+    let is_clicked = is_released && is_hovered && left_held_duration < HOLD_THRESHOLD_SECS;
+    let is_double_clicked = is_clicked && left.is_some_and(|s| s.press_count >= 2);
 
     let is_down = left_down && press_was_inside;
-    let released_after_hold = released && left_held_duration >= HOLD_THRESHOLD_SECS;
+    let is_released_after_hold = is_released && left_held_duration >= HOLD_THRESHOLD_SECS;
 
     let right = input.mouse_buttons_states.get(&MouseButton::Right);
-    let right_clicked = hovered
+    let is_right_clicked = is_hovered
         && right.is_some_and(|s| s.released_this_frame && s.held_duration < HOLD_THRESHOLD_SECS);
 
     let middle = input.mouse_buttons_states.get(&MouseButton::Middle);
-    let middle_clicked = hovered
+    let is_middle_clicked = is_hovered
         && middle.is_some_and(|s| s.released_this_frame && s.held_duration < HOLD_THRESHOLD_SECS);
 
     let drag_delta_screen = input.mouse_screen_pos - input.prev_mouse_screen_pos;
@@ -189,22 +189,23 @@ pub(crate) fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool
     let drag_total_delta_screen = input.mouse_screen_pos - input.left_press_screen_pos;
     let drag_total_delta_world = input.mouse_world_pos - input.left_press_world_pos;
     let is_drag_end = left_released_this_frame;
-    let scroll_delta = if hovered { input.scroll_delta } else { 0.0 };
+
+    let scroll_delta = if is_hovered { input.scroll_delta } else { 0.0 };
 
     HitState {
-        hovered,
-        just_entered,
-        just_left,
+        is_hovered,
+        has_entered,
+        has_left,
         is_down,
         is_drag_end,
-        pressed,
-        released,
-        clicked,
-        double_clicked,
+        is_pressed,
+        is_released,
+        is_clicked,
+        is_double_clicked,
+        is_released_after_hold,
         held_duration: left_held_duration,
-        released_after_hold,
-        right_clicked,
-        middle_clicked,
+        is_right_clicked,
+        is_middle_clicked,
         drag_delta_screen,
         drag_delta_world,
         drag_total_delta_screen,
@@ -216,11 +217,11 @@ pub(crate) fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool
 }
 
 fn element_state_from(hit: &HitState) -> ElementState {
-    if hit.is_down && hit.hovered {
+    if hit.is_down && hit.is_hovered {
         ElementState::Pressed
     } else if hit.is_down {
         ElementState::Captured
-    } else if hit.hovered {
+    } else if hit.is_hovered {
         ElementState::Hovered
     } else {
         ElementState::Default
