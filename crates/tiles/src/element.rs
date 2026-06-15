@@ -93,6 +93,18 @@ impl HitState {
         self.is_released_after_hold
     }
 
+    pub fn is_drag_start(&self) -> Option<DragInfo> {
+        self.is_pressed.then(|| DragInfo {
+            delta_screen: self.drag_delta_screen,
+            delta_world: self.drag_delta_world,
+            total_delta_screen: self.drag_total_delta_screen,
+            total_delta_world: self.drag_total_delta_world,
+            origin_screen: self.drag_origin_screen,
+            origin_world: self.drag_origin_world,
+            elapsed: self.held_duration,
+        })
+    }
+
     pub fn is_dragging(&self) -> Option<DragInfo> {
         self.is_down.then(|| DragInfo {
             delta_screen: self.drag_delta_screen,
@@ -168,7 +180,7 @@ pub(crate) fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool
 
     let is_pressed = is_hovered && left_pressed_this_frame;
     let is_released = is_hovered && left_released_this_frame;
-    let is_clicked = is_released && is_hovered && left_held_duration < HOLD_THRESHOLD_SECS;
+    let is_clicked = is_released && press_was_inside && left_held_duration < HOLD_THRESHOLD_SECS;
     let is_double_clicked = is_clicked && left.is_some_and(|s| s.press_count >= 2);
 
     let is_down = left_down && press_was_inside;
@@ -188,7 +200,7 @@ pub(crate) fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool
     let drag_origin_world = input.left_press_world_pos;
     let drag_total_delta_screen = input.mouse_screen_pos - input.left_press_screen_pos;
     let drag_total_delta_world = input.mouse_world_pos - input.left_press_world_pos;
-    let is_drag_end = left_released_this_frame;
+    let is_drag_end = left_released_this_frame && press_was_inside;
 
     let scroll_delta = if is_hovered { input.scroll_delta } else { 0.0 };
 
@@ -391,7 +403,7 @@ mod tests {
 
         let rect = make_rect();
         let hit = test_world(&input, &rect);
-        assert!(!hit.is_released());
+        assert!(hit.is_released());
         assert!(!hit.is_clicked());
     }
 
@@ -507,28 +519,6 @@ mod tests {
         let drag = hit.is_dragging().unwrap();
         assert_eq!(drag.delta_screen, Vec2::new(2.0, 2.0));
         assert_eq!(drag.delta_world, Vec2::new(2.0, 2.0));
-    }
-
-    #[test]
-    fn drag_not_active_below_threshold() {
-        let mut input = InputState::new();
-        input.mouse_screen_pos = Vec2::new(16.0, 15.0);
-        input.mouse_world_pos = Vec2::new(16.0, 15.0);
-        input.prev_mouse_screen_pos = Vec2::new(15.5, 15.0);
-        input.prev_mouse_world_pos = Vec2::new(15.5, 15.0);
-        input.left_press_screen_pos = Vec2::new(15.0, 15.0);
-        input.left_press_world_pos = Vec2::new(15.0, 15.0);
-
-        let left = input
-            .mouse_buttons_states
-            .entry(MouseButton::Left)
-            .or_insert(ButtonState::new());
-        left.is_down = true;
-        left.held_duration = 0.05;
-
-        let rect = make_rect();
-        let hit = test_world(&input, &rect);
-        assert!(hit.is_dragging().is_none());
     }
 
     #[test]

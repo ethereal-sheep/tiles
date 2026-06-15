@@ -107,8 +107,6 @@ pub struct MouseEvent {
 }
 
 pub(crate) struct InputState {
-    pub keys_down: HashSet<KeyCode>,
-    pub mouse_buttons_down: HashSet<MouseButton>,
     pub mouse_screen_pos: Vec2,
     pub mouse_world_pos: Vec2,
     pub prev_mouse_screen_pos: Vec2,
@@ -123,8 +121,6 @@ pub(crate) struct InputState {
 impl InputState {
     pub fn new() -> Self {
         Self {
-            keys_down: HashSet::new(),
-            mouse_buttons_down: HashSet::new(),
             mouse_screen_pos: Vec2::ZERO,
             mouse_world_pos: Vec2::ZERO,
             prev_mouse_screen_pos: Vec2::ZERO,
@@ -270,12 +266,12 @@ impl ButtonState {
     }
 
     pub fn update(&mut self, dt: f32, elapsed: f32) {
-        if self.pressed_this_frame {
-            self.held_duration = 0.0;
-        }
-
         if self.is_down {
             self.held_duration += dt;
+        }
+
+        if self.pressed_this_frame {
+            self.held_duration = 0.0;
         }
 
         if self.released_this_frame {
@@ -528,7 +524,7 @@ mod tests {
         // New press should reset held_duration
         press(&mut s);
         s.update(0.016, elapsed);
-        assert_eq!(s.held_duration, 0.016);
+        assert_eq!(s.held_duration, 0.0);
     }
 
     #[test]
@@ -591,7 +587,7 @@ mod tests {
 
         input.update(0.016, 1.0);
 
-        assert_eq!(input.keys_states[&KeyCode::Space].held_duration, 0.016);
+        assert_eq!(input.keys_states[&KeyCode::Space].held_duration, 0.0);
     }
 
     #[test]

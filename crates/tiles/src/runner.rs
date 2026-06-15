@@ -404,7 +404,6 @@ impl ApplicationHandler for Runner<'_> {
 
                 match key_state {
                     KeyState::Pressed => {
-                        self.state.input.keys_down.insert(key);
                         self.state
                             .input
                             .keys_states
@@ -413,7 +412,6 @@ impl ApplicationHandler for Runner<'_> {
                             .pressed_this_frame = true;
                     }
                     KeyState::Released => {
-                        self.state.input.keys_down.remove(&key);
                         self.state
                             .input
                             .keys_states
@@ -446,7 +444,6 @@ impl ApplicationHandler for Runner<'_> {
 
                 let action = match btn_state {
                     ElementState::Pressed => {
-                        self.state.input.mouse_buttons_down.insert(mb);
                         let state = self
                             .state
                             .input
@@ -464,7 +461,6 @@ impl ApplicationHandler for Runner<'_> {
                         MouseAction::Pressed(mb)
                     }
                     ElementState::Released => {
-                        self.state.input.mouse_buttons_down.remove(&mb);
                         let state = self
                             .state
                             .input
