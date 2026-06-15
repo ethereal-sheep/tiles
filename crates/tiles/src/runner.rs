@@ -148,7 +148,7 @@ impl State {
         Vec2::new(x, y)
     }
 
-    pub fn pixel_to_viewport(&self, pixel_pos: Vec2) -> Vec2 {
+    pub fn pixel_to_screen(&self, pixel_pos: Vec2) -> Vec2 {
         if let Some(renderer) = &self.renderer {
             let w = renderer.width();
             let h = renderer.height();
@@ -477,21 +477,19 @@ impl ApplicationHandler for Runner<'_> {
                     }
                 };
 
-                let viewport_pos = self
-                    .state
-                    .pixel_to_viewport(self.state.input.mouse_screen_pos);
+                let screen_pos = self.state.input.mouse_screen_pos;
                 let mouse_event = MouseEvent {
                     action,
-                    screen_pos: self.state.input.mouse_screen_pos,
+                    screen_pos,
                     world_pos: self.state.input.mouse_world_pos,
-                    viewport_pos,
                 };
 
                 self.app.on_mouse(&mut self.state, mouse_event);
             }
 
             WindowEvent::CursorMoved { position, .. } => {
-                let screen_pos = Vec2::new(position.x as f32, position.y as f32);
+                let pixel_pos = Vec2::new(position.x as f32, position.y as f32);
+                let screen_pos = self.state.pixel_to_screen(pixel_pos);
 
                 let prev_screen = self.state.input.mouse_screen_pos;
                 let prev_world = self.state.input.mouse_world_pos;
@@ -504,14 +502,13 @@ impl ApplicationHandler for Runner<'_> {
                     let w = renderer.width();
                     let h = renderer.height();
                     self.state.input.mouse_world_pos =
-                        self.state.camera.screen_to_world(screen_pos, w, h);
+                        self.state.camera.screen_to_world(pixel_pos, w, h);
                 }
 
                 let world_pos = self.state.input.mouse_world_pos;
                 let screen_delta = screen_pos - prev_screen;
                 let world_delta = world_pos - prev_world;
 
-                let viewport_pos = self.state.pixel_to_viewport(screen_pos);
                 let mouse_event = MouseEvent {
                     action: MouseAction::Moved {
                         screen_delta,
@@ -519,7 +516,6 @@ impl ApplicationHandler for Runner<'_> {
                     },
                     screen_pos,
                     world_pos,
-                    viewport_pos,
                 };
 
                 self.app.on_mouse(&mut self.state, mouse_event);
@@ -532,14 +528,11 @@ impl ApplicationHandler for Runner<'_> {
                 };
                 self.state.input.scroll_delta += scroll;
 
-                let viewport_pos = self
-                    .state
-                    .pixel_to_viewport(self.state.input.mouse_screen_pos);
+                let screen_pos = self.state.input.mouse_screen_pos;
                 let mouse_event = MouseEvent {
                     action: MouseAction::Scrolled(scroll),
-                    screen_pos: self.state.input.mouse_screen_pos,
+                    screen_pos,
                     world_pos: self.state.input.mouse_world_pos,
-                    viewport_pos,
                 };
 
                 self.app.on_mouse(&mut self.state, mouse_event);
