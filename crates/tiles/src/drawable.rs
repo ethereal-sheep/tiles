@@ -32,3 +32,34 @@ impl Drawable for Cell {
         f(*self);
     }
 }
+
+impl<A: Drawable, B: Drawable> Drawable for (A, B) {
+    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+        self.0.emit_cells(f);
+        self.1.emit_cells(f);
+    }
+}
+
+impl<A: Drawable, B: Drawable, C: Drawable> Drawable for (A, B, C) {
+    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+        self.0.emit_cells(f);
+        self.1.emit_cells(f);
+        self.2.emit_cells(f);
+    }
+}
+
+impl<D: Drawable> Drawable for Vec<D> {
+    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+        for d in self {
+            d.emit_cells(f);
+        }
+    }
+}
+
+impl<D: Drawable, const N: usize> Drawable for [D; N] {
+    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+        for d in self {
+            d.emit_cells(f);
+        }
+    }
+}
