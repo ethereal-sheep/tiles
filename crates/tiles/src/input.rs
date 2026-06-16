@@ -1,5 +1,5 @@
 use glam::Vec2;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyCode {
@@ -106,7 +106,7 @@ pub struct MouseEvent {
     pub world_pos: Vec2,
 }
 
-pub struct InputState {
+pub(crate) struct InputState {
     pub mouse_screen_pos: Vec2,
     pub mouse_world_pos: Vec2,
     pub prev_mouse_screen_pos: Vec2,
@@ -244,7 +244,7 @@ pub const HOLD_THRESHOLD_SECS: f32 = 0.4;
 pub const DOUBLE_CLICK_THRESHOLD_SECS: f32 = 0.25;
 
 #[derive(Debug, Clone)]
-pub struct ButtonState {
+pub(crate) struct ButtonState {
     pub held_duration: f32,
     pub last_release_time: f32,
     pub press_count: u8,

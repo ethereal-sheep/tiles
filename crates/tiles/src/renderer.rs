@@ -8,7 +8,7 @@ const MAX_INSTANCES: usize = 131072;
 const MAX_LIGHTS: usize = 64;
 
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Pod, Zeroable)]
 struct Uniforms {
     projection: [[f32; 4]; 4],
     viewport_bg: [f32; 4],
@@ -18,20 +18,14 @@ struct Uniforms {
     _pad: [f32; 2],
 }
 
-unsafe impl Pod for Uniforms {}
-unsafe impl Zeroable for Uniforms {}
-
 #[repr(C)]
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Pod, Zeroable)]
 struct LightUniforms {
     lights: [LightData; MAX_LIGHTS],
     light_count: u32,
     ambient: f32,
     _pad: [f32; 2],
 }
-
-unsafe impl Pod for LightUniforms {}
-unsafe impl Zeroable for LightUniforms {}
 
 const SHADER_SRC: &str = r#"
 struct Uniforms {

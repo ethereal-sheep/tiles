@@ -20,8 +20,8 @@ pub use cell::{Cell, Rotation};
 pub use color::Color;
 pub use config::{Config, ConfigBuilder};
 pub use drawable::{Colored, Drawable};
-pub use element::{DragInfo, Element, ElementState, HitState, test_shape};
-pub use input::{ButtonState, InputState, KeyCode, KeyState, MouseAction, MouseButton, MouseEvent, KeyEvent};
+pub use element::{DragInfo, Element, ElementState, HitState};
+pub use input::{KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent};
 pub use line::Line;
 pub use rect::{Rect, RoundedRect};
 #[cfg(feature = "runtime")]
@@ -30,6 +30,9 @@ pub use shape::{Fill, Shape, Stroke, StrokePosition};
 pub use text::{AnchorBox, AnchorCorner, Text};
 
 #[cfg(feature = "runtime")]
-pub fn run(mut app: impl App + 'static, config: Config) -> Result<(), winit::error::EventLoopError> {
+pub fn run(
+    mut app: impl App + 'static,
+    config: Config,
+) -> Result<(), winit::error::EventLoopError> {
     runner::run_app(&mut app, config)
 }
