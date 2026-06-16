@@ -147,7 +147,7 @@ impl HitState {
     }
 }
 
-pub(crate) fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool) -> HitState {
+pub fn test_shape(input: &InputState, shape: &impl Shape, is_screen: bool) -> HitState {
     let mouse_pos = if is_screen {
         input.mouse_screen_pos
     } else {

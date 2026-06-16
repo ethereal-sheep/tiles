@@ -20,8 +20,8 @@ pub use cell::{Cell, Rotation};
 pub use color::Color;
 pub use config::{Config, ConfigBuilder};
 pub use drawable::{Colored, Drawable};
-pub use element::{DragInfo, Element, ElementState, HitState};
-pub use input::{KeyCode, KeyState, MouseAction, MouseButton, MouseEvent, KeyEvent};
+pub use element::{DragInfo, Element, ElementState, HitState, test_shape};
+pub use input::{ButtonState, InputState, KeyCode, KeyState, MouseAction, MouseButton, MouseEvent, KeyEvent};
 pub use line::Line;
 pub use rect::{Rect, RoundedRect};
 #[cfg(feature = "runtime")]

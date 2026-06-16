@@ -37,7 +37,7 @@ impl Color {
         Self { a, ..self }
     }
 
-    pub(crate) fn to_array(self) -> [f32; 4] {
+    pub fn to_array(self) -> [f32; 4] {
         [self.r, self.g, self.b, self.a]
     }
 }

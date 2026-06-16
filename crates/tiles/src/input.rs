@@ -106,7 +106,7 @@ pub struct MouseEvent {
     pub world_pos: Vec2,
 }
 
-pub(crate) struct InputState {
+pub struct InputState {
     pub mouse_screen_pos: Vec2,
     pub mouse_world_pos: Vec2,
     pub prev_mouse_screen_pos: Vec2,

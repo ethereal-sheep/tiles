@@ -5,3 +5,6 @@ edition = "2024"
 
 [dependencies]
 tiles = { path = "../tiles", default-features = false }
+
+[dev-dependencies]
+glam = "0.29"

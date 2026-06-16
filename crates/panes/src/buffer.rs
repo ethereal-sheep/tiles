@@ -1,4 +1,4 @@
-use tiles::Cell;
+use tiles::{Cell, InputState};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Axis {
@@ -48,6 +48,7 @@ impl LayoutCtx {
 pub struct UiBuffer {
     cells: Vec<Cell>,
     stack: Vec<LayoutCtx>,
+    pub input: InputState,
 }
 
 impl UiBuffer {
@@ -55,6 +56,7 @@ impl UiBuffer {
         Self {
             cells: Vec::with_capacity(256),
             stack: Vec::with_capacity(16),
+            input: InputState::new(),
         }
     }
 
@@ -96,9 +98,11 @@ impl UiBuffer {
 
     pub fn pop_layout(&mut self) -> (i32, i32) {
         let ctx = self.stack.pop().unwrap();
-        let used = ctx.used();
-        self.stack.last_mut().unwrap().advance(used.0, used.1);
-        used
+        ctx.used()
+    }
+
+    pub fn advance(&mut self, w: i32, h: i32) {
+        self.stack.last_mut().unwrap().advance(w, h);
     }
 
     pub fn push_cell(&mut self, cell: Cell) {
@@ -171,7 +175,7 @@ mod tests {
         buf.alloc(20, 8);
         let used = buf.pop_layout();
         assert_eq!(used, (20, 18));
-        // Parent cursor advanced by container size
+        buf.advance(used.0, used.1);
         assert_eq!(buf.cursor(), (0, 18));
     }
 
