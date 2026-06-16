@@ -1,5 +1,7 @@
 use glam::Vec2;
-use tiles::{App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, Rotation, State};
+use tiles::{
+    App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, Rotation, State,
+};
 
 struct FireDemo {
     particles: Vec<FireParticle>,
@@ -109,7 +111,7 @@ impl App for FireDemo {
     }
 
     fn update(&mut self, state: &mut State) {
-        let dt = state.dt;
+        let dt = state.dt();
         self.time += dt;
 
         if state.is_mouse_down(MouseButton::Left) {
@@ -144,7 +146,9 @@ impl App for FireDemo {
         for p in self.particles.iter() {
             let (r, g, b, a) = p.color();
 
-            let mut cell = Cell::new(p.pos.x, p.pos.y).color(Color::linear(r, g, b, a)).emissive();
+            let mut cell = Cell::new(p.pos.x, p.pos.y)
+                .color(Color::linear(r, g, b, a))
+                .emissive();
 
             if p.is_body() {
                 let rot = (self.time * 3.0 + p.seed * 2.0).sin() * 0.3;
@@ -160,7 +164,7 @@ impl App for FireDemo {
             return;
         }
         match event.key {
-            KeyCode::Escape => state.quit = true,
+            KeyCode::Escape => state.quit(),
             KeyCode::Up => self.wind += 2.0,
             KeyCode::Down => self.wind -= 2.0,
             KeyCode::Key1 => self.intensity = (self.intensity + 0.2).min(3.0),

@@ -1,5 +1,8 @@
 use glam::Vec2;
-use tiles::{App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent, State};
+use tiles::{
+    App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent,
+    State,
+};
 
 const G: f32 = 500.0;
 const SOFTENING: f32 = 1.0;
@@ -42,7 +45,11 @@ impl NBodySim {
             let angle = noise(seed + 2.0) * std::f32::consts::PI;
             let pos = Vec2::new(angle.cos() * r, angle.sin() * r);
             let vel = Vec2::new(noise(seed + 3.0) * 5.0, noise(seed + 4.0) * 5.0);
-            self.bodies.push(Body { pos, vel, mass: 1.0 });
+            self.bodies.push(Body {
+                pos,
+                vel,
+                mass: 1.0,
+            });
         }
     }
 
@@ -56,7 +63,11 @@ impl NBodySim {
             let speed = (G * DEFAULT_COUNT as f32 / r).sqrt() * 0.3;
             let tangent = Vec2::new(-angle.sin(), angle.cos());
             let vel = tangent * speed + Vec2::new(noise(seed + 5.0) * 2.0, noise(seed + 6.0) * 2.0);
-            self.bodies.push(Body { pos, vel, mass: 1.0 });
+            self.bodies.push(Body {
+                pos,
+                vel,
+                mass: 1.0,
+            });
         }
     }
 
@@ -80,7 +91,11 @@ impl NBodySim {
                 let angle = noise(seed + 2.0) * std::f32::consts::PI;
                 let pos = *center + Vec2::new(angle.cos() * r, angle.sin() * r);
                 let vel = *bulk_vel + Vec2::new(noise(seed + 3.0) * 3.0, noise(seed + 4.0) * 3.0);
-                self.bodies.push(Body { pos, vel, mass: 1.0 });
+                self.bodies.push(Body {
+                    pos,
+                    vel,
+                    mass: 1.0,
+                });
             }
         }
     }
@@ -120,7 +135,7 @@ impl App for NBodySim {
     }
 
     fn update(&mut self, state: &mut State) {
-        let dt = state.dt * self.time_scale;
+        let dt = state.dt() * self.time_scale;
         self.time += dt;
 
         let n = self.bodies.len();
@@ -224,7 +239,11 @@ impl App for NBodySim {
                 for i in 0..steps {
                     let t = i as f32 / steps as f32;
                     let p = start + dir * t;
-                    state.draw(Cell::new(p.x, p.y).color(Color::linear(0.3, 0.3, 0.5, 0.5)).emissive());
+                    state.draw(
+                        Cell::new(p.x, p.y)
+                            .color(Color::linear(0.3, 0.3, 0.5, 0.5))
+                            .emissive(),
+                    );
                 }
             }
         }
@@ -235,7 +254,7 @@ impl App for NBodySim {
             return;
         }
         match event.key {
-            KeyCode::Escape => state.quit = true,
+            KeyCode::Escape => state.quit(),
             KeyCode::Key1 => self.reset_random_disk(),
             KeyCode::Key2 => self.reset_rotating_disk(),
             KeyCode::Key3 => self.reset_clusters(),

@@ -1,5 +1,7 @@
 use glam::Vec2;
-use tiles::{App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, Rotation, State};
+use tiles::{
+    App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, Rotation, State,
+};
 
 const FRAC_PI_2: f32 = std::f32::consts::FRAC_PI_2;
 
@@ -70,7 +72,7 @@ impl App for Boids {
     }
 
     fn update(&mut self, state: &mut State) {
-        let dt = state.dt;
+        let dt = state.dt();
         let half = 64.0;
 
         // Collect positions/velocities for neighbor queries
@@ -184,7 +186,7 @@ impl App for Boids {
             return;
         }
         match event.key {
-            KeyCode::Escape => state.quit = true,
+            KeyCode::Escape => state.quit(),
             KeyCode::Up => self.max_speed = (self.max_speed + 5.0).min(80.0),
             KeyCode::Down => self.max_speed = (self.max_speed - 5.0).max(5.0),
             KeyCode::Key1 => self.separation_strength = (self.separation_strength + 5.0).min(100.0),

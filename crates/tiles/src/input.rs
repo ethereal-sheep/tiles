@@ -133,7 +133,7 @@ impl InputState {
         }
     }
 
-    pub fn begin_frame(&mut self) {
+    pub fn begin_state_update(&mut self) {
         self.scroll_delta = 0.0;
     }
 
@@ -570,7 +570,7 @@ mod tests {
     fn input_state_begin_frame_resets_scroll() {
         let mut input = InputState::new();
         input.scroll_delta = 3.0;
-        input.begin_frame();
+        input.begin_state_update();
         assert_eq!(input.scroll_delta, 0.0);
     }
 

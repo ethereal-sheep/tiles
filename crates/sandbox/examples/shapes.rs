@@ -64,11 +64,23 @@ impl App for Shapes {
 
         // Lines at different widths
         state.draw(Line::new(10.0, 90.0, 50.0, 90.0).color(Color::linear(1.0, 1.0, 1.0, 1.0)));
-        state.draw(Line::new(10.0, 95.0, 50.0, 95.0).width(2).color(Color::linear(0.8, 0.8, 0.2, 1.0)));
-        state.draw(Line::new(10.0, 102.0, 50.0, 102.0).width(4).color(Color::linear(0.2, 0.8, 0.8, 1.0)));
+        state.draw(
+            Line::new(10.0, 95.0, 50.0, 95.0)
+                .width(2)
+                .color(Color::linear(0.8, 0.8, 0.2, 1.0)),
+        );
+        state.draw(
+            Line::new(10.0, 102.0, 50.0, 102.0)
+                .width(4)
+                .color(Color::linear(0.2, 0.8, 0.8, 1.0)),
+        );
 
         // Diagonal line
-        state.draw(Line::new(60.0, 85.0, 100.0, 110.0).width(2).color(Color::linear(0.8, 0.4, 0.8, 1.0)));
+        state.draw(
+            Line::new(60.0, 85.0, 100.0, 110.0)
+                .width(2)
+                .color(Color::linear(0.8, 0.4, 0.8, 1.0)),
+        );
 
         // Filled + stroked (two draw calls)
         state.draw(
@@ -102,7 +114,7 @@ impl App for Shapes {
 
     fn on_key(&mut self, state: &mut State, event: KeyEvent) {
         if event.state == KeyState::Pressed && event.key == KeyCode::Escape {
-            state.quit = true;
+            state.quit();
         }
     }
 

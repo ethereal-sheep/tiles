@@ -1,6 +1,6 @@
 use glam::Vec2;
 use pollster::block_on;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use winit::{
     application::ApplicationHandler,
     event::{ElementState, WindowEvent},
@@ -39,23 +39,22 @@ pub struct State {
     config: Config,
     camera: Camera,
     input: InputState,
-    timer: Option<Instant>,
-    start: Option<Instant>,
-    accumulator: f32,
-    fixed_dt: f32,
-    debug: bool,
     window_bg: [f32; 4],
     viewport_bg: [f32; 4],
     ambient_illumination: f32,
-    pub dt: f32,
-    pub elapsed: f32,
-    pub alpha: f32,
-    pub quit: bool,
+    fixed_dt: Duration,
+    accumulator: Duration,
+    dt: Duration,
+    elapsed: Duration,
+    frame_timer: Instant,
+    start_timer: Instant,
+    quit: bool,
+    debug: bool,
 }
 
 impl State {
     fn new(config: Config) -> Self {
-        let fixed_dt = 1.0 / config.steps_per_second as f32;
+        let fixed_dt = Duration::from_secs_f32(1.0 / config.steps_per_second as f32);
         let camera = Camera::new(config.viewport_width, config.viewport_height);
         Self {
             window: None,
@@ -67,18 +66,17 @@ impl State {
             config,
             camera,
             input: InputState::new(),
-            dt: fixed_dt,
-            elapsed: 0.0,
-            alpha: 0.0,
-            quit: false,
-            timer: None,
-            start: None,
-            accumulator: 0.0,
-            fixed_dt,
-            debug: false,
             window_bg: [0.0, 0.0, 0.0, 1.0],
             viewport_bg: [0.08, 0.08, 0.10, 1.0],
             ambient_illumination: 1.0,
+            fixed_dt,
+            accumulator: Duration::from_secs(0),
+            frame_timer: Instant::now(),
+            start_timer: Instant::now(),
+            dt: fixed_dt,
+            elapsed: Duration::from_secs(0),
+            quit: false,
+            debug: false,
         }
     }
 
@@ -194,14 +192,6 @@ impl State {
 
     pub fn set_ambient_illumination(&mut self, ambient: f32) {
         self.ambient_illumination = ambient.clamp(0.0, 1.0);
-    }
-
-    // --- Timing ---
-
-    pub fn set_steps_per_second(&mut self, steps: u32) {
-        self.fixed_dt = 1.0 / steps as f32;
-        self.config.steps_per_second = steps;
-        self.config.save();
     }
 
     // --- Input (polled) ---
@@ -340,6 +330,20 @@ impl State {
         self.config.resizable = resizable;
         self.config.save();
     }
+
+    // --- Actions ---
+
+    pub fn quit(&mut self) {
+        self.quit = true;
+    }
+
+    pub fn dt(&self) -> f32 {
+        self.dt.as_secs_f32()
+    }
+
+    pub fn elapsed(&self) -> f32 {
+        self.elapsed.as_secs_f32()
+    }
 }
 
 pub(crate) fn run_app(
@@ -381,8 +385,8 @@ impl ApplicationHandler for Runner<'_> {
         window.request_redraw();
         self.state.window = Some(window);
         self.state.renderer = Some(renderer);
-        self.state.start = Some(Instant::now());
-        self.state.timer = Some(Instant::now());
+        self.state.start_timer = Instant::now();
+        self.state.frame_timer = Instant::now();
         self.app.init(&mut self.state);
     }
 
@@ -541,41 +545,53 @@ impl ApplicationHandler for Runner<'_> {
             }
 
             WindowEvent::RedrawRequested => {
-                let frame_dt = if let Some(timer) = self.state.timer {
-                    let dt = timer.elapsed().as_secs_f32();
-                    self.state.timer = Some(Instant::now());
-                    dt
-                } else {
-                    0.0
-                };
+                let frame_start = Instant::now();
+                let frame_dt = frame_start - self.state.frame_timer;
+                let consumed_tick_timer = self.state.frame_timer - self.state.accumulator;
+                self.state.frame_timer = frame_start;
+                self.state.accumulator += frame_dt;
 
-                if let Some(start) = self.state.start {
-                    self.state.elapsed = start.elapsed().as_secs_f32();
+                let mut update_count = 0;
+                while self.state.accumulator >= self.state.fixed_dt {
+                    self.state.accumulator -= self.state.fixed_dt;
+                    update_count += 1;
                 }
 
-                // Fixed timestep accumulation
-                self.state.accumulator += frame_dt;
-                let fixed_dt = self.state.fixed_dt;
-                self.state.dt = fixed_dt;
+                let expanded_dt = self.state.fixed_dt * update_count;
+                let elapsed_last = consumed_tick_timer - self.state.start_timer;
 
-                self.state.input.update(self.state.dt, self.state.elapsed);
+                if update_count == 0 {
+                    if let Some(w) = &self.state.window {
+                        w.request_redraw();
+                    }
+                    return;
+                }
+
+                self.state.input.update(
+                    expanded_dt.as_secs_f32(),
+                    (elapsed_last + expanded_dt).as_secs_f32(),
+                );
 
                 // Clear overlay buffers before pre_update populates them
                 self.state.world_overlay_cells.clear();
                 self.state.screen_overlay_cells.clear();
 
                 // pre_update: once per frame, before simulation ticks
+                self.state.dt = expanded_dt;
+                self.state.elapsed = elapsed_last + expanded_dt;
                 self.app.pre_update(&mut self.state);
 
-                while self.state.accumulator >= fixed_dt {
-                    self.state.input.begin_frame();
+                self.state.dt = self.state.fixed_dt;
+                for i in 1..=update_count {
+                    // Fixed timestep accumulation
+                    self.state.input.begin_state_update();
+                    self.state.elapsed = elapsed_last + i * self.state.fixed_dt;
                     self.app.update(&mut self.state);
-                    self.state.accumulator -= fixed_dt;
                 }
 
-                self.state.alpha = self.state.accumulator / fixed_dt;
-
                 // Draw
+                self.state.dt = expanded_dt;
+                self.state.elapsed = elapsed_last + expanded_dt;
                 self.state.cells.clear();
                 self.state.screen_cells.clear();
                 self.app.draw(&mut self.state);

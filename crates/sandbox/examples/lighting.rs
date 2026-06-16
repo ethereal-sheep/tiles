@@ -1,4 +1,6 @@
-use tiles::{App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, State};
+use tiles::{
+    App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseButton, MouseEvent, State,
+};
 
 struct LightingDemo {
     time: f32,
@@ -28,7 +30,7 @@ impl App for LightingDemo {
     }
 
     fn update(&mut self, state: &mut State) {
-        self.time += state.dt;
+        self.time += state.dt();
         state.set_ambient_illumination(self.ambient);
     }
 
@@ -52,7 +54,8 @@ impl App for LightingDemo {
 
         // Orbiting lights
         for i in 0..self.num_orbiting {
-            let angle = self.time * 0.8 + (i as f32) * std::f32::consts::TAU / self.num_orbiting as f32;
+            let angle =
+                self.time * 0.8 + (i as f32) * std::f32::consts::TAU / self.num_orbiting as f32;
             let orbit_radius = 18.0;
             let x = angle.cos() * orbit_radius;
             let y = angle.sin() * orbit_radius;
@@ -94,7 +97,7 @@ impl App for LightingDemo {
             return;
         }
         match event.key {
-            KeyCode::Escape => state.quit = true,
+            KeyCode::Escape => state.quit(),
             KeyCode::Up => self.light_radius = (self.light_radius + 2.0).min(60.0),
             KeyCode::Down => self.light_radius = (self.light_radius - 2.0).max(2.0),
             KeyCode::Key1 => self.ambient = (self.ambient - 0.05).max(0.0),

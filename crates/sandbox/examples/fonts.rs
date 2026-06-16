@@ -1,7 +1,20 @@
 use tiles::{
-    AnchorCorner::TopLeft, App, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Shape, State, StrokePosition::Middle, Text, font::{
-        Font, HELVR12_7X9, LOGISOSO46_23X46, MONO_4X6, MONO_5X7, MONO_5X8, MONO_6X9, MONO_6X10, MONO_6X12, MONO_6X13, MONO_7X13, MONO_7X14, MONO_8X13, MONO_9X15, MONO_9X18, MONO_10X20, MONO_BOLD_6X13, MONO_BOLD_7X13, MONO_BOLD_7X14, MONO_BOLD_8X13, MONO_BOLD_9X15, MONO_BOLD_9X18, MONO_CLR6X12_6X12, MONO_CREEP_4X7, MONO_HAXORMEDIUM_6X11, MONO_HAXORMEDIUM_7X13, MONO_HAXORMEDIUM_8X14, MONO_HAXORMEDIUM_9X15, MONO_HAXORNARROW_5X11, MONO_HAXORNARROW_6X12, MONO_HAXORNARROW_7X13, MONO_KNXT_9X20, MONO_OBLIQUE_6X13, MONO_OBLIQUE_7X13, MONO_OBLIQUE_8X13, MONO_PEEP_10X21, MONO_PSEVDOAZBUKAMEDIUM_8X14, MONO_SCIENTIFICA_4X7, MONO_SCIENTIFICABOLD_4X7, MONO_SCIENTIFICAITALIC_4X7, MONO_SPLEEN_5X8, MONO_SPLEEN_8X16, MONO_SPLEEN_12X24, MONO_SPLEEN_16X32, MONO_SPLEEN_32X64, TINY5_4X5, TOM_THUMB_3X5
-    }
+    font::{
+        Font, HELVR12_7X9, LOGISOSO46_23X46, MONO_10X20, MONO_4X6, MONO_5X7, MONO_5X8, MONO_6X10,
+        MONO_6X12, MONO_6X13, MONO_6X9, MONO_7X13, MONO_7X14, MONO_8X13, MONO_9X15, MONO_9X18,
+        MONO_BOLD_6X13, MONO_BOLD_7X13, MONO_BOLD_7X14, MONO_BOLD_8X13, MONO_BOLD_9X15,
+        MONO_BOLD_9X18, MONO_CLR6X12_6X12, MONO_CREEP_4X7, MONO_HAXORMEDIUM_6X11,
+        MONO_HAXORMEDIUM_7X13, MONO_HAXORMEDIUM_8X14, MONO_HAXORMEDIUM_9X15, MONO_HAXORNARROW_5X11,
+        MONO_HAXORNARROW_6X12, MONO_HAXORNARROW_7X13, MONO_KNXT_9X20, MONO_OBLIQUE_6X13,
+        MONO_OBLIQUE_7X13, MONO_OBLIQUE_8X13, MONO_PEEP_10X21, MONO_PSEVDOAZBUKAMEDIUM_8X14,
+        MONO_SCIENTIFICABOLD_4X7, MONO_SCIENTIFICAITALIC_4X7, MONO_SCIENTIFICA_4X7,
+        MONO_SPLEEN_12X24, MONO_SPLEEN_16X32, MONO_SPLEEN_32X64, MONO_SPLEEN_5X8, MONO_SPLEEN_8X16,
+        TINY5_4X5, TOM_THUMB_3X5,
+    },
+    AnchorCorner::TopLeft,
+    App, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Shape, State,
+    StrokePosition::Middle,
+    Text,
 };
 
 struct FontDemo {
@@ -108,9 +121,15 @@ impl App for FontDemo {
         let start_y = 10.0;
 
         let header = format!("[{}/{}]", self.font_index + 1, FONTS.len());
-        let test = Text::new(font, "Hello World").position(start_x, start_y - line_height).anchor(tiles::AnchorBox::Tight, TopLeft);
+        let test = Text::new(font, "Hello World")
+            .position(start_x, start_y - line_height)
+            .anchor(tiles::AnchorBox::Tight, TopLeft);
         let bounds = test.bounds().offset(1);
-        state.draw_screen(bounds.stroke(2, Middle).color(Color::linear(1.0, 1.0, 1.0, 1.0)));
+        state.draw_screen(
+            bounds
+                .stroke(2, Middle)
+                .color(Color::linear(1.0, 1.0, 1.0, 1.0)),
+        );
         state.draw_screen(test.color(Color::linear(0.1, 0.1, 0.1, 1.0)));
         state.draw_screen(Text::new(font, &header).position(start_x, start_y));
         state.draw_screen(Text::new(font, name).position(start_x, start_y + line_height));
@@ -126,7 +145,7 @@ impl App for FontDemo {
             return;
         }
         match event.key {
-            KeyCode::Escape => state.quit = true,
+            KeyCode::Escape => state.quit(),
             KeyCode::Right => self.font_index = (self.font_index + 1) % FONTS.len(),
             KeyCode::Left => {
                 self.font_index = if self.font_index == 0 {

@@ -64,8 +64,8 @@ impl App for Sandbox {
     fn pre_update(&mut self, _state: &mut State) {}
 
     fn update(&mut self, state: &mut State) {
-        let dt = state.dt;
-        let t = state.elapsed;
+        let dt = state.dt();
+        let t = state.elapsed();
 
         // Spawn particles
         if state.is_mouse_down(MouseButton::Left) {
@@ -120,7 +120,7 @@ impl App for Sandbox {
             return;
         }
         match event.key {
-            KeyCode::Escape => state.quit = true,
+            KeyCode::Escape => state.quit(),
             KeyCode::C => self.particles.clear(),
             KeyCode::Key1 => self.mode = Mode::Fountain,
             KeyCode::Key2 => self.mode = Mode::Rain,

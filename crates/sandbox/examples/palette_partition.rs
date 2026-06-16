@@ -536,7 +536,7 @@ impl App for PalettePartition {
             return;
         }
         match event.key {
-            KeyCode::Escape => state.quit = true,
+            KeyCode::Escape => state.quit(),
             KeyCode::Right => {
                 self.hue_offset = (self.hue_offset + HUE_STEP) % 360.0;
                 self.grid = combined_partition(&self.palette, self.hue_offset);

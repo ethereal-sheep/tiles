@@ -69,7 +69,7 @@ impl RotationDemo {
             3 => ((0.0, -half), WaveRotation::FlipX),       // bottom edge
             4 => ((-half, half), WaveRotation::DiagonalTR), // top-left corner
             5 => ((half, half), WaveRotation::DiagonalTL),  // top-right corner
-            6 => ((-half, -half), WaveRotation::DiagonalTL),// bottom-left corner
+            6 => ((-half, -half), WaveRotation::DiagonalTL), // bottom-left corner
             7 => ((half, -half), WaveRotation::DiagonalTR), // bottom-right corner
             _ => ((0.0, 0.0), WaveRotation::Z),
         };
@@ -157,7 +157,7 @@ impl App for RotationDemo {
         if self.paused {
             return;
         }
-        let dt = state.dt;
+        let dt = state.dt();
 
         if self.wave_active {
             self.wave_time += dt;
@@ -175,7 +175,7 @@ impl App for RotationDemo {
         } else {
             self.pause_timer += dt;
             if self.pause_timer >= self.pause_duration {
-                self.trigger_wave(state.elapsed);
+                self.trigger_wave(state.elapsed());
             }
         }
     }
@@ -231,7 +231,7 @@ impl App for RotationDemo {
             return;
         }
         match event.key {
-            KeyCode::Escape => state.quit = true,
+            KeyCode::Escape => state.quit(),
             // Adjust flip duration
             KeyCode::Key1 => self.flip_duration = (self.flip_duration - 0.1).max(0.1),
             KeyCode::Key2 => self.flip_duration = (self.flip_duration + 0.1).min(2.0),
@@ -250,7 +250,7 @@ impl App for RotationDemo {
             // Force trigger
             KeyCode::Space => {
                 if !self.wave_active {
-                    self.trigger_wave(state.elapsed);
+                    self.trigger_wave(state.elapsed());
                 }
             }
             // Pause/unpause

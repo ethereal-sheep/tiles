@@ -173,7 +173,7 @@ impl App for Demo {
 
     fn on_key(&mut self, state: &mut State, event: KeyEvent) {
         if event.state == KeyState::Pressed && event.key == KeyCode::Escape {
-            state.quit = true;
+            state.quit();
         }
     }
 
