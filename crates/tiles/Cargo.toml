@@ -3,11 +3,15 @@ name = "tiles"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["runtime"]
+runtime = ["dep:wgpu", "dep:winit", "dep:pollster"]
+
 [dependencies]
-wgpu = "22"
-winit = "0.30"
+wgpu = { version = "22", optional = true }
+winit = { version = "0.30", optional = true }
 bytemuck = { version = "1", features = ["derive"] }
-pollster = "0.4"
+pollster = { version = "0.4", optional = true }
 glam = "0.29"
 serde = { version = "1", features = ["derive"] }
 toml = "0.8"

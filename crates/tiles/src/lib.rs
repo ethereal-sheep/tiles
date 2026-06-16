@@ -8,7 +8,9 @@ pub mod font;
 mod input;
 mod line;
 mod rect;
+#[cfg(feature = "runtime")]
 mod renderer;
+#[cfg(feature = "runtime")]
 mod runner;
 mod shape;
 mod text;
@@ -22,10 +24,12 @@ pub use element::{DragInfo, Element, ElementState, HitState};
 pub use input::{KeyCode, KeyState, MouseAction, MouseButton, MouseEvent, KeyEvent};
 pub use line::Line;
 pub use rect::{Rect, RoundedRect};
+#[cfg(feature = "runtime")]
 pub use runner::{App, State};
 pub use shape::{Fill, Shape, Stroke, StrokePosition};
 pub use text::{AnchorBox, AnchorCorner, Text};
 
+#[cfg(feature = "runtime")]
 pub fn run(mut app: impl App + 'static, config: Config) -> Result<(), winit::error::EventLoopError> {
     runner::run_app(&mut app, config)
 }

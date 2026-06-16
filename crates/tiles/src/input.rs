@@ -614,6 +614,7 @@ mod tests {
     }
 }
 
+#[cfg(feature = "runtime")]
 pub(crate) fn translate_key(key: winit::keyboard::PhysicalKey) -> KeyCode {
     use winit::keyboard::{KeyCode as WK, PhysicalKey};
     match key {

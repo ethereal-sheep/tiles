@@ -2,6 +2,7 @@ use glam::Vec2;
 
 use crate::drawable::Drawable;
 use crate::input::{InputState, MouseButton, HOLD_THRESHOLD_SECS};
+#[cfg(feature = "runtime")]
 use crate::runner::State;
 use crate::shape::Shape;
 
@@ -244,6 +245,7 @@ pub trait Element {
     fn shape(&self) -> impl Shape;
     fn draw(&self, state: ElementState) -> impl Drawable;
 
+    #[cfg(feature = "runtime")]
     fn handle_screen(&self, state: &mut State) -> HitState {
         let shape = self.shape();
         let hit = state.test_shape_screen(&shape);
@@ -252,6 +254,7 @@ pub trait Element {
         hit
     }
 
+    #[cfg(feature = "runtime")]
     fn handle_world(&self, state: &mut State) -> HitState {
         let shape = self.shape();
         let hit = state.test_shape_world(&shape);
