@@ -80,6 +80,15 @@ impl State {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_for_test(viewport_w: u32, viewport_h: u32) -> Self {
+        let mut config = Config::default();
+        config.viewport_width = viewport_w as f32;
+        config.viewport_height = viewport_h as f32;
+        config.no_file = true;
+        Self::new(config)
+    }
+
     // --- Drawing ---
 
     pub fn draw(&mut self, drawable: impl Drawable) {

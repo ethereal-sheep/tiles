@@ -14,6 +14,7 @@ mod renderer;
 mod runner;
 mod shape;
 mod text;
+pub mod ui;
 
 pub use camera::Camera;
 pub use cell::{Cell, Rotation};

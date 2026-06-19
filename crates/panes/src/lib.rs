@@ -1,4 +1,5 @@
 mod buffer;
-pub mod widgets;
+#[macro_use]
+mod macros;
 
 pub use buffer::{Axis, UiBuffer};
