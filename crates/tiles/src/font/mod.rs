@@ -30,6 +30,12 @@ pub struct Font {
     glyphs: &'static [Glyph],
 }
 
+impl std::fmt::Debug for Font {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Font")
+    }
+}
+
 impl Font {
     pub const fn new(
         height: usize,

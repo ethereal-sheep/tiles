@@ -1,9 +1,11 @@
 use crate::cell::Cell;
 use crate::color::Color;
 use crate::element::DragInfo;
+use crate::font::Font;
 use crate::input::MouseButton;
 use crate::rect::Rect;
 use crate::runner::{App, State};
+use tiles_macros::Builders;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Axis {
@@ -11,189 +13,92 @@ pub enum Axis {
     Column,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum Position {
+    #[default]
     Flow,
     Relative(i32, i32),
     Absolute(i32, i32),
 }
 
-#[derive(Clone, Debug)]
-pub struct Style {
-    pub w: Option<u32>,
-    pub h: Option<u32>,
-    pub fill_w: bool,
-    pub fill_h: bool,
-    pub color: Option<Color>,
-    pub hover_color: Option<Color>,
-    pub pressed_color: Option<Color>,
-    pub axis: Option<Axis>,
-    pub gap: Option<u32>,
+// --- Styles ---
+
+#[derive(Clone, Debug, Default, Builders)]
+#[builders(forward(to = "PaneNode<A: App>", via = "style.base"))]
+#[builders(forward(to = "TextNode<A: App>", via = "style"))]
+#[builders(forward(to = "PaneStyle", via = "base"))]
+pub struct StyleBase {
+    #[builder]
     pub padding: Option<u32>,
+    #[builder(variant(name = "relative", variant = "Relative", args = "x: i32, y: i32"))]
+    #[builder(variant(name = "absolute", variant = "Absolute", args = "x: i32, y: i32"))]
     pub position: Position,
+    #[builder]
     pub z_index: i32,
+    #[builder]
+    pub color: Option<Color>,
+    #[builder]
+    pub hover_color: Option<Color>,
+    #[builder]
+    pub pressed_color: Option<Color>,
+    #[builder]
+    pub font: Option<&'static Font>,
 }
 
-impl Default for Style {
-    fn default() -> Self {
-        Self {
-            w: None,
-            h: None,
-            fill_w: false,
-            fill_h: false,
-            color: None,
-            hover_color: None,
-            pressed_color: None,
-            axis: None,
-            gap: None,
-            padding: None,
-            position: Position::Flow,
-            z_index: 0,
-        }
-    }
+#[derive(Clone, Debug, Default, Builders)]
+#[builders(forward(to = "PaneNode<A: App>", via = "style"))]
+pub struct PaneStyle {
+    pub base: StyleBase,
+    #[builder]
+    #[builder(combo(name = "size", fields = "w, h"))]
+    pub w: Option<u32>,
+    #[builder]
+    pub h: Option<u32>,
+    #[builder]
+    pub fill_w: bool,
+    #[builder]
+    pub fill_h: bool,
+    #[builder]
+    pub axis: Option<Axis>,
+    #[builder]
+    pub gap: Option<u32>,
+    #[builder]
+    pub text_color: Option<Color>,
+    #[builder]
+    pub hover_text_color: Option<Color>,
+    #[builder]
+    pub pressed_text_color: Option<Color>,
 }
 
-impl Style {
-    pub fn new() -> Self {
-        Self::default()
-    }
+// --- Handlers ---
 
-    pub fn w(mut self, w: u32) -> Self {
-        self.w = Some(w);
-        self
-    }
-
-    pub fn h(mut self, h: u32) -> Self {
-        self.h = Some(h);
-        self
-    }
-
-    pub fn size(mut self, w: u32, h: u32) -> Self {
-        self.w = Some(w);
-        self.h = Some(h);
-        self
-    }
-
-    pub fn fill_w(mut self) -> Self {
-        self.fill_w = true;
-        self
-    }
-
-    pub fn fill_h(mut self) -> Self {
-        self.fill_h = true;
-        self
-    }
-
-    pub fn color(mut self, color: Color) -> Self {
-        self.color = Some(color);
-        self
-    }
-
-    pub fn hover_color(mut self, color: Color) -> Self {
-        self.hover_color = Some(color);
-        self
-    }
-
-    pub fn pressed_color(mut self, color: Color) -> Self {
-        self.pressed_color = Some(color);
-        self
-    }
-
-    pub fn axis(mut self, axis: Axis) -> Self {
-        self.axis = Some(axis);
-        self
-    }
-
-    pub fn gap(mut self, gap: u32) -> Self {
-        self.gap = Some(gap);
-        self
-    }
-
-    pub fn padding(mut self, padding: u32) -> Self {
-        self.padding = Some(padding);
-        self
-    }
-
-    pub fn position(mut self, position: Position) -> Self {
-        self.position = position;
-        self
-    }
-
-    pub fn z_index(mut self, z: i32) -> Self {
-        self.z_index = z;
-        self
-    }
-
-    fn apply_from(&mut self, other: &Style) {
-        if other.w.is_some() {
-            self.w = other.w;
-        }
-        if other.h.is_some() {
-            self.h = other.h;
-        }
-        if other.fill_w {
-            self.fill_w = true;
-        }
-        if other.fill_h {
-            self.fill_h = true;
-        }
-        if other.color.is_some() {
-            self.color = other.color;
-        }
-        if other.hover_color.is_some() {
-            self.hover_color = other.hover_color;
-        }
-        if other.pressed_color.is_some() {
-            self.pressed_color = other.pressed_color;
-        }
-        if other.axis.is_some() {
-            self.axis = other.axis;
-        }
-        if other.gap.is_some() {
-            self.gap = other.gap;
-        }
-        if other.padding.is_some() {
-            self.padding = other.padding;
-        }
-        if other.position != Position::Flow {
-            self.position = other.position;
-        }
-        if other.z_index != 0 {
-            self.z_index = other.z_index;
-        }
-    }
-
-    fn inherit_from(&mut self, parent: &Style) {
-        if self.color.is_none() {
-            self.color = parent.color;
-        }
-        if self.hover_color.is_none() {
-            self.hover_color = parent.hover_color;
-        }
-        if self.pressed_color.is_none() {
-            self.pressed_color = parent.pressed_color;
-        }
-        if self.axis.is_none() {
-            self.axis = parent.axis;
-        }
-        if self.gap.is_none() {
-            self.gap = parent.gap;
-        }
-    }
-}
-
+#[derive(Builders)]
+#[builders(forward(to = "PaneNode<A: App>", via = "handlers"))]
+#[builders(forward(to = "TextNode<A: App>", via = "handlers"))]
 pub struct Handlers<A: App> {
+    #[builder]
     pub on_hover: Option<Box<dyn Fn(&mut A, &mut State)>>,
+    #[builder]
     pub on_enter: Option<Box<dyn Fn(&mut A, &mut State)>>,
+    #[builder]
     pub on_leave: Option<Box<dyn Fn(&mut A, &mut State)>>,
+    #[builder]
     pub on_click: Option<Box<dyn Fn(&mut A, &mut State)>>,
+    #[builder]
     pub on_double_click: Option<Box<dyn Fn(&mut A, &mut State)>>,
+    #[builder]
     pub on_press: Option<Box<dyn Fn(&mut A, &mut State)>>,
+    #[builder]
     pub on_release: Option<Box<dyn Fn(&mut A, &mut State)>>,
+    #[builder]
     pub on_right_click: Option<Box<dyn Fn(&mut A, &mut State)>>,
+    #[builder]
     pub on_hold: Option<Box<dyn Fn(&mut A, &mut State)>>,
+    #[builder]
     pub on_drag: Option<Box<dyn Fn(&mut A, &mut State, DragInfo)>>,
+    #[builder]
     pub on_drag_end: Option<Box<dyn Fn(&mut A, &mut State, DragInfo)>>,
+    #[builder]
     pub on_scroll: Option<Box<dyn Fn(&mut A, &mut State, f32)>>,
 }
 
@@ -216,168 +121,153 @@ impl<A: App> Default for Handlers<A> {
     }
 }
 
-pub struct Node<A: App> {
+// --- Node types ---
+
+pub struct PaneNode<A: App> {
     id: String,
-    style: Style,
+    style: PaneStyle,
     children: Vec<Node<A>>,
     handlers: Handlers<A>,
 }
 
+pub struct TextNode<A: App> {
+    id: String,
+    style: StyleBase,
+    content: String,
+    handlers: Handlers<A>,
+}
+
+pub enum Node<A: App> {
+    Pane(PaneNode<A>),
+    Text(TextNode<A>),
+}
+
+impl<A: App> From<PaneNode<A>> for Node<A> {
+    fn from(p: PaneNode<A>) -> Self {
+        Node::Pane(p)
+    }
+}
+
+impl<A: App> From<TextNode<A>> for Node<A> {
+    fn from(t: TextNode<A>) -> Self {
+        Node::Text(t)
+    }
+}
+
 impl<A: App> Node<A> {
+    pub(crate) fn layout(self, screen_w: u32, screen_h: u32) -> ResolvedNode<A> {
+        match self {
+            Node::Pane(p) => p.layout(screen_w, screen_h),
+            Node::Text(t) => {
+                let ctx = LayoutCtx {
+                    origin_x: 0,
+                    origin_y: 0,
+                    available_w: screen_w,
+                    available_h: screen_h,
+                };
+                t.layout_text(&ctx, &InheritedStyle::default())
+            }
+        }
+    }
+}
+
+// PaneNode: id + children (style & handler builders auto-generated by derive)
+impl<A: App> PaneNode<A> {
     pub fn id(mut self, id: &str) -> Self {
         self.id = id.to_string();
         self
     }
 
-    // --- Style builder methods ---
-
-    pub fn w(mut self, w: u32) -> Self {
-        self.style.w = Some(w);
+    pub fn children<I: Into<Node<A>>>(mut self, children: Vec<I>) -> Self {
+        self.children = children.into_iter().map(Into::into).collect();
         self
     }
+}
 
-    pub fn h(mut self, h: u32) -> Self {
-        self.style.h = Some(h);
+// TextNode: id (style & handler builders auto-generated by derive)
+impl<A: App> TextNode<A> {
+    pub fn id(mut self, id: &str) -> Self {
+        self.id = id.to_string();
         self
     }
+}
 
-    pub fn size(mut self, w: u32, h: u32) -> Self {
-        self.style.w = Some(w);
-        self.style.h = Some(h);
-        self
+// --- Convenience constructors ---
+
+pub fn pane<A: App>() -> PaneNode<A> {
+    PaneNode {
+        id: String::default(),
+        style: PaneStyle::default(),
+        children: Vec::new(),
+        handlers: Handlers::default(),
     }
+}
 
-    pub fn fill_w(mut self) -> Self {
-        self.style.fill_w = true;
-        self
+pub fn row<A: App>() -> PaneNode<A> {
+    pane().axis(Axis::Row)
+}
+
+pub fn col<A: App>() -> PaneNode<A> {
+    pane().axis(Axis::Column)
+}
+
+pub fn text<A: App>(content: impl Into<String>) -> TextNode<A> {
+    TextNode {
+        id: String::default(),
+        style: StyleBase::default(),
+        content: content.into(),
+        handlers: Handlers::default(),
     }
+}
 
-    pub fn fill_h(mut self) -> Self {
-        self.style.fill_h = true;
-        self
+// --- Layout ---
+
+struct LayoutCtx {
+    origin_x: i32,
+    origin_y: i32,
+    available_w: u32,
+    available_h: u32,
+}
+
+struct InheritedStyle {
+    color: Option<Color>,
+    hover_color: Option<Color>,
+    pressed_color: Option<Color>,
+    text_color: Option<Color>,
+    hover_text_color: Option<Color>,
+    pressed_text_color: Option<Color>,
+    font: Option<&'static Font>,
+    axis: Option<Axis>,
+    gap: Option<u32>,
+}
+
+impl Default for InheritedStyle {
+    fn default() -> Self {
+        Self {
+            color: None,
+            hover_color: None,
+            pressed_color: None,
+            text_color: None,
+            hover_text_color: None,
+            pressed_text_color: None,
+            font: None,
+            axis: None,
+            gap: None,
+        }
     }
+}
 
-    pub fn color(mut self, color: Color) -> Self {
-        self.style.color = Some(color);
-        self
-    }
+pub(crate) struct ResolvedNode<A: App> {
+    id: String,
+    rect: Rect,
+    base_style: StyleBase,
+    text_content: Option<String>,
+    text_font: Option<&'static Font>,
+    children: Vec<ResolvedNode<A>>,
+    handlers: Handlers<A>,
+}
 
-    pub fn hover_color(mut self, color: Color) -> Self {
-        self.style.hover_color = Some(color);
-        self
-    }
-
-    pub fn pressed_color(mut self, color: Color) -> Self {
-        self.style.pressed_color = Some(color);
-        self
-    }
-
-    pub fn axis(mut self, axis: Axis) -> Self {
-        self.style.axis = Some(axis);
-        self
-    }
-
-    pub fn gap(mut self, gap: u32) -> Self {
-        self.style.gap = Some(gap);
-        self
-    }
-
-    pub fn padding(mut self, padding: u32) -> Self {
-        self.style.padding = Some(padding);
-        self
-    }
-
-    pub fn relative(mut self, x: i32, y: i32) -> Self {
-        self.style.position = Position::Relative(x, y);
-        self
-    }
-
-    pub fn absolute(mut self, x: i32, y: i32) -> Self {
-        self.style.position = Position::Absolute(x, y);
-        self
-    }
-
-    pub fn z_index(mut self, z: i32) -> Self {
-        self.style.z_index = z;
-        self
-    }
-
-    pub fn style(mut self, style: Style) -> Self {
-        self.style.apply_from(&style);
-        self
-    }
-
-    // --- Children ---
-
-    pub fn children(mut self, children: Vec<Node<A>>) -> Self {
-        self.children = children;
-        self
-    }
-
-    // --- Handler builder methods ---
-
-    pub fn on_hover(mut self, f: impl Fn(&mut A, &mut State) + 'static) -> Self {
-        self.handlers.on_hover = Some(Box::new(f));
-        self
-    }
-
-    pub fn on_enter(mut self, f: impl Fn(&mut A, &mut State) + 'static) -> Self {
-        self.handlers.on_enter = Some(Box::new(f));
-        self
-    }
-
-    pub fn on_leave(mut self, f: impl Fn(&mut A, &mut State) + 'static) -> Self {
-        self.handlers.on_leave = Some(Box::new(f));
-        self
-    }
-
-    pub fn on_click(mut self, f: impl Fn(&mut A, &mut State) + 'static) -> Self {
-        self.handlers.on_click = Some(Box::new(f));
-        self
-    }
-
-    pub fn on_double_click(mut self, f: impl Fn(&mut A, &mut State) + 'static) -> Self {
-        self.handlers.on_double_click = Some(Box::new(f));
-        self
-    }
-
-    pub fn on_press(mut self, f: impl Fn(&mut A, &mut State) + 'static) -> Self {
-        self.handlers.on_press = Some(Box::new(f));
-        self
-    }
-
-    pub fn on_release(mut self, f: impl Fn(&mut A, &mut State) + 'static) -> Self {
-        self.handlers.on_release = Some(Box::new(f));
-        self
-    }
-
-    pub fn on_right_click(mut self, f: impl Fn(&mut A, &mut State) + 'static) -> Self {
-        self.handlers.on_right_click = Some(Box::new(f));
-        self
-    }
-
-    pub fn on_hold(mut self, f: impl Fn(&mut A, &mut State) + 'static) -> Self {
-        self.handlers.on_hold = Some(Box::new(f));
-        self
-    }
-
-    pub fn on_drag(mut self, f: impl Fn(&mut A, &mut State, DragInfo) + 'static) -> Self {
-        self.handlers.on_drag = Some(Box::new(f));
-        self
-    }
-
-    pub fn on_drag_end(mut self, f: impl Fn(&mut A, &mut State, DragInfo) + 'static) -> Self {
-        self.handlers.on_drag_end = Some(Box::new(f));
-        self
-    }
-
-    pub fn on_scroll(mut self, f: impl Fn(&mut A, &mut State, f32) + 'static) -> Self {
-        self.handlers.on_scroll = Some(Box::new(f));
-        self
-    }
-
-    // --- Layout methods ---
-
+impl<A: App> PaneNode<A> {
     pub(crate) fn layout(self, screen_w: u32, screen_h: u32) -> ResolvedNode<A> {
         let ctx = LayoutCtx {
             origin_x: 0,
@@ -385,16 +275,14 @@ impl<A: App> Node<A> {
             available_w: screen_w,
             available_h: screen_h,
         };
-        let parent_style = Style::default();
-        self.layout_node_recursive(&ctx, &parent_style)
+        self.layout_pane(&ctx, &InheritedStyle::default())
     }
 
-    fn layout_node_recursive(mut self, ctx: &LayoutCtx, parent_style: &Style) -> ResolvedNode<A> {
-        self.style.inherit_from(parent_style);
-
-        let padding = self.style.padding.unwrap_or(0);
-        let axis = self.style.axis.unwrap_or(Axis::Column);
-        let gap = self.style.gap.unwrap_or(0);
+    fn layout_pane(self, ctx: &LayoutCtx, parent: &InheritedStyle) -> ResolvedNode<A> {
+        let base = &self.style.base;
+        let padding = base.padding.unwrap_or(0);
+        let axis = self.style.axis.or(parent.axis).unwrap_or(Axis::Column);
+        let gap = self.style.gap.or(parent.gap).unwrap_or(0);
 
         let own_w = if self.style.fill_w {
             Some(ctx.available_w)
@@ -407,7 +295,7 @@ impl<A: App> Node<A> {
             self.style.h
         };
 
-        let (origin_x, origin_y) = match self.style.position {
+        let (origin_x, origin_y) = match base.position {
             Position::Flow => (ctx.origin_x, ctx.origin_y),
             Position::Relative(rx, ry) => (ctx.origin_x + rx, ctx.origin_y + ry),
             Position::Absolute(ax, ay) => (ax, ay),
@@ -415,13 +303,24 @@ impl<A: App> Node<A> {
 
         let content_available_w = own_w.unwrap_or(ctx.available_w).saturating_sub(padding * 2);
         let content_available_h = own_h.unwrap_or(ctx.available_h).saturating_sub(padding * 2);
-
         let content_origin_x = origin_x + padding as i32;
         let content_origin_y = origin_y + padding as i32;
 
+        let child_inherited = InheritedStyle {
+            color: base.color.or(parent.color),
+            hover_color: base.hover_color.or(parent.hover_color),
+            pressed_color: base.pressed_color.or(parent.pressed_color),
+            text_color: self.style.text_color.or(parent.text_color),
+            hover_text_color: self.style.hover_text_color.or(parent.hover_text_color),
+            pressed_text_color: self.style.pressed_text_color.or(parent.pressed_text_color),
+            font: base.font.or(parent.font),
+            axis: Some(axis),
+            gap: Some(gap),
+        };
+
         let mut resolved_children = Vec::with_capacity(self.children.len());
-        let mut absolute_children = Vec::with_capacity(self.children.len());
-        let mut relative_children = Vec::with_capacity(self.children.len());
+        let mut absolute_children = Vec::new();
+        let mut relative_children = Vec::new();
         let mut cursor_x: u32 = 0;
         let mut cursor_y: u32 = 0;
         let mut max_cross: u32 = 0;
@@ -434,15 +333,17 @@ impl<A: App> Node<A> {
                 available_w: content_available_w,
                 available_h: content_available_h,
             };
+            let resolved_child = match child {
+                Node::Pane(p) => p.layout_pane(&child_ctx, &child_inherited),
+                Node::Text(t) => t.layout_text(&child_ctx, &child_inherited),
+            };
 
-            let resolved_child = child.layout_node_recursive(&child_ctx, &self.style);
-
-            match &resolved_child.style.position {
-                Position::Relative(_rx, _ry) => {
+            match resolved_child.base_style.position {
+                Position::Relative(_, _) => {
                     relative_children.push(resolved_child);
                     continue;
                 }
-                Position::Absolute(_ax, _ay) => {
+                Position::Absolute(_, _) => {
                     absolute_children.push(resolved_child);
                     continue;
                 }
@@ -451,7 +352,6 @@ impl<A: App> Node<A> {
 
             let child_w = resolved_child.rect.width();
             let child_h = resolved_child.rect.height();
-
             match axis {
                 Axis::Row => {
                     cursor_x = cursor_x.saturating_add(child_w).saturating_add(gap);
@@ -463,7 +363,6 @@ impl<A: App> Node<A> {
                 }
             }
             child_count += 1;
-
             resolved_children.push(resolved_child);
         }
 
@@ -488,7 +387,6 @@ impl<A: App> Node<A> {
 
         let final_w = own_w.unwrap_or(content_w.saturating_add(padding * 2));
         let final_h = own_h.unwrap_or(content_h.saturating_add(padding * 2));
-
         let rect = Rect::from_top_left(origin_x as f32, origin_y as f32, final_w, final_h);
 
         resolved_children.append(&mut relative_children);
@@ -497,60 +395,95 @@ impl<A: App> Node<A> {
         ResolvedNode {
             id: self.id,
             rect,
-            style: self.style,
+            base_style: StyleBase {
+                padding: base.padding,
+                position: base.position,
+                z_index: base.z_index,
+                color: base.color.or(parent.color),
+                hover_color: base.hover_color.or(parent.hover_color),
+                pressed_color: base.pressed_color.or(parent.pressed_color),
+                font: base.font.or(parent.font),
+            },
+            text_content: None,
+            text_font: None,
             children: resolved_children,
             handlers: self.handlers,
         }
     }
 }
 
-// --- Convenience constructors ---
+impl<A: App> TextNode<A> {
+    fn text_width(&self, font: &Font) -> u32 {
+        let chars: Vec<char> = self.content.chars().collect();
+        if chars.is_empty() {
+            return 0;
+        }
+        let mut width = 0u32;
+        for (i, &ch) in chars.iter().enumerate() {
+            if i < chars.len() - 1 {
+                width += font.char_advance(ch) as u32;
+            } else {
+                width += font.glyph_width(ch) as u32;
+            }
+        }
+        width
+    }
 
-pub fn pane<A: App>() -> Node<A> {
-    Node {
-        id: String::default(),
-        style: Style::default(),
-        children: Vec::new(),
-        handlers: Handlers::default(),
+    fn layout_text(self, ctx: &LayoutCtx, parent: &InheritedStyle) -> ResolvedNode<A> {
+        let padding = self.style.padding.unwrap_or(0);
+        let font = self
+            .style
+            .font
+            .or(parent.font)
+            .unwrap_or(&crate::font::TINY5_4X5);
+        let text_w = self.text_width(font);
+        let text_h = font.height as u32;
+
+        let (origin_x, origin_y) = match self.style.position {
+            Position::Flow => (ctx.origin_x, ctx.origin_y),
+            Position::Relative(rx, ry) => (ctx.origin_x + rx, ctx.origin_y + ry),
+            Position::Absolute(ax, ay) => (ax, ay),
+        };
+
+        let rect = Rect::from_top_left(
+            origin_x as f32,
+            origin_y as f32,
+            text_w + padding * 2,
+            text_h + padding * 2,
+        );
+
+        ResolvedNode {
+            id: self.id,
+            rect,
+            base_style: StyleBase {
+                padding: self.style.padding,
+                position: self.style.position,
+                z_index: self.style.z_index,
+                color: self.style.color.or(parent.text_color),
+                hover_color: self.style.hover_color.or(parent.hover_text_color),
+                pressed_color: self.style.pressed_color.or(parent.pressed_text_color),
+                font: Some(font),
+            },
+            text_content: Some(self.content),
+            text_font: Some(font),
+            children: Vec::new(),
+            handlers: self.handlers,
+        }
     }
 }
 
-pub fn row<A: App>() -> Node<A> {
-    pane().axis(Axis::Row)
-}
-
-pub fn col<A: App>() -> Node<A> {
-    pane().axis(Axis::Column)
-}
-
-// --- Layout ---
-
-struct LayoutCtx {
-    origin_x: i32,
-    origin_y: i32,
-    available_w: u32,
-    available_h: u32,
-}
-
-pub(crate) struct ResolvedNode<A: App> {
-    id: String,
-    rect: Rect,
-    style: Style,
-    children: Vec<ResolvedNode<A>>,
-    handlers: Handlers<A>,
-}
+// --- Evaluate ---
 
 impl<A: App> ResolvedNode<A> {
     pub(crate) fn evaluate(self, app: &mut A, state: &mut State) -> (Vec<Cell>, UiResult) {
         let mut cells = Vec::new();
         let mut consumed = ConsumedState::new();
-
-        self.evaluate_node_recursive(app, state, &mut cells, &mut consumed, 0.0);
+        self.evaluate_recursive(app, state, &mut cells, &mut consumed, 0.0);
         cells.reverse();
         (cells, UiResult { consumed })
     }
 
-    fn evaluate_node_recursive(
+    fn evaluate_recursive(
         self,
         app: &mut A,
         state: &mut State,
@@ -559,7 +492,7 @@ impl<A: App> ResolvedNode<A> {
         depth: f32,
     ) {
         for node in self.children.into_iter().rev() {
-            node.evaluate_node_recursive(app, state, cells, consumed, depth + 1.0);
+            node.evaluate_recursive(app, state, cells, consumed, depth + 1.0);
         }
 
         let hit = state.test_shape_screen(&self.rect);
@@ -624,7 +557,6 @@ impl<A: App> ResolvedNode<A> {
                 }
             }
         }
-
         if !consumed.right {
             if hit.is_right_clicked() {
                 if let Some(f) = self.handlers.on_right_click {
@@ -633,7 +565,6 @@ impl<A: App> ResolvedNode<A> {
                 }
             }
         }
-
         if !consumed.scroll {
             if let Some(delta) = hit.is_scrolling() {
                 if let Some(f) = self.handlers.on_scroll {
@@ -643,33 +574,72 @@ impl<A: App> ResolvedNode<A> {
             }
         }
 
-        let draw_color = if hit.is_down() {
-            self.style
-                .pressed_color
-                .or(self.style.hover_color)
-                .or(self.style.color)
-        } else if hit.is_hovered() {
-            self.style.hover_color.or(self.style.color)
-        } else {
-            self.style.color
-        };
+        // Draw pane background
+        if self.text_content.is_none() {
+            let draw_color = if hit.is_down() {
+                self.base_style
+                    .pressed_color
+                    .or(self.base_style.hover_color)
+                    .or(self.base_style.color)
+            } else if hit.is_hovered() {
+                self.base_style.hover_color.or(self.base_style.color)
+            } else {
+                self.base_style.color
+            };
+            if let Some(color) = draw_color {
+                let x0 = self.rect.x() as u32;
+                let y0 = self.rect.y() as u32;
+                for dy in 0..self.rect.height() {
+                    for dx in 0..self.rect.width() {
+                        cells.push(
+                            Cell::new_3d((x0 + dx) as f32, (y0 + dy) as f32, depth).color(color),
+                        );
+                    }
+                }
+            }
+        }
 
-        if let Some(color) = draw_color {
-            let x0 = self.rect.x() as u32;
-            let y0 = self.rect.y() as u32;
-            let w = self.rect.width();
-            let h = self.rect.height();
-            let z = depth;
-
-            for dy in 0..h {
-                for dx in 0..w {
-                    cells.push(Cell::new_3d((x0 + dx) as f32, (y0 + dy) as f32, z).color(color));
+        // Draw text glyphs
+        if let (Some(content), Some(font)) = (&self.text_content, self.text_font) {
+            let draw_color = if hit.is_down() {
+                self.base_style
+                    .pressed_color
+                    .or(self.base_style.hover_color)
+                    .or(self.base_style.color)
+            } else if hit.is_hovered() {
+                self.base_style.hover_color.or(self.base_style.color)
+            } else {
+                self.base_style.color
+            };
+            let color = draw_color.unwrap_or(Color::linear(1.0, 1.0, 1.0, 1.0));
+            let padding = self.base_style.padding.unwrap_or(0);
+            let text_x = self.rect.x() + padding as f32;
+            let text_y = self.rect.y() + padding as f32;
+            let z = depth + 0.5;
+            let mut cursor_x = 0u32;
+            for ch in content.chars() {
+                if let Some(glyph) = font.glyph(ch) {
+                    if glyph.width == 0 || glyph.height == 0 {
+                        cursor_x += font.char_advance(ch) as u32;
+                        continue;
+                    }
+                    let char_x = text_x + cursor_x as f32;
+                    let char_y = text_y + glyph.top as f32;
+                    for row in 0..glyph.height as usize {
+                        for col in 0..glyph.width as usize {
+                            if glyph.pixel(col, row) {
+                                cells.push(
+                                    Cell::new_3d(char_x + col as f32, char_y + row as f32, z)
+                                        .color(color),
+                                );
+                            }
+                        }
+                    }
+                    cursor_x += font.char_advance(ch) as u32;
                 }
             }
         }
     }
-
-    // --- Getter methods ---
 
     #[cfg(test)]
     pub(crate) fn find_child_by_id(&self, id: &str) -> Option<&Self> {
@@ -769,7 +739,11 @@ mod tests {
         State::new_for_test(256, 256)
     }
 
-    fn eval(node: Node<TestApp>, app: &mut TestApp, state: &mut State) -> (Vec<Cell>, UiResult) {
+    fn eval(
+        node: PaneNode<TestApp>,
+        app: &mut TestApp,
+        state: &mut State,
+    ) -> (Vec<Cell>, UiResult) {
         node.layout(256, 256).evaluate(app, state)
     }
 
@@ -800,7 +774,7 @@ mod tests {
 
     #[test]
     fn empty_node_zero_size() {
-        let node: Node<TestApp> = row();
+        let node: PaneNode<TestApp> = row();
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 0);
         assert_eq!(resolved.rect.height(), 0);
@@ -808,7 +782,7 @@ mod tests {
 
     #[test]
     fn explicit_size() {
-        let node: Node<TestApp> = row().size(10, 5);
+        let node: PaneNode<TestApp> = row().size(10, 5);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 10);
         assert_eq!(resolved.rect.height(), 5);
@@ -816,7 +790,7 @@ mod tests {
 
     #[test]
     fn fill_w_takes_available() {
-        let node: Node<TestApp> = row().fill_w().h(10);
+        let node: PaneNode<TestApp> = row().fill_w().h(10);
         let resolved = node.layout(100, 256);
         assert_eq!(resolved.rect.width(), 100);
         assert_eq!(resolved.rect.height(), 10);
@@ -824,7 +798,7 @@ mod tests {
 
     #[test]
     fn column_layout_stacks_vertically() {
-        let node: Node<TestApp> = col().children(vec![
+        let node: PaneNode<TestApp> = col().children(vec![
             row().size(10, 5),
             row().size(10, 5),
             row().size(10, 5),
@@ -839,7 +813,7 @@ mod tests {
 
     #[test]
     fn row_layout_stacks_horizontally() {
-        let node: Node<TestApp> = row().children(vec![row().size(10, 5), row().size(10, 5)]);
+        let node: PaneNode<TestApp> = row().children(vec![row().size(10, 5), row().size(10, 5)]);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 20);
         assert_eq!(resolved.rect.height(), 5);
@@ -849,7 +823,7 @@ mod tests {
 
     #[test]
     fn gap_between_children() {
-        let node: Node<TestApp> = row()
+        let node: PaneNode<TestApp> = row()
             .gap(4)
             .children(vec![row().size(10, 5), row().size(10, 5)]);
         let resolved = node.layout(256, 256);
@@ -859,7 +833,7 @@ mod tests {
 
     #[test]
     fn padding_offsets_children() {
-        let node: Node<TestApp> = col().padding(3).children(vec![row().size(4, 4)]);
+        let node: PaneNode<TestApp> = col().padding(3).children(vec![row().size(4, 4)]);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 10); // 4 + 3*2
         assert_eq!(resolved.rect.height(), 10);
@@ -869,7 +843,7 @@ mod tests {
 
     #[test]
     fn nested_layout() {
-        let node: Node<TestApp> = col().padding(2).children(vec![row()
+        let node: PaneNode<TestApp> = col().padding(2).children(vec![row()
             .gap(2)
             .children(vec![row().size(5, 5), row().size(5, 5)])]);
         let resolved = node.layout(256, 256);
@@ -881,7 +855,7 @@ mod tests {
 
     #[test]
     fn absolute_position_skips_cursor() {
-        let node: Node<TestApp> = col().children(vec![
+        let node: PaneNode<TestApp> = col().children(vec![
             row().size(10, 10),
             row().id("abs").size(5, 5).absolute(50, 50),
             row().id("flow2").size(10, 10),
@@ -899,7 +873,7 @@ mod tests {
 
     #[test]
     fn relative_position() {
-        let node: Node<TestApp> = col()
+        let node: PaneNode<TestApp> = col()
             .padding(5)
             .children(vec![row().size(10, 10).relative(3, 3)]);
         let resolved = node.layout(256, 256);
@@ -913,7 +887,7 @@ mod tests {
 
     #[test]
     fn colored_node_emits_cells() {
-        let node: Node<TestApp> = row().size(3, 2).color(RED);
+        let node: PaneNode<TestApp> = row().size(3, 2).color(RED);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
@@ -927,7 +901,7 @@ mod tests {
 
     #[test]
     fn uncolored_node_emits_no_cells() {
-        let node: Node<TestApp> = row().size(3, 2);
+        let node: PaneNode<TestApp> = row().size(3, 2);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
@@ -940,7 +914,7 @@ mod tests {
 
     #[test]
     fn hover_color_on_hover() {
-        let node: Node<TestApp> = row().size(10, 10).color(RED).hover_color(BLUE);
+        let node: PaneNode<TestApp> = row().size(10, 10).color(RED).hover_color(BLUE);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(5.0, 5.0); // inside
@@ -953,7 +927,7 @@ mod tests {
 
     #[test]
     fn normal_color_when_not_hovered() {
-        let node: Node<TestApp> = row().size(10, 10).color(RED).hover_color(BLUE);
+        let node: PaneNode<TestApp> = row().size(10, 10).color(RED).hover_color(BLUE);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(50.0, 50.0); // outside
@@ -968,13 +942,12 @@ mod tests {
 
     #[test]
     fn on_click_fires() {
-        let node: Node<TestApp> =
-            row()
-                .size(10, 10)
-                .color(RED)
-                .on_click(|app: &mut TestApp, _state| {
-                    app.clicked = true;
-                });
+        let node = row()
+            .size(10, 10)
+            .color(RED)
+            .on_click(|app: &mut TestApp, _state| {
+                app.clicked = true;
+            });
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(5.0, 5.0);
@@ -988,13 +961,12 @@ mod tests {
 
     #[test]
     fn on_click_outside_does_not_fire() {
-        let node: Node<TestApp> =
-            row()
-                .size(10, 10)
-                .color(RED)
-                .on_click(|app: &mut TestApp, _state| {
-                    app.clicked = true;
-                });
+        let node = row()
+            .size(10, 10)
+            .color(RED)
+            .on_click(|app: &mut TestApp, _state| {
+                app.clicked = true;
+            });
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(50.0, 50.0);
@@ -1008,7 +980,7 @@ mod tests {
 
     #[test]
     fn on_hover_fires_on_parent_and_child() {
-        let node: Node<TestApp> = col()
+        let node: PaneNode<TestApp> = col()
             .size(20, 20)
             .color(GREY)
             .on_hover(|app: &mut TestApp, _state| {
@@ -1031,7 +1003,7 @@ mod tests {
 
     #[test]
     fn action_deepest_wins() {
-        let node: Node<TestApp> = col()
+        let node: PaneNode<TestApp> = col()
             .size(20, 20)
             .color(GREY)
             .on_click(|app: &mut TestApp, _state| {
@@ -1054,7 +1026,7 @@ mod tests {
 
     #[test]
     fn action_falls_through_to_parent_if_child_has_no_handler() {
-        let node: Node<TestApp> = col()
+        let node: PaneNode<TestApp> = col()
             .size(20, 20)
             .color(GREY)
             .on_click(|app: &mut TestApp, _state| {
@@ -1075,7 +1047,7 @@ mod tests {
 
     #[test]
     fn style_inheritance() {
-        let node: Node<TestApp> = col().color(RED).children(vec![
+        let node: PaneNode<TestApp> = col().color(RED).children(vec![
             row().size(5, 5), // inherits RED
         ]);
         let mut app = TestApp::new();
@@ -1092,7 +1064,7 @@ mod tests {
 
     #[test]
     fn style_override() {
-        let node: Node<TestApp> = col().color(RED).children(vec![
+        let node: PaneNode<TestApp> = col().color(RED).children(vec![
             row().size(5, 5).color(BLUE), // overrides
         ]);
         let mut app = TestApp::new();
@@ -1106,10 +1078,10 @@ mod tests {
     }
 
     #[test]
-    fn style_object_batch_apply() {
-        let shared = Style::new().color(GREEN).gap(4);
-        let node: Node<TestApp> = row()
-            .style(shared)
+    fn gap_applied_directly() {
+        let node: PaneNode<TestApp> = row()
+            .color(GREEN)
+            .gap(4)
             .children(vec![row().size(5, 5), row().size(5, 5)]);
         let resolved = node.layout(256, 256);
         // gap=4 applied: 5 + 4 + 5 = 14
@@ -1118,7 +1090,7 @@ mod tests {
 
     #[test]
     fn z_depth_parent_behind_children() {
-        let node: Node<TestApp> = col()
+        let node: PaneNode<TestApp> = col()
             .size(10, 10)
             .color(GREY)
             .children(vec![row().size(5, 5).color(RED)]);
@@ -1137,13 +1109,12 @@ mod tests {
 
     #[test]
     fn consumed_flag_per_button() {
-        let node: Node<TestApp> =
-            row()
-                .size(10, 10)
-                .color(RED)
-                .on_click(|app: &mut TestApp, _state| {
-                    app.clicked = true;
-                });
+        let node = row()
+            .size(10, 10)
+            .color(RED)
+            .on_click(|app: &mut TestApp, _state| {
+                app.clicked = true;
+            });
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(5.0, 5.0);
@@ -1158,7 +1129,7 @@ mod tests {
 
     #[test]
     fn positioned_node_tested_before_flow() {
-        let node: Node<TestApp> =
+        let node =
             col().size(50, 50).children(vec![
                 row()
                     .size(20, 20)
@@ -1184,13 +1155,12 @@ mod tests {
 
     #[test]
     fn scroll_handler() {
-        let node: Node<TestApp> =
-            row()
-                .size(20, 20)
-                .color(RED)
-                .on_scroll(|app: &mut TestApp, _state, delta| {
-                    app.scroll_amount = delta;
-                });
+        let node = row()
+            .size(20, 20)
+            .color(RED)
+            .on_scroll(|app: &mut TestApp, _state, delta| {
+                app.scroll_amount = delta;
+            });
         let mut app = TestApp::new();
         let mut state = make_state();
         let mut input = input_at(5.0, 5.0);
@@ -1205,7 +1175,7 @@ mod tests {
 
     #[test]
     fn button_convenience() {
-        let node: Node<TestApp> =
+        let node =
             pane()
                 .size(8, 4)
                 .color(RED)
@@ -1228,8 +1198,8 @@ mod tests {
 
     #[test]
     fn row_col_convenience() {
-        let r: Node<TestApp> = row().children(vec![row().size(5, 10), row().size(5, 10)]);
-        let c: Node<TestApp> = col().children(vec![row().size(10, 5), row().size(10, 5)]);
+        let r: PaneNode<TestApp> = row().children(vec![row().size(5, 10), row().size(5, 10)]);
+        let c: PaneNode<TestApp> = col().children(vec![row().size(10, 5), row().size(10, 5)]);
         let r_resolved = r.layout(256, 256);
         let c_resolved = c.layout(256, 256);
         assert_eq!(r_resolved.rect.width(), 10);
@@ -1305,8 +1275,8 @@ mod tests {
         let children: Vec<Node<TestApp>> = ui! {
             row().size(5, 5).color(RED);
             |c| {
-                c.push(row().size(3, 3).color(BLUE));
-                c.push(row().size(3, 3).color(GREEN));
+                c.push(row().size(3, 3).color(BLUE).into());
+                c.push(row().size(3, 3).color(GREEN).into());
             }
         };
         assert_eq!(children.len(), 3);
@@ -1341,10 +1311,7 @@ mod tests {
         let children: Vec<Node<TestApp>> = ui! {
             col().padding(2) {
                 row().gap(2) {
-                    row().gap(2) {
-                        row().size(5, 5).color(RED);
-                        row().size(5, 5).color(BLUE);
-                    }
+                    row().size(5, 5).color(RED);
                     row().size(5, 5).color(BLUE);
                 }
                 row().size(10, 3).color(GREEN);
@@ -1368,5 +1335,80 @@ mod tests {
             }
         };
         assert_eq!(children.len(), 3);
+    }
+
+    // --- Text tests ---
+
+    #[test]
+    fn text_node_intrinsic_size() {
+        let node: PaneNode<TestApp> = col().children(vec![text("Hi")]);
+        let resolved = node.layout(256, 256);
+        let child = &resolved.children[0];
+        assert!(child.rect.width() > 0);
+        assert!(child.rect.height() > 0);
+    }
+
+    #[test]
+    fn text_node_with_padding() {
+        let node: PaneNode<TestApp> = col().children(vec![text("A").padding(3)]);
+        let resolved = node.layout(256, 256);
+        let child = &resolved.children[0];
+        let no_pad: PaneNode<TestApp> = col().children(vec![text("A")]);
+        let no_pad_resolved = no_pad.layout(256, 256);
+        let no_pad_child = &no_pad_resolved.children[0];
+        assert_eq!(child.rect.width(), no_pad_child.rect.width() + 6);
+        assert_eq!(child.rect.height(), no_pad_child.rect.height() + 6);
+    }
+
+    #[test]
+    fn text_node_emits_cells() {
+        let node: PaneNode<TestApp> = col().children(vec![text("I")]);
+        let mut app = TestApp::new();
+        let mut state = make_state();
+        state.set_input(input_at(100.0, 100.0));
+        let (cells, _) = node.layout(256, 256).evaluate(&mut app, &mut state);
+        assert!(!cells.is_empty());
+    }
+
+    #[test]
+    fn text_inherits_text_color() {
+        let node: PaneNode<TestApp> = col().text_color(RED).children(vec![text("I")]);
+        let mut app = TestApp::new();
+        let mut state = make_state();
+        state.set_input(input_at(100.0, 100.0));
+        let (cells, _) = node.layout(256, 256).evaluate(&mut app, &mut state);
+        assert!(!cells.is_empty());
+        assert_eq!(cells[0].color, RED.to_array());
+    }
+
+    #[test]
+    fn text_own_color_overrides_inherited() {
+        let node: PaneNode<TestApp> = col().text_color(RED).children(vec![text("I").color(BLUE)]);
+        let mut app = TestApp::new();
+        let mut state = make_state();
+        state.set_input(input_at(100.0, 100.0));
+        let (cells, _) = node.layout(256, 256).evaluate(&mut app, &mut state);
+        assert!(!cells.is_empty());
+        assert_eq!(cells[0].color, BLUE.to_array());
+    }
+
+    #[test]
+    fn text_inherits_font() {
+        use crate::font::TOM_THUMB_3X5;
+        let node: PaneNode<TestApp> = col().font(&TOM_THUMB_3X5).children(vec![text("A")]);
+        let resolved = node.layout(256, 256);
+        let child = &resolved.children[0];
+        assert_eq!(child.rect.height(), TOM_THUMB_3X5.height as u32);
+    }
+
+    #[test]
+    fn text_in_macro() {
+        use crate::ui;
+        let children: Vec<Node<TestApp>> = ui! {
+            col().text_color(RED) {
+                text("hello");
+            }
+        };
+        assert_eq!(children.len(), 1);
     }
 }

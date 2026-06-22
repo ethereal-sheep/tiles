@@ -1,6 +1,7 @@
 use tiles::{
+    font::TOM_THUMB_3X5,
     ui,
-    ui::{col, pane, row, Node},
+    ui::{col, pane, row, text, PaneNode},
     App, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, State,
 };
 
@@ -26,7 +27,7 @@ impl App for Demo {
         state.set_ambient_illumination(1.0);
     }
 
-    fn ui(&self, _state: &State) -> Node<Self> {
+    fn ui(&self, _state: &State) -> PaneNode<Self> {
         col()
             .padding(16)
             .gap(4)
@@ -41,7 +42,10 @@ impl App for Demo {
                         .color(BTN_COLOR)
                         .hover_color(BTN_HOVER)
                         .pressed_color(BTN_PRESS)
-                        .on_click(|app: &mut Demo, _state| { app.count += 1; });
+                        .text_color(INDICATOR)
+                        .on_click(|app: &mut Demo, _state| { app.count += 1; }) {
+                            text("+").font(&TOM_THUMB_3X5);
+                    }
                     pane()
                         .size(20, 10)
                         .color(BTN_COLOR)

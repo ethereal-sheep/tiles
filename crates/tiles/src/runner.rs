@@ -28,7 +28,7 @@ pub trait App {
     fn on_key(&mut self, _state: &mut State, _event: KeyEvent) {}
     fn on_mouse(&mut self, _state: &mut State, _event: MouseEvent) {}
 
-    fn ui(&self, _state: &State) -> crate::ui::Node<Self>
+    fn ui(&self, _state: &State) -> crate::ui::PaneNode<Self>
     where
         Self: Sized,
     {
@@ -601,7 +601,7 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                 self.state.elapsed = elapsed_last + expanded_dt;
                 self.app.pre_update(&mut self.state);
 
-                let tree: crate::ui::Node<A> = self.app.ui(&self.state);
+                let tree = self.app.ui(&self.state);
                 let resolved = tree.layout(
                     self.state.camera.viewport_width as u32,
                     self.state.camera.viewport_height as u32,
