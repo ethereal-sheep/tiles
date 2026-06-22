@@ -343,7 +343,8 @@ fn parse_forward_targets(input: &DeriveInput) -> Vec<ForwardTarget> {
         if let Ok(list) = attr.meta.require_list() {
             let tokens = list.tokens.to_string();
             if tokens.starts_with("forward") {
-                if let Some(inner) = tokens.strip_prefix("forward(").and_then(|s| s.strip_suffix(")")) {
+                let after_keyword = tokens.strip_prefix("forward").unwrap_or(&tokens).trim_start();
+                if let Some(inner) = after_keyword.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
                     let mut to = String::new();
                     let mut via = String::new();
                     let mut remaining = inner;
