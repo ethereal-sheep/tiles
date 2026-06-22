@@ -27,6 +27,13 @@ pub trait App {
     fn draw(&mut self, _state: &mut State) {}
     fn on_key(&mut self, _state: &mut State, _event: KeyEvent) {}
     fn on_mouse(&mut self, _state: &mut State, _event: MouseEvent) {}
+
+    fn ui(&self, _state: &State) -> crate::ui::Node<Self>
+    where
+        Self: Sized,
+    {
+        crate::ui::Node::new()
+    }
 }
 
 pub struct State {
@@ -87,6 +94,11 @@ impl State {
         config.viewport_height = viewport_h as f32;
         config.no_file = true;
         Self::new(config)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_input(&mut self, input: InputState) {
+        self.input = input;
     }
 
     // --- Drawing ---
@@ -355,28 +367,27 @@ impl State {
     }
 }
 
-pub(crate) fn run_app(
-    app: &mut (impl App + 'static),
+pub(crate) fn run_app<A: App + 'static>(
+    app: &mut A,
     config: Config,
 ) -> Result<(), winit::error::EventLoopError> {
     let state = State::new(config);
     let event_loop = EventLoop::new().unwrap();
 
-    // Safety: we need 'static for the runner but app lives for the duration of run
-    let app_ptr = app as *mut dyn App;
-    let mut runner = Runner {
+    let app_ptr = app as *mut A;
+    let mut runner: Runner<A> = Runner {
         app: unsafe { &mut *app_ptr },
         state,
     };
     event_loop.run_app(&mut runner)
 }
 
-struct Runner<'a> {
-    app: &'a mut dyn App,
+struct Runner<'a, A: App> {
+    app: &'a mut A,
     state: State,
 }
 
-impl ApplicationHandler for Runner<'_> {
+impl<A: App> ApplicationHandler for Runner<'_, A> {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let attrs = Window::default_attributes()
             .with_title(&self.state.config.title)
@@ -589,6 +600,14 @@ impl ApplicationHandler for Runner<'_> {
                 self.state.dt = expanded_dt;
                 self.state.elapsed = elapsed_last + expanded_dt;
                 self.app.pre_update(&mut self.state);
+
+                let tree: crate::ui::Node<A> = self.app.ui(&self.state);
+                let resolved = tree.layout(
+                    self.state.camera.viewport_width as u32,
+                    self.state.camera.viewport_height as u32,
+                );
+                let (cells, _result) = resolved.evaluate(self.app, &mut self.state);
+                self.state.screen_overlay_cells.extend(cells);
 
                 self.state.dt = self.state.fixed_dt;
                 for i in 1..=update_count {

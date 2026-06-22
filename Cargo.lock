@@ -1657,9 +1657,19 @@ dependencies = [
  "glam",
  "pollster",
  "serde",
+ "tiles-macros",
  "toml",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "tiles-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
 ]
 
 [[package]]

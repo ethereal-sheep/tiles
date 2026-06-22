@@ -429,7 +429,7 @@ fn build_dag(grid: &[Vec<Vec<Color>>]) -> Dag {
 
 const DEFAULT_PATH_LENGTH: usize = 4;
 
-struct PalettePartition {
+struct Palette {
     palette: Vec<Color>,
     hue_offset: f32,
     path_length: usize,
@@ -438,7 +438,7 @@ struct PalettePartition {
     paths: Vec<Path>,
 }
 
-impl App for PalettePartition {
+impl App for Palette {
     fn init(&mut self, state: &mut State) {
         state.set_viewport_background(0.0, 0.0, 0.0, 1.0);
         state.set_window_background(0.12, 0.12, 0.15, 1.0);
@@ -583,7 +583,7 @@ fn main() {
         .build();
 
     tiles::run(
-        PalettePartition {
+        Palette {
             palette,
             hue_offset,
             path_length,
