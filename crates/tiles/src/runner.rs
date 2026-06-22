@@ -32,7 +32,7 @@ pub trait App {
     where
         Self: Sized,
     {
-        crate::ui::Node::new()
+        crate::ui::col()
     }
 }
 

@@ -1,10 +1,10 @@
 use tiles::{
     ui,
-    ui::{button, col, row, Node},
+    ui::{col, pane, row, Node},
     App, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, State,
 };
 
-const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
+const BG: Color = Color::linear(0.72, 0.12, 0.15, 1.0);
 const PANEL_BG: Color = Color::linear(0.18, 0.18, 0.22, 1.0);
 const BTN_COLOR: Color = Color::linear(0.25, 0.25, 0.35, 1.0);
 const BTN_HOVER: Color = Color::linear(0.35, 0.35, 0.50, 1.0);
@@ -36,19 +36,19 @@ impl App for Demo {
             .children(ui! {
                 // Title bar
                 row().gap(4).padding(2).color(PANEL_BG) {
-                    button()
+                    pane()
                         .size(20, 10)
                         .color(BTN_COLOR)
                         .hover_color(BTN_HOVER)
                         .pressed_color(BTN_PRESS)
                         .on_click(|app: &mut Demo, _state| { app.count += 1; });
-                    button()
+                    pane()
                         .size(20, 10)
                         .color(BTN_COLOR)
                         .hover_color(BTN_HOVER)
                         .pressed_color(BTN_PRESS)
                         .on_click(|app: &mut Demo, _state| { app.count -= 1; });
-                    button()
+                    pane()
                         .size(20, 10)
                         .color(BTN_COLOR)
                         .hover_color(BTN_HOVER)
@@ -58,15 +58,15 @@ impl App for Demo {
 
                 // Counter indicator
                 row().gap(1) {
-                    @ for _i in 0..self.count.unsigned_abs().min(20) {
-                        Node::new().size(4, 8).color(
+                    @ for _i in 0..self.count.unsigned_abs() {
+                        pane().size(4, 8).color(
                             if self.count > 0 { INDICATOR } else { RED }
                         );
                     }
                 }
 
-                // Toggle button
-                button()
+                // Toggle pane
+                pane()
                     .size(30, 10)
                     .color(if self.show_panel { BLUE } else { BTN_COLOR })
                     .hover_color(BTN_HOVER)
@@ -77,7 +77,7 @@ impl App for Demo {
                 @ if self.show_panel {
                     col().padding(3).gap(2).color(PANEL_BG) {
                         @ for (i, color) in self.items.iter().enumerate() {
-                            button()
+                            pane()
                                 .size(40, 8)
                                 .color(*color)
                                 .hover_color(BTN_HOVER)
@@ -86,7 +86,7 @@ impl App for Demo {
                                     app.items.remove(i);
                                 });
                         }
-                        button()
+                        pane()
                             .size(40, 8)
                             .color(BTN_COLOR)
                             .hover_color(BTN_HOVER)

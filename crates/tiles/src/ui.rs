@@ -224,15 +224,6 @@ pub struct Node<A: App> {
 }
 
 impl<A: App> Node<A> {
-    pub fn new() -> Self {
-        Self {
-            id: String::default(),
-            style: Style::default(),
-            children: Vec::new(),
-            handlers: Handlers::default(),
-        }
-    }
-
     pub fn id(mut self, id: &str) -> Self {
         self.id = id.to_string();
         self
@@ -515,16 +506,21 @@ impl<A: App> Node<A> {
 
 // --- Convenience constructors ---
 
-pub fn button<A: App>() -> Node<A> {
-    Node::new()
+pub fn pane<A: App>() -> Node<A> {
+    Node {
+        id: String::default(),
+        style: Style::default(),
+        children: Vec::new(),
+        handlers: Handlers::default(),
+    }
 }
 
 pub fn row<A: App>() -> Node<A> {
-    Node::new().axis(Axis::Row)
+    pane().axis(Axis::Row)
 }
 
 pub fn col<A: App>() -> Node<A> {
-    Node::new().axis(Axis::Column)
+    pane().axis(Axis::Column)
 }
 
 // --- Layout ---
@@ -804,7 +800,7 @@ mod tests {
 
     #[test]
     fn empty_node_zero_size() {
-        let node: Node<TestApp> = Node::new();
+        let node: Node<TestApp> = row();
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 0);
         assert_eq!(resolved.rect.height(), 0);
@@ -812,7 +808,7 @@ mod tests {
 
     #[test]
     fn explicit_size() {
-        let node: Node<TestApp> = Node::new().size(10, 5);
+        let node: Node<TestApp> = row().size(10, 5);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 10);
         assert_eq!(resolved.rect.height(), 5);
@@ -820,7 +816,7 @@ mod tests {
 
     #[test]
     fn fill_w_takes_available() {
-        let node: Node<TestApp> = Node::new().fill_w().h(10);
+        let node: Node<TestApp> = row().fill_w().h(10);
         let resolved = node.layout(100, 256);
         assert_eq!(resolved.rect.width(), 100);
         assert_eq!(resolved.rect.height(), 10);
@@ -829,9 +825,9 @@ mod tests {
     #[test]
     fn column_layout_stacks_vertically() {
         let node: Node<TestApp> = col().children(vec![
-            Node::new().size(10, 5),
-            Node::new().size(10, 5),
-            Node::new().size(10, 5),
+            row().size(10, 5),
+            row().size(10, 5),
+            row().size(10, 5),
         ]);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 10);
@@ -843,8 +839,7 @@ mod tests {
 
     #[test]
     fn row_layout_stacks_horizontally() {
-        let node: Node<TestApp> =
-            row().children(vec![Node::new().size(10, 5), Node::new().size(10, 5)]);
+        let node: Node<TestApp> = row().children(vec![row().size(10, 5), row().size(10, 5)]);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 20);
         assert_eq!(resolved.rect.height(), 5);
@@ -856,7 +851,7 @@ mod tests {
     fn gap_between_children() {
         let node: Node<TestApp> = row()
             .gap(4)
-            .children(vec![Node::new().size(10, 5), Node::new().size(10, 5)]);
+            .children(vec![row().size(10, 5), row().size(10, 5)]);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 24);
         assert_eq!(resolved.children[1].rect.x(), 14.0);
@@ -864,7 +859,7 @@ mod tests {
 
     #[test]
     fn padding_offsets_children() {
-        let node: Node<TestApp> = col().padding(3).children(vec![Node::new().size(4, 4)]);
+        let node: Node<TestApp> = col().padding(3).children(vec![row().size(4, 4)]);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 10); // 4 + 3*2
         assert_eq!(resolved.rect.height(), 10);
@@ -876,7 +871,7 @@ mod tests {
     fn nested_layout() {
         let node: Node<TestApp> = col().padding(2).children(vec![row()
             .gap(2)
-            .children(vec![Node::new().size(5, 5), Node::new().size(5, 5)])]);
+            .children(vec![row().size(5, 5), row().size(5, 5)])]);
         let resolved = node.layout(256, 256);
         // Inner row: 5+2+5=12 wide, 5 tall
         // Outer: 12+4=16 wide, 5+4=9 tall
@@ -887,9 +882,9 @@ mod tests {
     #[test]
     fn absolute_position_skips_cursor() {
         let node: Node<TestApp> = col().children(vec![
-            Node::new().size(10, 10),
-            Node::new().id("abs").size(5, 5).absolute(50, 50),
-            Node::new().id("flow2").size(10, 10),
+            row().size(10, 10),
+            row().id("abs").size(5, 5).absolute(50, 50),
+            row().id("flow2").size(10, 10),
         ]);
         let resolved = node.layout(256, 256);
         // Absolute node doesn't affect parent size
@@ -906,7 +901,7 @@ mod tests {
     fn relative_position() {
         let node: Node<TestApp> = col()
             .padding(5)
-            .children(vec![Node::new().size(10, 10).relative(3, 3)]);
+            .children(vec![row().size(10, 10).relative(3, 3)]);
         let resolved = node.layout(256, 256);
         // Child positioned at parent cursor (5,5) + relative offset (3,3) = (8,8)
         let child = &resolved.children[0];
@@ -918,7 +913,7 @@ mod tests {
 
     #[test]
     fn colored_node_emits_cells() {
-        let node: Node<TestApp> = Node::new().size(3, 2).color(RED);
+        let node: Node<TestApp> = row().size(3, 2).color(RED);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
@@ -932,7 +927,7 @@ mod tests {
 
     #[test]
     fn uncolored_node_emits_no_cells() {
-        let node: Node<TestApp> = Node::new().size(3, 2);
+        let node: Node<TestApp> = row().size(3, 2);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
@@ -945,7 +940,7 @@ mod tests {
 
     #[test]
     fn hover_color_on_hover() {
-        let node: Node<TestApp> = Node::new().size(10, 10).color(RED).hover_color(BLUE);
+        let node: Node<TestApp> = row().size(10, 10).color(RED).hover_color(BLUE);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(5.0, 5.0); // inside
@@ -958,7 +953,7 @@ mod tests {
 
     #[test]
     fn normal_color_when_not_hovered() {
-        let node: Node<TestApp> = Node::new().size(10, 10).color(RED).hover_color(BLUE);
+        let node: Node<TestApp> = row().size(10, 10).color(RED).hover_color(BLUE);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(50.0, 50.0); // outside
@@ -974,7 +969,7 @@ mod tests {
     #[test]
     fn on_click_fires() {
         let node: Node<TestApp> =
-            Node::new()
+            row()
                 .size(10, 10)
                 .color(RED)
                 .on_click(|app: &mut TestApp, _state| {
@@ -994,7 +989,7 @@ mod tests {
     #[test]
     fn on_click_outside_does_not_fire() {
         let node: Node<TestApp> =
-            Node::new()
+            row()
                 .size(10, 10)
                 .color(RED)
                 .on_click(|app: &mut TestApp, _state| {
@@ -1019,7 +1014,7 @@ mod tests {
             .on_hover(|app: &mut TestApp, _state| {
                 app.count += 1;
             })
-            .children(vec![Node::new().size(10, 10).color(RED).on_hover(
+            .children(vec![row().size(10, 10).color(RED).on_hover(
                 |app: &mut TestApp, _state| {
                     app.count += 10;
                 },
@@ -1042,7 +1037,7 @@ mod tests {
             .on_click(|app: &mut TestApp, _state| {
                 app.count += 1;
             })
-            .children(vec![Node::new().size(10, 10).color(RED).on_click(
+            .children(vec![row().size(10, 10).color(RED).on_click(
                 |app: &mut TestApp, _state| {
                     app.count += 10;
                 },
@@ -1066,7 +1061,7 @@ mod tests {
                 app.count += 1;
             })
             .children(vec![
-                Node::new().size(10, 10).color(RED), // no on_click
+                row().size(10, 10).color(RED), // no on_click
             ]);
         let mut app = TestApp::new();
         let mut state = make_state();
@@ -1081,7 +1076,7 @@ mod tests {
     #[test]
     fn style_inheritance() {
         let node: Node<TestApp> = col().color(RED).children(vec![
-            Node::new().size(5, 5), // inherits RED
+            row().size(5, 5), // inherits RED
         ]);
         let mut app = TestApp::new();
         let mut state = make_state();
@@ -1098,7 +1093,7 @@ mod tests {
     #[test]
     fn style_override() {
         let node: Node<TestApp> = col().color(RED).children(vec![
-            Node::new().size(5, 5).color(BLUE), // overrides
+            row().size(5, 5).color(BLUE), // overrides
         ]);
         let mut app = TestApp::new();
         let mut state = make_state();
@@ -1115,7 +1110,7 @@ mod tests {
         let shared = Style::new().color(GREEN).gap(4);
         let node: Node<TestApp> = row()
             .style(shared)
-            .children(vec![Node::new().size(5, 5), Node::new().size(5, 5)]);
+            .children(vec![row().size(5, 5), row().size(5, 5)]);
         let resolved = node.layout(256, 256);
         // gap=4 applied: 5 + 4 + 5 = 14
         assert_eq!(resolved.rect.width(), 14);
@@ -1126,7 +1121,7 @@ mod tests {
         let node: Node<TestApp> = col()
             .size(10, 10)
             .color(GREY)
-            .children(vec![Node::new().size(5, 5).color(RED)]);
+            .children(vec![row().size(5, 5).color(RED)]);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
@@ -1143,7 +1138,7 @@ mod tests {
     #[test]
     fn consumed_flag_per_button() {
         let node: Node<TestApp> =
-            Node::new()
+            row()
                 .size(10, 10)
                 .color(RED)
                 .on_click(|app: &mut TestApp, _state| {
@@ -1163,21 +1158,20 @@ mod tests {
 
     #[test]
     fn positioned_node_tested_before_flow() {
-        let node: Node<TestApp> = col().size(50, 50).children(vec![
-            Node::new()
-                .size(20, 20)
-                .color(RED)
-                .on_click(|app: &mut TestApp, _state| {
-                    app.count += 1;
-                }),
-            Node::new()
-                .size(20, 20)
-                .color(BLUE)
-                .absolute(0, 0)
-                .on_click(|app: &mut TestApp, _state| {
-                    app.count += 10;
-                }),
-        ]);
+        let node: Node<TestApp> =
+            col().size(50, 50).children(vec![
+                row()
+                    .size(20, 20)
+                    .color(RED)
+                    .on_click(|app: &mut TestApp, _state| {
+                        app.count += 1;
+                    }),
+                row().size(20, 20).color(BLUE).absolute(0, 0).on_click(
+                    |app: &mut TestApp, _state| {
+                        app.count += 10;
+                    },
+                ),
+            ]);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(5.0, 5.0); // inside both
@@ -1191,7 +1185,7 @@ mod tests {
     #[test]
     fn scroll_handler() {
         let node: Node<TestApp> =
-            Node::new()
+            row()
                 .size(20, 20)
                 .color(RED)
                 .on_scroll(|app: &mut TestApp, _state, delta| {
@@ -1211,11 +1205,14 @@ mod tests {
 
     #[test]
     fn button_convenience() {
-        let node: Node<TestApp> = button().size(8, 4).color(RED).hover_color(BLUE).on_click(
-            |app: &mut TestApp, _state| {
-                app.clicked = true;
-            },
-        );
+        let node: Node<TestApp> =
+            pane()
+                .size(8, 4)
+                .color(RED)
+                .hover_color(BLUE)
+                .on_click(|app: &mut TestApp, _state| {
+                    app.clicked = true;
+                });
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(4.0, 2.0);
@@ -1231,10 +1228,8 @@ mod tests {
 
     #[test]
     fn row_col_convenience() {
-        let r: Node<TestApp> =
-            row().children(vec![Node::new().size(5, 10), Node::new().size(5, 10)]);
-        let c: Node<TestApp> =
-            col().children(vec![Node::new().size(10, 5), Node::new().size(10, 5)]);
+        let r: Node<TestApp> = row().children(vec![row().size(5, 10), row().size(5, 10)]);
+        let c: Node<TestApp> = col().children(vec![row().size(10, 5), row().size(10, 5)]);
         let r_resolved = r.layout(256, 256);
         let c_resolved = c.layout(256, 256);
         assert_eq!(r_resolved.rect.width(), 10);
@@ -1249,8 +1244,8 @@ mod tests {
     fn macro_simple_nodes() {
         use crate::ui;
         let children: Vec<Node<TestApp>> = ui! {
-            Node::new().size(5, 5).color(RED);
-            Node::new().size(3, 3).color(BLUE);
+            row().size(5, 5).color(RED);
+            row().size(3, 3).color(BLUE);
         };
         assert_eq!(children.len(), 2);
     }
@@ -1260,8 +1255,8 @@ mod tests {
         use crate::ui;
         let children: Vec<Node<TestApp>> = ui! {
             row().gap(4) {
-                Node::new().size(5, 5).color(RED);
-                Node::new().size(5, 5).color(BLUE);
+                row().size(5, 5).color(RED);
+                row().size(5, 5).color(BLUE);
             }
         };
         assert_eq!(children.len(), 1);
@@ -1275,18 +1270,18 @@ mod tests {
         use crate::ui;
         let show = true;
         let children: Vec<Node<TestApp>> = ui! {
-            Node::new().size(5, 5).color(RED);
+            row().size(5, 5).color(RED);
             @ if show {
-                Node::new().size(3, 3).color(BLUE);
+                row().size(3, 3).color(BLUE);
             }
         };
         assert_eq!(children.len(), 2);
 
         let show = false;
         let children: Vec<Node<TestApp>> = ui! {
-            Node::new().size(5, 5).color(RED);
+            row().size(5, 5).color(RED);
             @ if show {
-                Node::new().size(3, 3).color(BLUE);
+                row().size(3, 3).color(BLUE);
             }
         };
         assert_eq!(children.len(), 1);
@@ -1298,7 +1293,7 @@ mod tests {
         let colors = [RED, BLUE, GREEN];
         let children: Vec<Node<TestApp>> = ui! {
             @ for c in colors {
-                Node::new().size(5, 5).color(c);
+                row().size(5, 5).color(c);
             }
         };
         assert_eq!(children.len(), 3);
@@ -1308,10 +1303,10 @@ mod tests {
     fn macro_raw_escape() {
         use crate::ui;
         let children: Vec<Node<TestApp>> = ui! {
-            Node::new().size(5, 5).color(RED);
+            row().size(5, 5).color(RED);
             |c| {
-                c.push(Node::new().size(3, 3).color(BLUE));
-                c.push(Node::new().size(3, 3).color(GREEN));
+                c.push(row().size(3, 3).color(BLUE));
+                c.push(row().size(3, 3).color(GREEN));
             }
         };
         assert_eq!(children.len(), 3);
@@ -1321,7 +1316,7 @@ mod tests {
     fn macro_with_handlers() {
         use crate::ui;
         let children: Vec<Node<TestApp>> = ui! {
-            button()
+            pane()
                 .size(5, 3)
                 .color(RED)
                 .hover_color(BLUE)
@@ -1346,10 +1341,13 @@ mod tests {
         let children: Vec<Node<TestApp>> = ui! {
             col().padding(2) {
                 row().gap(2) {
-                    Node::new().size(5, 5).color(RED);
-                    Node::new().size(5, 5).color(BLUE);
+                    row().gap(2) {
+                        row().size(5, 5).color(RED);
+                        row().size(5, 5).color(BLUE);
+                    }
+                    row().size(5, 5).color(BLUE);
                 }
-                Node::new().size(10, 3).color(GREEN);
+                row().size(10, 3).color(GREEN);
             }
         };
         assert_eq!(children.len(), 1);
@@ -1366,7 +1364,7 @@ mod tests {
         let items = vec![(5, RED), (3, BLUE), (7, GREEN)];
         let children: Vec<Node<TestApp>> = ui! {
             @ for (size, color) in items.iter().copied() {
-                Node::new().size(size, size).color(color);
+                row().size(size, size).color(color);
             }
         };
         assert_eq!(children.len(), 3);
