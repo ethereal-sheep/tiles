@@ -95,7 +95,17 @@ impl Text {
 
     pub fn bounds(&self) -> Rect {
         let (ox, oy) = self.layout_origin();
-        Rect::from_top_left(ox + self.tight_offset.0, oy + self.tight_offset.1, self.tight_size.0, self.tight_size.1)
+        Rect::from_top_left(
+            ox + self.tight_offset.0,
+            oy + self.tight_offset.1,
+            self.tight_size.0,
+            self.tight_size.1,
+        )
+    }
+
+    pub fn rect(&self) -> Rect {
+        let (ox, oy) = self.layout_origin();
+        Rect::from_top_left(ox, oy, self.highlight_size.0, self.highlight_size.1)
     }
 
     fn char_step(&self, ch: char) -> u32 {
@@ -115,15 +125,37 @@ impl Text {
 
     fn layout_origin(&self) -> (f32, f32) {
         let (box_w, box_h, box_offset_x, box_offset_y) = match self.anchor_box {
-            AnchorBox::Highlight => (self.highlight_size.0 as f32, self.highlight_size.1 as f32, 0.0, 0.0),
-            AnchorBox::Tight => (self.tight_size.0 as f32, self.tight_size.1 as f32, self.tight_offset.0, self.tight_offset.1),
+            AnchorBox::Highlight => (
+                self.highlight_size.0 as f32,
+                self.highlight_size.1 as f32,
+                0.0,
+                0.0,
+            ),
+            AnchorBox::Tight => (
+                self.tight_size.0 as f32,
+                self.tight_size.1 as f32,
+                self.tight_offset.0,
+                self.tight_offset.1,
+            ),
         };
 
         match self.anchor_corner {
-            AnchorCorner::TopLeft => (self.position.0 - box_offset_x, self.position.1 - box_offset_y),
-            AnchorCorner::TopRight => (self.position.0 - box_w - box_offset_x, self.position.1 - box_offset_y),
-            AnchorCorner::BottomLeft => (self.position.0 - box_offset_x, self.position.1 - box_h - box_offset_y),
-            AnchorCorner::BottomRight => (self.position.0 - box_w - box_offset_x, self.position.1 - box_h - box_offset_y),
+            AnchorCorner::TopLeft => (
+                self.position.0 - box_offset_x,
+                self.position.1 - box_offset_y,
+            ),
+            AnchorCorner::TopRight => (
+                self.position.0 - box_w - box_offset_x,
+                self.position.1 - box_offset_y,
+            ),
+            AnchorCorner::BottomLeft => (
+                self.position.0 - box_offset_x,
+                self.position.1 - box_h - box_offset_y,
+            ),
+            AnchorCorner::BottomRight => (
+                self.position.0 - box_w - box_offset_x,
+                self.position.1 - box_h - box_offset_y,
+            ),
         }
     }
 }
@@ -140,8 +172,16 @@ impl Drawable for Text {
                     continue;
                 }
 
-                let (dx, dy) = self.position_map.as_ref().map(|pm| pm(i, ch)).unwrap_or((0.0, 0.0));
-                let color = self.color_map.as_ref().map(|cm| cm(i, ch)).unwrap_or(self.color);
+                let (dx, dy) = self
+                    .position_map
+                    .as_ref()
+                    .map(|pm| pm(i, ch))
+                    .unwrap_or((0.0, 0.0));
+                let color = self
+                    .color_map
+                    .as_ref()
+                    .map(|cm| cm(i, ch))
+                    .unwrap_or(self.color);
 
                 let char_x = origin_x + cursor_x as f32 + dx;
                 let char_y = origin_y + glyph.top as f32 + dy;
@@ -149,8 +189,8 @@ impl Drawable for Text {
                 for row in 0..glyph.height as usize {
                     for col in 0..glyph.width as usize {
                         if glyph.pixel(col, row) {
-                            let cell = Cell::new(char_x + col as f32, char_y + row as f32)
-                                .color(color);
+                            let cell =
+                                Cell::new(char_x + col as f32, char_y + row as f32).color(color);
                             f(cell);
                         }
                     }
@@ -239,7 +279,7 @@ fn compute_tight_info(
 mod tests {
     use super::*;
     use crate::color::Color;
-    use crate::font::{TOM_THUMB_3X5, MONO_5X7};
+    use crate::font::{MONO_5X7, TOM_THUMB_3X5};
 
     #[test]
     fn text_width_and_height() {
@@ -266,7 +306,11 @@ mod tests {
     fn text_mono_font_uniform_advance() {
         let t = Text::new(&MONO_5X7, "AB");
         let t2 = Text::new(&MONO_5X7, "ii");
-        assert_eq!(t.width(), t2.width(), "Mono font should have uniform text width for same char count");
+        assert_eq!(
+            t.width(),
+            t2.width(),
+            "Mono font should have uniform text width for same char count"
+        );
     }
 
     #[test]
@@ -331,14 +375,13 @@ mod tests {
 
     #[test]
     fn text_map_color_overrides() {
-        let t = Text::new(&TOM_THUMB_3X5, "AB")
-            .map_color(|i, _| {
-                if i == 0 {
-                    Color::linear(1.0, 0.0, 0.0, 1.0)
-                } else {
-                    Color::linear(0.0, 1.0, 0.0, 1.0)
-                }
-            });
+        let t = Text::new(&TOM_THUMB_3X5, "AB").map_color(|i, _| {
+            if i == 0 {
+                Color::linear(1.0, 0.0, 0.0, 1.0)
+            } else {
+                Color::linear(0.0, 1.0, 0.0, 1.0)
+            }
+        });
 
         let mut cells = Vec::new();
         t.emit_cells(&mut |c| cells.push(c));
@@ -430,7 +473,10 @@ mod tests {
         assert!(!cells.is_empty());
 
         for cell in &cells {
-            assert!(cell.position.x <= 50.0, "All cells should be left of anchor x");
+            assert!(
+                cell.position.x <= 50.0,
+                "All cells should be left of anchor x"
+            );
         }
     }
 
@@ -446,7 +492,13 @@ mod tests {
 
         let min_x = cells.iter().map(|c| c.position.x).fold(f32::MAX, f32::min);
         let min_y = cells.iter().map(|c| c.position.y).fold(f32::MAX, f32::min);
-        assert!((min_x - 0.0).abs() < 0.001, "Tight anchor should start cells at x=0, got {min_x}");
-        assert!((min_y - 0.0).abs() < 0.001, "Tight anchor should start cells at y=0, got {min_y}");
+        assert!(
+            (min_x - 0.0).abs() < 0.001,
+            "Tight anchor should start cells at x=0, got {min_x}"
+        );
+        assert!(
+            (min_y - 0.0).abs() < 0.001,
+            "Tight anchor should start cells at y=0, got {min_y}"
+        );
     }
 }

@@ -1,12 +1,12 @@
 use tiles::{
-    font::TOM_THUMB_3X5,
+    font::TINY5_4X5,
     ui,
-    ui::{col, pane, row, text, PaneNode},
+    ui::{col, pane, row, text, Node},
     App, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, State,
 };
 
-const BG: Color = Color::linear(0.72, 0.12, 0.15, 1.0);
-const PANEL_BG: Color = Color::linear(0.18, 0.18, 0.22, 1.0);
+const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
+const PANEL_BG: Color = Color::linear(0.50, 0.40, 0.22, 1.0);
 const BTN_COLOR: Color = Color::linear(0.25, 0.25, 0.35, 1.0);
 const BTN_HOVER: Color = Color::linear(0.35, 0.35, 0.50, 1.0);
 const BTN_PRESS: Color = Color::linear(0.50, 0.40, 0.20, 1.0);
@@ -27,7 +27,7 @@ impl App for Demo {
         state.set_ambient_illumination(1.0);
     }
 
-    fn ui(&self, _state: &State) -> PaneNode<Self> {
+    fn ui(&self, _state: &State) -> Node<Self> {
         col()
             .padding(16)
             .gap(4)
@@ -36,28 +36,33 @@ impl App for Demo {
             .fill_h()
             .children(ui! {
                 // Title bar
-                row().gap(4).padding(2).color(PANEL_BG) {
+                row().size(50, 30).gap(1).padding(1).color(PANEL_BG) {
                     pane()
-                        .size(20, 10)
+                        .fill_w()
                         .color(BTN_COLOR)
                         .hover_color(BTN_HOVER)
                         .pressed_color(BTN_PRESS)
                         .text_color(INDICATOR)
                         .on_click(|app: &mut Demo, _state| { app.count += 1; }) {
-                            text("+").font(&TOM_THUMB_3X5);
+                            text("+").font(&TINY5_4X5)
                     }
                     pane()
-                        .size(20, 10)
+                        .fill_w()
                         .color(BTN_COLOR)
                         .hover_color(BTN_HOVER)
                         .pressed_color(BTN_PRESS)
-                        .on_click(|app: &mut Demo, _state| { app.count -= 1; });
+                        .text_color(RED)
+                        .on_click(|app: &mut Demo, _state| { app.count -= 1; }) {
+                            text("-").font(&TINY5_4X5)
+                    }
                     pane()
-                        .size(20, 10)
+                        .fill_w()
                         .color(BTN_COLOR)
                         .hover_color(BTN_HOVER)
                         .pressed_color(BTN_PRESS)
-                        .on_click(|app: &mut Demo, _state| { app.count = 0; });
+                        .on_click(|app: &mut Demo, _state| { app.count = 0; }) {
+                            text("clear").font(&TINY5_4X5)
+                    }
                 }
 
                 // Counter indicator

@@ -28,7 +28,7 @@ pub trait App {
     fn on_key(&mut self, _state: &mut State, _event: KeyEvent) {}
     fn on_mouse(&mut self, _state: &mut State, _event: MouseEvent) {}
 
-    fn ui(&self, _state: &State) -> crate::ui::PaneNode<Self>
+    fn ui(&self, _state: &State) -> crate::ui::Node<Self>
     where
         Self: Sized,
     {

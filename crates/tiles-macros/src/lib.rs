@@ -187,7 +187,11 @@ fn expand_stmt(stmt: &UiStmt) -> TokenStream2 {
                 }
             }
         }
-        UiStmt::Let { pat, widget_expr, children } => {
+        UiStmt::Let {
+            pat,
+            widget_expr,
+            children,
+        } => {
             if let Some(block) = children {
                 let children_expr = expand_block(block);
                 quote! {
@@ -219,7 +223,6 @@ pub fn ui(input: TokenStream) -> TokenStream {
 // Generates builder methods from struct fields based on attributes:
 //
 //   #[builder]              — Option<T> field → fn field(mut self, v: T) -> Self
-//   #[builder(bool)]        — bool field → fn field(mut self) -> Self
 //   #[builder(combo(name = "size", fields = "w, h"))]
 //                           — generates fn size(mut self, w: T, h: T) -> Self
 //   #[builder(variant(name = "relative", variant = "Relative", args = "x: i32, y: i32"))]
@@ -286,20 +289,48 @@ fn gen_method_for_field(
     let list = attr.meta.require_list()?;
     let tokens = list.tokens.to_string();
 
-    if tokens.starts_with("combo") {
+    if tokens.starts_with("dual_variant") {
+        let var = parse_combo_variant_attr(&tokens)?;
+        let method_name = syn::Ident::new(&var.name, field_name.span());
+        let variant_ident = syn::Ident::new(&var.variant, field_name.span());
+        let enum_ty = field_ty;
+
+        let params: Vec<(syn::Ident, syn::Type)> = parse_args_list(&var.args, field_name.span())?;
+        let param_names: Vec<&syn::Ident> = params.iter().map(|(n, _)| n).collect();
+        let param_decls: Vec<TokenStream2> =
+            params.iter().map(|(n, t)| quote! { #n: #t }).collect();
+        let assignments: Vec<TokenStream2> = param_names
+            .iter()
+            .map(|name| quote! { self.#prefix #name = #enum_ty::#variant_ident(#name); })
+            .collect();
+        out.push(quote! {
+            pub fn #method_name(mut self, #(#param_decls),*) -> Self {
+                #(#assignments)*
+                self
+            }
+        });
+    } else if tokens.starts_with("combo") {
         let combo = parse_combo_attr(&tokens)?;
         let method_name = syn::Ident::new(&combo.name, field_name.span());
-        let param_names: Vec<syn::Ident> = combo.fields.iter()
+        let param_names: Vec<syn::Ident> = combo
+            .fields
+            .iter()
             .map(|f| syn::Ident::new(f, field_name.span()))
             .collect();
-        let param_types: Vec<TokenStream2> = combo.fields.iter()
+        let param_types: Vec<TokenStream2> = combo
+            .fields
+            .iter()
             .map(|f| {
-                let field = fields.iter().find(|fld| fld.ident.as_ref().unwrap() == f).unwrap();
+                let field = fields
+                    .iter()
+                    .find(|fld| fld.ident.as_ref().unwrap() == f)
+                    .unwrap();
                 let inner = extract_option_inner(&field.ty).unwrap();
                 quote! { #inner }
             })
             .collect();
-        let assignments: Vec<TokenStream2> = param_names.iter()
+        let assignments: Vec<TokenStream2> = param_names
+            .iter()
             .map(|name| quote! { self.#prefix #name = Some(#name); })
             .collect();
         out.push(quote! {
@@ -313,17 +344,25 @@ fn gen_method_for_field(
         let method_name = syn::Ident::new(&var.name, field_name.span());
         let variant_ident = syn::Ident::new(&var.variant, field_name.span());
         let enum_ty = field_ty;
-        let params: Vec<(syn::Ident, syn::Type)> = parse_args_list(&var.args, field_name.span())?;
-        let param_names: Vec<&syn::Ident> = params.iter().map(|(n, _)| n).collect();
-        let param_decls: Vec<TokenStream2> = params.iter()
-            .map(|(n, t)| quote! { #n: #t })
-            .collect();
-        out.push(quote! {
-            pub fn #method_name(mut self, #(#param_decls),*) -> Self {
-                self.#prefix #field_name = #enum_ty::#variant_ident(#(#param_names),*);
-                self
-            }
-        });
+        if let Some(args) = var.args {
+            let params: Vec<(syn::Ident, syn::Type)> = parse_args_list(&args, field_name.span())?;
+            let param_names: Vec<&syn::Ident> = params.iter().map(|(n, _)| n).collect();
+            let param_decls: Vec<TokenStream2> =
+                params.iter().map(|(n, t)| quote! { #n: #t }).collect();
+            out.push(quote! {
+                pub fn #method_name(mut self, #(#param_decls),*) -> Self {
+                    self.#prefix #field_name = #enum_ty::#variant_ident(#(#param_names),*);
+                    self
+                }
+            });
+        } else {
+            out.push(quote! {
+                pub fn #method_name(mut self) -> Self {
+                    self.#prefix #field_name = #enum_ty::#variant_ident;
+                    self
+                }
+            });
+        }
     }
 
     Ok(out)
@@ -343,14 +382,22 @@ fn parse_forward_targets(input: &DeriveInput) -> Vec<ForwardTarget> {
         if let Ok(list) = attr.meta.require_list() {
             let tokens = list.tokens.to_string();
             if tokens.starts_with("forward") {
-                let after_keyword = tokens.strip_prefix("forward").unwrap_or(&tokens).trim_start();
-                if let Some(inner) = after_keyword.strip_prefix('(').and_then(|s| s.strip_suffix(')')) {
+                let after_keyword = tokens
+                    .strip_prefix("forward")
+                    .unwrap_or(&tokens)
+                    .trim_start();
+                if let Some(inner) = after_keyword
+                    .strip_prefix('(')
+                    .and_then(|s| s.strip_suffix(')'))
+                {
                     let mut to = String::new();
                     let mut via = String::new();
                     let mut remaining = inner;
                     while !remaining.is_empty() {
                         remaining = remaining.trim_start();
-                        if remaining.is_empty() { break; }
+                        if remaining.is_empty() {
+                            break;
+                        }
                         if let Some(eq_pos) = remaining.find('=') {
                             let key = remaining[..eq_pos].trim().trim_start_matches(',').trim();
                             remaining = remaining[eq_pos + 1..].trim();
@@ -397,7 +444,8 @@ fn impl_builders(input: &DeriveInput) -> syn::Result<TokenStream2> {
             if !attr.path().is_ident("builder") {
                 continue;
             }
-            let generated = gen_method_for_field(field_name, &field.ty, attr, fields, &empty_prefix)?;
+            let generated =
+                gen_method_for_field(field_name, &field.ty, attr, fields, &empty_prefix)?;
             methods.extend(generated);
         }
     }
@@ -465,7 +513,8 @@ fn extract_target_generics(ty_str: &str) -> Option<(String, String)> {
     let params_full = &ty_str[open + 1..close]; // "A: App"
 
     // Strip bounds for the bare type: "A: App" -> "A"
-    let params_bare: Vec<&str> = params_full.split(',')
+    let params_bare: Vec<&str> = params_full
+        .split(',')
         .map(|p| {
             let p = p.trim();
             p.split(':').next().unwrap().trim()
@@ -488,12 +537,17 @@ fn extract_option_box_fn(ty: &Type) -> Option<TokenStream2> {
             return None;
         }
         if let syn::PathArguments::AngleBracketed(args) = &seg.arguments {
-            if let Some(syn::GenericArgument::Type(Type::TraitObject(trait_obj))) = args.args.first() {
+            if let Some(syn::GenericArgument::Type(Type::TraitObject(trait_obj))) =
+                args.args.first()
+            {
                 // Find the Fn(...) bound
                 for bound in &trait_obj.bounds {
                     if let syn::TypeParamBound::Trait(trait_bound) = bound {
                         let last_seg = trait_bound.path.segments.last()?;
-                        if last_seg.ident == "Fn" || last_seg.ident == "FnMut" || last_seg.ident == "FnOnce" {
+                        if last_seg.ident == "Fn"
+                            || last_seg.ident == "FnMut"
+                            || last_seg.ident == "FnOnce"
+                        {
                             if let syn::PathArguments::Parenthesized(paren) = &last_seg.arguments {
                                 let inputs = &paren.inputs;
                                 return Some(quote! { #inputs });
@@ -540,8 +594,13 @@ fn parse_combo_attr(s: &str) -> syn::Result<ComboAttr> {
     // combo(name = "size", fields = "w, h")
     // proc_macro2 may insert space: "combo (...)"
     let s_trimmed = s.trim();
-    let after_keyword = s_trimmed.strip_prefix("combo").unwrap_or(s_trimmed).trim_start();
-    let inner = after_keyword.strip_prefix('(').and_then(|s| s.strip_suffix(')'))
+    let after_keyword = s_trimmed
+        .strip_prefix("combo")
+        .unwrap_or(s_trimmed)
+        .trim_start();
+    let inner = after_keyword
+        .strip_prefix('(')
+        .and_then(|s| s.strip_suffix(')'))
         .ok_or_else(|| syn::Error::new(proc_macro2::Span::call_site(), "invalid combo attr"))?;
     let mut name = String::new();
     let mut fields = Vec::new();
@@ -549,7 +608,9 @@ fn parse_combo_attr(s: &str) -> syn::Result<ComboAttr> {
     let mut remaining = inner;
     while !remaining.is_empty() {
         remaining = remaining.trim_start();
-        if remaining.is_empty() { break; }
+        if remaining.is_empty() {
+            break;
+        }
         if let Some(eq_pos) = remaining.find('=') {
             let key = remaining[..eq_pos].trim().trim_start_matches(',').trim();
             remaining = remaining[eq_pos + 1..].trim();
@@ -561,7 +622,8 @@ fn parse_combo_attr(s: &str) -> syn::Result<ComboAttr> {
                 match key {
                     "name" => name = val.to_string(),
                     "fields" => {
-                        fields = val.split(',')
+                        fields = val
+                            .split(',')
                             .map(|s| s.trim().to_string())
                             .filter(|s| !s.is_empty())
                             .collect();
@@ -576,24 +638,30 @@ fn parse_combo_attr(s: &str) -> syn::Result<ComboAttr> {
     Ok(ComboAttr { name, fields })
 }
 
-struct VariantAttr {
+struct ComboVariantAttr {
     name: String,
     variant: String,
     args: String,
 }
 
-fn parse_variant_attr(s: &str) -> syn::Result<VariantAttr> {
-    // variant(name = "relative", variant = "Relative", args = "x: i32, y: i32")
-    // proc_macro2 may insert space: "variant (...)"
+fn parse_combo_variant_attr(s: &str) -> syn::Result<ComboVariantAttr> {
+    // combo_variant(name = "size", variant = "Fixed", args = "w: u32, h: u32")
+    // proc_macro2 may insert space: "combo (...)"
     let s_trimmed = s.trim();
-    let after_keyword = s_trimmed.strip_prefix("variant").unwrap_or(s_trimmed).trim_start();
-    let inner = after_keyword.strip_prefix('(').and_then(|s| s.strip_suffix(')'))
-        .ok_or_else(|| syn::Error::new(proc_macro2::Span::call_site(), "invalid variant attr"))?;
+    let after_keyword = s_trimmed
+        .strip_prefix("dual_variant")
+        .unwrap_or(s_trimmed)
+        .trim_start();
+    let inner = after_keyword
+        .strip_prefix('(')
+        .and_then(|s| s.strip_suffix(')'))
+        .ok_or_else(|| {
+            syn::Error::new(proc_macro2::Span::call_site(), "invalid combo variant attr")
+        })?;
     let mut name = String::new();
     let mut variant = String::new();
     let mut args = String::new();
 
-    // Parse key = "value" pairs carefully (args value contains commas)
     let mut remaining = inner;
     while !remaining.is_empty() {
         remaining = remaining.trim_start();
@@ -619,19 +687,85 @@ fn parse_variant_attr(s: &str) -> syn::Result<VariantAttr> {
             break;
         }
     }
-
-    Ok(VariantAttr { name, variant, args })
+    Ok(ComboVariantAttr {
+        name,
+        variant,
+        args,
+    })
 }
 
-fn parse_args_list(args: &str, span: proc_macro2::Span) -> syn::Result<Vec<(syn::Ident, syn::Type)>> {
+struct VariantAttr {
+    name: String,
+    variant: String,
+    args: Option<String>,
+}
+
+fn parse_variant_attr(s: &str) -> syn::Result<VariantAttr> {
+    // variant(name = "relative", variant = "Relative", args = "x: i32, y: i32")
+    // proc_macro2 may insert space: "variant (...)"
+    let s_trimmed = s.trim();
+    let after_keyword = s_trimmed
+        .strip_prefix("variant")
+        .unwrap_or(s_trimmed)
+        .trim_start();
+    let inner = after_keyword
+        .strip_prefix('(')
+        .and_then(|s| s.strip_suffix(')'))
+        .ok_or_else(|| syn::Error::new(proc_macro2::Span::call_site(), "invalid variant attr"))?;
+    let mut name = String::new();
+    let mut variant = String::new();
+    let mut args: Option<String> = None;
+
+    // Parse key = "value" pairs carefully (args value contains commas)
+    let mut remaining = inner;
+    while !remaining.is_empty() {
+        remaining = remaining.trim_start();
+        if remaining.is_empty() {
+            break;
+        }
+        if let Some(eq_pos) = remaining.find('=') {
+            let key = remaining[..eq_pos].trim().trim_start_matches(',').trim();
+            remaining = remaining[eq_pos + 1..].trim();
+            if remaining.starts_with('"') {
+                let end_quote = remaining[1..].find('"').unwrap() + 1;
+                let val = &remaining[1..end_quote];
+                remaining = &remaining[end_quote + 1..];
+                remaining = remaining.trim_start_matches(',').trim_start();
+                match key {
+                    "name" => name = val.to_string(),
+                    "variant" => variant = val.to_string(),
+                    "args" => args = Some(val.to_string()),
+                    _ => {}
+                }
+            }
+        } else {
+            break;
+        }
+    }
+
+    Ok(VariantAttr {
+        name,
+        variant,
+        args,
+    })
+}
+
+fn parse_args_list(
+    args: &str,
+    span: proc_macro2::Span,
+) -> syn::Result<Vec<(syn::Ident, syn::Type)>> {
     let mut result = Vec::new();
     for part in args.split(',') {
         let part = part.trim();
         if part.is_empty() {
             continue;
         }
-        let colon_pos = part.find(':')
-            .ok_or_else(|| syn::Error::new(span, format!("expected 'name: type' in args, got '{}'", part)))?;
+        let colon_pos = part.find(':').ok_or_else(|| {
+            syn::Error::new(
+                span,
+                format!("expected 'name: type' in args, got '{}'", part),
+            )
+        })?;
         let name = part[..colon_pos].trim();
         let ty_str = part[colon_pos + 1..].trim();
         let ident = syn::Ident::new(name, span);

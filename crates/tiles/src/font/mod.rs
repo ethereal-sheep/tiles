@@ -36,12 +36,14 @@ impl std::fmt::Debug for Font {
     }
 }
 
+impl Default for &Font {
+    fn default() -> Self {
+        &TINY5_4X5
+    }
+}
+
 impl Font {
-    pub const fn new(
-        height: usize,
-        default_gap: usize,
-        glyphs: &'static [Glyph],
-    ) -> Self {
+    pub const fn new(height: usize, default_gap: usize, glyphs: &'static [Glyph]) -> Self {
         Self {
             height,
             default_gap,

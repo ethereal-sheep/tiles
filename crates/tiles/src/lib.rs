@@ -30,7 +30,7 @@ pub use runner::{App, State};
 pub use shape::{Fill, Shape, Stroke, StrokePosition};
 pub use text::{AnchorBox, AnchorCorner, Text};
 pub use tiles_macros::ui;
-pub use ui::{text, Node, PaneNode, TextNode};
+pub use ui::{text, Node};
 
 #[cfg(feature = "runtime")]
 pub fn run(
