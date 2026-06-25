@@ -53,30 +53,19 @@ pub struct Style {
     #[builder(variant(name = "shrink_h", variant = "Shrink"))]
     #[builder(variant(name = "height", variant = "Fixed", args = "height: u32"))]
     pub h: Sizing,
-    #[builder]
     pub axis: Axis,
-    #[builder]
     pub gap: Option<u32>,
-    #[builder]
     pub padding: Option<u32>,
     #[builder(variant(name = "relative", variant = "Relative", args = "x: i32, y: i32"))]
     #[builder(variant(name = "absolute", variant = "Absolute", args = "x: i32, y: i32"))]
     pub position: Position,
-    #[builder]
     pub z_index: i32,
-    #[builder]
     pub color: Option<Color>,
-    #[builder]
     pub hover_color: Option<Color>,
-    #[builder]
     pub pressed_color: Option<Color>,
-    #[builder]
     pub text_color: Option<Color>,
-    #[builder]
     pub hover_text_color: Option<Color>,
-    #[builder]
     pub pressed_text_color: Option<Color>,
-    #[builder]
     pub font: Option<&'static Font>,
 }
 
@@ -85,29 +74,17 @@ pub struct Style {
 #[derive(Builders)]
 #[builders(forward(to = "Node<A: App>", via = "handlers"))]
 pub struct Handlers<A: App> {
-    #[builder]
     pub on_hover: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    #[builder]
     pub on_enter: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    #[builder]
     pub on_leave: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    #[builder]
     pub on_click: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    #[builder]
     pub on_double_click: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    #[builder]
     pub on_press: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    #[builder]
     pub on_release: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    #[builder]
     pub on_right_click: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    #[builder]
     pub on_hold: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    #[builder]
     pub on_drag: Option<Box<dyn Fn(&mut A, &mut State, DragInfo)>>,
-    #[builder]
     pub on_drag_end: Option<Box<dyn Fn(&mut A, &mut State, DragInfo)>>,
-    #[builder]
     pub on_scroll: Option<Box<dyn Fn(&mut A, &mut State, f32)>>,
 }
 

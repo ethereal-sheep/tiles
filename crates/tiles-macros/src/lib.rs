@@ -244,6 +244,44 @@ pub fn derive_builders(input: TokenStream) -> TokenStream {
     }
 }
 
+fn gen_default_method_for_field(
+    field_name: &syn::Ident,
+    field_ty: &Type,
+    prefix: &TokenStream2,
+) -> Vec<TokenStream2> {
+    let mut out = Vec::new();
+    if is_bool_type(field_ty) {
+        out.push(quote! {
+            pub fn #field_name(mut self) -> Self {
+                self.#prefix #field_name = true;
+                self
+            }
+        });
+    } else if let Some(fn_args) = extract_option_box_fn(field_ty) {
+        out.push(quote! {
+            pub fn #field_name(mut self, f: impl Fn(#fn_args) + 'static) -> Self {
+                self.#prefix #field_name = Some(Box::new(f));
+                self
+            }
+        });
+    } else if let Ok(inner_ty) = extract_option_inner(field_ty) {
+        out.push(quote! {
+            pub fn #field_name(mut self, v: #inner_ty) -> Self {
+                self.#prefix #field_name = Some(v);
+                self
+            }
+        });
+    } else {
+        out.push(quote! {
+            pub fn #field_name(mut self, v: #field_ty) -> Self {
+                self.#prefix #field_name = v;
+                self
+            }
+        });
+    }
+    out
+}
+
 fn gen_method_for_field(
     field_name: &syn::Ident,
     field_ty: &Type,
@@ -440,13 +478,26 @@ fn impl_builders(input: &DeriveInput) -> syn::Result<TokenStream2> {
 
     for field in fields {
         let field_name = field.ident.as_ref().unwrap();
-        for attr in &field.attrs {
-            if !attr.path().is_ident("builder") {
-                continue;
-            }
-            let generated =
-                gen_method_for_field(field_name, &field.ty, attr, fields, &empty_prefix)?;
+        let builder_attrs: Vec<&syn::Attribute> = field
+            .attrs
+            .iter()
+            .filter(|a| a.path().is_ident("builder"))
+            .collect();
+
+        if builder_attrs.is_empty() {
+            let generated = gen_default_method_for_field(field_name, &field.ty, &empty_prefix);
             methods.extend(generated);
+        } else {
+            for attr in builder_attrs {
+                if let Ok(list) = attr.meta.require_list() {
+                    if list.tokens.to_string().trim() == "omit" {
+                        continue;
+                    }
+                }
+                let generated =
+                    gen_method_for_field(field_name, &field.ty, attr, fields, &empty_prefix)?;
+                methods.extend(generated);
+            }
         }
     }
 
@@ -466,12 +517,26 @@ fn impl_builders(input: &DeriveInput) -> syn::Result<TokenStream2> {
         let mut fwd_methods = Vec::new();
         for field in fields {
             let field_name = field.ident.as_ref().unwrap();
-            for attr in &field.attrs {
-                if !attr.path().is_ident("builder") {
-                    continue;
-                }
-                let generated = gen_method_for_field(field_name, &field.ty, attr, fields, &prefix)?;
+            let builder_attrs: Vec<&syn::Attribute> = field
+                .attrs
+                .iter()
+                .filter(|a| a.path().is_ident("builder"))
+                .collect();
+
+            if builder_attrs.is_empty() {
+                let generated = gen_default_method_for_field(field_name, &field.ty, &prefix);
                 fwd_methods.extend(generated);
+            } else {
+                for attr in builder_attrs {
+                    if let Ok(list) = attr.meta.require_list() {
+                        if list.tokens.to_string().trim() == "omit" {
+                            continue;
+                        }
+                    }
+                    let generated =
+                        gen_method_for_field(field_name, &field.ty, attr, fields, &prefix)?;
+                    fwd_methods.extend(generated);
+                }
             }
         }
 
