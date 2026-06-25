@@ -44,7 +44,7 @@ impl App for Demo {
                         .pressed_color(BTN_PRESS)
                         .text_color(INDICATOR)
                         .on_click(|app: &mut Demo, _state| { app.count += 1; }) {
-                            text("+").font(&TINY5_4X5)
+                            text("+").font(&TINY5_4X5).padding(1)
                     }
                     pane()
                         .fill_w()
@@ -53,7 +53,7 @@ impl App for Demo {
                         .pressed_color(BTN_PRESS)
                         .text_color(RED)
                         .on_click(|app: &mut Demo, _state| { app.count -= 1; }) {
-                            text("-").font(&TINY5_4X5)
+                            text("-").font(&TINY5_4X5).padding(1)
                     }
                     pane()
                         .fill_w()
@@ -61,15 +61,21 @@ impl App for Demo {
                         .hover_color(BTN_HOVER)
                         .pressed_color(BTN_PRESS)
                         .on_click(|app: &mut Demo, _state| { app.count = 0; }) {
-                            text("clear").font(&TINY5_4X5)
+                            text("clear").font(&TINY5_4X5).padding(1)
                     }
                 }
 
                 // Counter indicator
                 row().gap(1) {
-                    @ for _i in 0..self.count.unsigned_abs() {
+                    @ for i in 0..=self.count.unsigned_abs() {
                         pane().size(4, 8).color(
-                            if self.count > 0 { INDICATOR } else { RED }
+                            if i == 0 {
+                                Color::linear(0.0, 0.0, 0.0, 0.0)
+                            } else if self.count > 0 {
+                                INDICATOR
+                            } else {
+                                RED
+                            }
                         );
                     }
                 }
