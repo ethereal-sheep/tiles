@@ -36,34 +36,38 @@ impl App for Demo {
             .fill_h()
             .children(ui! {
                 // Title bar
-                row().width(40).gap(1).padding(1).color(PANEL_BG) {
-                    pane()
-                        .fill_w()
-                        .color(BTN_COLOR)
-                        .hover_color(BTN_HOVER)
-                        .pressed_color(BTN_PRESS)
-                        .text_color(INDICATOR)
-                        .on_click(|app: &mut Demo, _state| { app.count += 1; }) {
-                            text("+").font(&TINY5_4X5).padding(1)
-                    }
-                    pane()
-                        .fill_w()
-                        .color(BTN_COLOR)
-                        .hover_color(BTN_HOVER)
-                        .pressed_color(BTN_PRESS)
-                        .text_color(RED)
-                        .on_click(|app: &mut Demo, _state| { app.count -= 1; }) {
-                            text("-").font(&TINY5_4X5).padding(1)
-                    }
-                    pane()
-                        .fill_w()
-                        .color(BTN_COLOR)
-                        .hover_color(BTN_HOVER)
-                        .pressed_color(BTN_PRESS)
-                        .on_click(|app: &mut Demo, _state| { app.count = 0; }) {
-                            text("clear").font(&TINY5_4X5).padding(1)
+                row().width(150).justify_end().color(PANEL_BG) {
+                    row().width(50).gap(1).padding(1) {
+                        pane()
+                            .justify_end()
+                            .fill_w()
+                            .color(BTN_COLOR)
+                            .hover_color(BTN_HOVER)
+                            .pressed_color(BTN_PRESS)
+                            .text_color(INDICATOR)
+                            .on_click(|app: &mut Demo, _state| { app.count += 1; }) {
+                                text("+").font(&TINY5_4X5).padding(1)
+                        }
+                        pane()
+                            .fill_w()
+                            .color(BTN_COLOR)
+                            .hover_color(BTN_HOVER)
+                            .pressed_color(BTN_PRESS)
+                            .text_color(RED)
+                            .on_click(|app: &mut Demo, _state| { app.count -= 1; }) {
+                                text("-").font(&TINY5_4X5).padding(1)
+                        }
+                        pane()
+                            .fill_w()
+                            .color(BTN_COLOR)
+                            .hover_color(BTN_HOVER)
+                            .pressed_color(BTN_PRESS)
+                            .on_click(|app: &mut Demo, _state| { app.count = 0; }) {
+                                text("clear").font(&TINY5_4X5).padding(1)
+                        }
                     }
                 }
+
 
                 // Counter indicator
                 row().gap(1) {

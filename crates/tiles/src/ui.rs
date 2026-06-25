@@ -15,6 +15,23 @@ pub enum Axis {
     Row,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Justify {
+    #[default]
+    Start,
+    Center,
+    End,
+    SpaceBetween,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Align {
+    #[default]
+    Start,
+    Center,
+    End,
+}
+
 /// How a single axis resolves its size
 #[derive(Clone, Copy, Debug, Default)]
 pub enum Sizing {
@@ -56,6 +73,15 @@ pub struct Style {
     pub axis: Axis,
     pub gap: Option<u32>,
     pub padding: Option<u32>,
+    #[builder(variant(name = "justify_start", variant = "Start"))]
+    #[builder(variant(name = "justify_center", variant = "Center"))]
+    #[builder(variant(name = "justify_end", variant = "End"))]
+    #[builder(variant(name = "justify_full", variant = "SpaceBetween"))]
+    pub justify: Justify,
+    #[builder(variant(name = "align_start", variant = "Start"))]
+    #[builder(variant(name = "align_center", variant = "Center"))]
+    #[builder(variant(name = "align_end", variant = "End"))]
+    pub align: Align,
     #[builder(variant(name = "relative", variant = "Relative", args = "x: i32, y: i32"))]
     #[builder(variant(name = "absolute", variant = "Absolute", args = "x: i32, y: i32"))]
     pub position: Position,
@@ -476,27 +502,86 @@ impl<A: App> SizedNode<A> {
                 let padding = self.style.padding.unwrap_or(0);
                 let axis = self.style.axis;
                 let gap = self.style.gap.unwrap_or(0);
+                let justify = self.style.justify;
+                let align = self.style.align;
                 let content_x = x + padding as i32;
                 let content_y = y + padding as i32;
+                let content_w = self.size.width.saturating_sub(padding * 2);
+                let content_h = self.size.height.saturating_sub(padding * 2);
+
+                let flow_children: Vec<&SizedNode<A>> = children
+                    .iter()
+                    .filter(|c| matches!(c.style.position, Position::Flow))
+                    .collect();
+                let flow_count = flow_children.len() as u32;
+
+                let total_main: u32 = flow_children
+                    .iter()
+                    .map(|c| match axis {
+                        Axis::Row => c.size.width,
+                        Axis::Column => c.size.height,
+                    })
+                    .sum();
+                let total_gaps = if flow_count > 1 {
+                    gap * (flow_count - 1)
+                } else {
+                    0
+                };
+                let main_budget = match axis {
+                    Axis::Row => content_w,
+                    Axis::Column => content_h,
+                };
+                let leftover = main_budget as i32 - total_main as i32 - total_gaps as i32;
+
+                let (mut main_cursor, justify_gap) = match justify {
+                    Justify::Start => (0i32, 0i32),
+                    Justify::Center => (leftover / 2, 0),
+                    Justify::End => (leftover, 0),
+                    Justify::SpaceBetween => {
+                        if flow_count > 1 {
+                            (0, leftover / (flow_count as i32 - 1))
+                        } else {
+                            (0, 0)
+                        }
+                    }
+                };
+
+                let cross_budget = match axis {
+                    Axis::Row => content_h,
+                    Axis::Column => content_w,
+                };
 
                 let mut resolved_children = Vec::new();
-                let mut cursor_x: u32 = 0;
-                let mut cursor_y: u32 = 0;
 
                 for child in children {
                     let is_out_of_flow = !matches!(child.style.position, Position::Flow);
 
-                    let child_origin_x = content_x + cursor_x as i32;
-                    let child_origin_y = content_y + cursor_y as i32;
+                    let child_cross = match axis {
+                        Axis::Row => child.size.height,
+                        Axis::Column => child.size.width,
+                    };
+                    let cross_offset = if is_out_of_flow {
+                        0
+                    } else {
+                        match align {
+                            Align::Start => 0,
+                            Align::Center => (cross_budget as i32 - child_cross as i32) / 2,
+                            Align::End => cross_budget as i32 - child_cross as i32,
+                        }
+                    };
+
+                    let (child_origin_x, child_origin_y) = match axis {
+                        Axis::Row => (content_x + main_cursor, content_y + cross_offset),
+                        Axis::Column => (content_x + cross_offset, content_y + main_cursor),
+                    };
                     let resolved = child.position_pass(child_origin_x, child_origin_y);
 
                     if !is_out_of_flow {
-                        let child_w = resolved.rect.width();
-                        let child_h = resolved.rect.height();
-                        match axis {
-                            Axis::Row => cursor_x += child_w + gap,
-                            Axis::Column => cursor_y += child_h + gap,
-                        }
+                        let child_main = match axis {
+                            Axis::Row => resolved.rect.width(),
+                            Axis::Column => resolved.rect.height(),
+                        };
+                        main_cursor += child_main as i32 + gap as i32 + justify_gap;
                     }
 
                     resolved_children.push(resolved);
@@ -1704,10 +1789,9 @@ mod tests {
 
     #[test]
     fn fill_cross_axis_in_row() {
-        let node: Node<TestApp> = row().size(100, 60).children(vec![
-            pane().width(50).fill_h(),
-            pane().width(50).height(30),
-        ]);
+        let node: Node<TestApp> = row()
+            .size(100, 60)
+            .children(vec![pane().width(50).fill_h(), pane().width(50).height(30)]);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.height(), 60);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.height(), 30);
@@ -1762,5 +1846,214 @@ mod tests {
                 .width(),
             60
         );
+    }
+
+    // --- Justify tests ---
+
+    #[test]
+    fn justify_start_is_default() {
+        let node: Node<TestApp> = row()
+            .width(100)
+            .children(vec![pane().size(20, 10), pane().size(20, 10)]);
+        let resolved = node.layout(256, 256);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 0.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 20.0);
+    }
+
+    #[test]
+    fn justify_center_row() {
+        let node: Node<TestApp> = row()
+            .width(100)
+            .justify_center()
+            .children(vec![pane().size(20, 10), pane().size(20, 10)]);
+        let resolved = node.layout(256, 256);
+        // leftover = 100 - 40 = 60, offset = 30
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 30.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 50.0);
+    }
+
+    #[test]
+    fn justify_center_column() {
+        let node: Node<TestApp> = col()
+            .height(100)
+            .justify_center()
+            .children(vec![pane().size(10, 20), pane().size(10, 20)]);
+        let resolved = node.layout(256, 256);
+        // leftover = 100 - 40 = 60, offset = 30
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 30.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.y(), 50.0);
+    }
+
+    #[test]
+    fn justify_end_row() {
+        let node: Node<TestApp> = row()
+            .width(100)
+            .justify_end()
+            .children(vec![pane().size(20, 10), pane().size(20, 10)]);
+        let resolved = node.layout(256, 256);
+        // leftover = 100 - 40 = 60
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 60.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 80.0);
+    }
+
+    #[test]
+    fn justify_end_column() {
+        let node: Node<TestApp> = col()
+            .height(100)
+            .justify_end()
+            .children(vec![pane().size(10, 20), pane().size(10, 20)]);
+        let resolved = node.layout(256, 256);
+        // leftover = 100 - 40 = 60
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 60.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.y(), 80.0);
+    }
+
+    #[test]
+    fn justify_space_between_row() {
+        let node: Node<TestApp> = row()
+            .width(100)
+            .justify_full()
+            .children(vec![
+                pane().size(20, 10),
+                pane().size(20, 10),
+                pane().size(20, 10),
+            ]);
+        let resolved = node.layout(256, 256);
+        // leftover = 100 - 60 = 40, gap = 40 / 2 = 20
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 0.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 40.0);
+        assert_eq!(resolved.find_child_by_index(2).unwrap().rect.x(), 80.0);
+    }
+
+    #[test]
+    fn justify_space_between_single_child() {
+        let node: Node<TestApp> = row()
+            .width(100)
+            .justify_full()
+            .children(vec![pane().size(20, 10)]);
+        let resolved = node.layout(256, 256);
+        // single child: starts at 0
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 0.0);
+    }
+
+    #[test]
+    fn justify_center_overflow() {
+        let node: Node<TestApp> = row()
+            .width(40)
+            .justify_center()
+            .children(vec![pane().size(30, 10), pane().size(30, 10)]);
+        let resolved = node.layout(256, 256);
+        // leftover = 40 - 60 = -20, offset = -10 (overflows equally)
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), -10.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 20.0);
+    }
+
+    #[test]
+    fn justify_center_with_gap() {
+        let node: Node<TestApp> = row()
+            .width(100)
+            .gap(10)
+            .justify_center()
+            .children(vec![pane().size(20, 10), pane().size(20, 10)]);
+        let resolved = node.layout(256, 256);
+        // leftover = 100 - 40 - 10 = 50, offset = 25
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 25.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 55.0);
+    }
+
+    // --- Align tests ---
+
+    #[test]
+    fn align_start_is_default() {
+        let node: Node<TestApp> = row()
+            .size(100, 60)
+            .children(vec![pane().size(20, 20)]);
+        let resolved = node.layout(256, 256);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 0.0);
+    }
+
+    #[test]
+    fn align_center_row() {
+        let node: Node<TestApp> = row()
+            .size(100, 60)
+            .align_center()
+            .children(vec![pane().size(20, 20)]);
+        let resolved = node.layout(256, 256);
+        // cross = 60 - 20 = 40, offset = 20
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 20.0);
+    }
+
+    #[test]
+    fn align_center_column() {
+        let node: Node<TestApp> = col()
+            .size(60, 100)
+            .align_center()
+            .children(vec![pane().size(20, 20)]);
+        let resolved = node.layout(256, 256);
+        // cross = 60 - 20 = 40, offset = 20
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 20.0);
+    }
+
+    #[test]
+    fn align_end_row() {
+        let node: Node<TestApp> = row()
+            .size(100, 60)
+            .align_end()
+            .children(vec![pane().size(20, 20)]);
+        let resolved = node.layout(256, 256);
+        // cross = 60 - 20 = 40
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 40.0);
+    }
+
+    #[test]
+    fn align_end_column() {
+        let node: Node<TestApp> = col()
+            .size(60, 100)
+            .align_end()
+            .children(vec![pane().size(20, 20)]);
+        let resolved = node.layout(256, 256);
+        // cross = 60 - 20 = 40
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 40.0);
+    }
+
+    #[test]
+    fn align_center_multiple_children() {
+        let node: Node<TestApp> = row()
+            .size(100, 60)
+            .align_center()
+            .children(vec![pane().size(20, 20), pane().size(20, 40)]);
+        let resolved = node.layout(256, 256);
+        // each child centered independently
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 20.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.y(), 10.0);
+    }
+
+    #[test]
+    fn justify_and_align_combined() {
+        let node: Node<TestApp> = row()
+            .size(100, 60)
+            .justify_center()
+            .align_center()
+            .children(vec![pane().size(20, 20)]);
+        let resolved = node.layout(256, 256);
+        // justify: leftover = 100 - 20 = 80, offset = 40
+        // align: cross = 60 - 20 = 40, offset = 20
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 40.0);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 20.0);
+    }
+
+    #[test]
+    fn justify_and_align_with_padding() {
+        let node: Node<TestApp> = row()
+            .size(100, 60)
+            .padding(10)
+            .justify_center()
+            .align_center()
+            .children(vec![pane().size(20, 20)]);
+        let resolved = node.layout(256, 256);
+        // content area: 80x40, justify offset = (80-20)/2 = 30, align offset = (40-20)/2 = 10
+        // child at: padding(10) + offset
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 40.0);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 20.0);
     }
 }
