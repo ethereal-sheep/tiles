@@ -197,7 +197,12 @@ impl<A: App> Node<A> {
     }
 
     /// Pass 1: compute sizes recursively. Fill nodes receive their share from the parent.
-    fn size_pass(self, available_w: u32, available_h: u32, parent_font: &'static Font) -> SizedNode<A> {
+    fn size_pass(
+        self,
+        available_w: u32,
+        available_h: u32,
+        parent_font: &'static Font,
+    ) -> SizedNode<A> {
         let font = self.style.font.unwrap_or(parent_font);
 
         match self.content {
@@ -214,7 +219,10 @@ impl<A: App> Node<A> {
                     id: self.id,
                     style: self.style,
                     handlers: self.handlers,
-                    size: Size { width: w, height: h },
+                    size: Size {
+                        width: w,
+                        height: h,
+                    },
                     font,
                     content: NodeContent::Text(text_str),
                 }
@@ -275,13 +283,23 @@ impl<A: App> Node<A> {
                 }
 
                 // Compute fill budget with overflow redistribution.
-                let total_gap = if flow_count > 1 { gap * (flow_count - 1) } else { 0 };
+                let total_gap = if flow_count > 1 {
+                    gap * (flow_count - 1)
+                } else {
+                    0
+                };
                 let main_budget = match axis {
                     Axis::Row => content_w,
                     Axis::Column => content_h,
                 };
-                let remaining = main_budget.saturating_sub(consumed_main).saturating_sub(total_gap);
-                let fill_share = if fill_count > 0 { remaining / fill_count } else { 0 };
+                let remaining = main_budget
+                    .saturating_sub(consumed_main)
+                    .saturating_sub(total_gap);
+                let fill_share = if fill_count > 0 {
+                    remaining / fill_count
+                } else {
+                    0
+                };
 
                 // Resolve all deferred children
                 let mut sized_children: Vec<SizedNode<A>> = Vec::with_capacity(slots.len());
@@ -294,7 +312,11 @@ impl<A: App> Node<A> {
                         Slot::Deferred(child) => {
                             let is_out_of_flow = !matches!(child.style.position, Position::Flow);
                             if is_out_of_flow {
-                                sized_children.push(child.size_pass(available_w, available_h, font));
+                                sized_children.push(child.size_pass(
+                                    available_w,
+                                    available_h,
+                                    font,
+                                ));
                             } else {
                                 let (child_w, child_h) = match axis {
                                     Axis::Row => (fill_share, content_h),
@@ -387,7 +409,10 @@ impl<A: App> Node<A> {
                     id: self.id,
                     style: self.style,
                     handlers: self.handlers,
-                    size: Size { width: final_w, height: final_h },
+                    size: Size {
+                        width: final_w,
+                        height: final_h,
+                    },
                     font,
                     content: NodeContent::Children(sized_children),
                 }
@@ -411,7 +436,8 @@ impl<A: App> SizedNode<A> {
                 let text = Text::new(self.font, text_str)
                     .anchor(crate::AnchorBox::Highlight, crate::AnchorCorner::TopLeft)
                     .position((x + padding) as f32, (y + padding) as f32);
-                let rect = Rect::from_top_left(x as f32, y as f32, self.size.width, self.size.height);
+                let rect =
+                    Rect::from_top_left(x as f32, y as f32, self.size.width, self.size.height);
                 ResolvedNode {
                     #[cfg(test)]
                     id: self.id,
@@ -452,7 +478,8 @@ impl<A: App> SizedNode<A> {
                     resolved_children.push(resolved);
                 }
 
-                let rect = Rect::from_top_left(x as f32, y as f32, self.size.width, self.size.height);
+                let rect =
+                    Rect::from_top_left(x as f32, y as f32, self.size.width, self.size.height);
                 ResolvedNode {
                     #[cfg(test)]
                     id: self.id,
@@ -1432,10 +1459,9 @@ mod tests {
 
     #[test]
     fn fill_children_share_space_equally() {
-        let node: Node<TestApp> = row().width(100).children(vec![
-            pane().fill_w().height(10),
-            pane().fill_w().height(10),
-        ]);
+        let node: Node<TestApp> = row()
+            .width(100)
+            .children(vec![pane().fill_w().height(10), pane().fill_w().height(10)]);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.children[0].rect.width(), 50);
         assert_eq!(resolved.children[1].rect.width(), 50);
@@ -1458,10 +1484,10 @@ mod tests {
 
     #[test]
     fn fill_with_gap_accounts_for_gaps() {
-        let node: Node<TestApp> = row().width(100).gap(10).children(vec![
-            pane().fill_w().height(10),
-            pane().fill_w().height(10),
-        ]);
+        let node: Node<TestApp> = row()
+            .width(100)
+            .gap(10)
+            .children(vec![pane().fill_w().height(10), pane().fill_w().height(10)]);
         let resolved = node.layout(256, 256);
         // 100 - 10 gap = 90 remaining, split = 45 each
         assert_eq!(resolved.children[0].rect.width(), 45);
@@ -1471,10 +1497,9 @@ mod tests {
 
     #[test]
     fn fill_in_column() {
-        let node: Node<TestApp> = col().height(60).children(vec![
-            pane().size(10, 20),
-            pane().fill_h().width(10),
-        ]);
+        let node: Node<TestApp> = col()
+            .height(60)
+            .children(vec![pane().size(10, 20), pane().fill_h().width(10)]);
         let resolved = node.layout(256, 256);
         // 60 - 20 fixed = 40 for fill child
         assert_eq!(resolved.children[1].rect.height(), 40);
