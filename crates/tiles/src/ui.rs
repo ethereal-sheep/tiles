@@ -419,7 +419,7 @@ impl<A: App> SizedNode<A> {
                     #[cfg(test)]
                     id: self.id,
                     rect,
-                    base_style: self.style,
+                    style: self.style,
                     text: Some(text),
                     children: Vec::new(),
                     handlers: self.handlers,
@@ -461,7 +461,7 @@ impl<A: App> SizedNode<A> {
                     #[cfg(test)]
                     id: self.id,
                     rect,
-                    base_style: self.style,
+                    style: self.style,
                     text: None,
                     children: resolved_children,
                     handlers: self.handlers,
@@ -505,7 +505,7 @@ pub(crate) struct ResolvedNode<A: App> {
     #[cfg(test)]
     id: String,
     rect: Rect,
-    base_style: Style,
+    style: Style,
     text: Option<Text>,
     children: Vec<ResolvedNode<A>>,
     handlers: Handlers<A>,
@@ -541,27 +541,25 @@ impl<A: App> ResolvedNode<A> {
         let hit = state.test_shape_screen(&self.rect);
 
         let color = if hit.is_down() {
-            self.base_style
+            self.style
                 .pressed_color
-                .or(self.base_style.hover_color)
-                .or(self.base_style.color)
+                .or(self.style.hover_color)
+                .or(self.style.color)
         } else if hit.is_hovered() {
-            self.base_style.hover_color.or(self.base_style.color)
+            self.style.hover_color.or(self.style.color)
         } else {
-            self.base_style.color
+            self.style.color
         };
 
         let text_color = if hit.is_down() {
-            self.base_style
+            self.style
                 .pressed_text_color
-                .or(self.base_style.hover_text_color)
-                .or(self.base_style.text_color)
+                .or(self.style.hover_text_color)
+                .or(self.style.text_color)
         } else if hit.is_hovered() {
-            self.base_style
-                .hover_text_color
-                .or(self.base_style.text_color)
+            self.style.hover_text_color.or(self.style.text_color)
         } else {
-            self.base_style.text_color
+            self.style.text_color
         }
         .or(text_color);
 
@@ -1418,7 +1416,7 @@ mod tests {
         let node: Node<TestApp> = col().font(&TOM_THUMB_3X5).children(vec![text("A")]);
         let resolved = node.layout(256, 256);
         let child = &resolved.children[0];
-        assert!(std::ptr::eq(child.base_style.font.unwrap(), &TOM_THUMB_3X5));
+        assert!(std::ptr::eq(child.style.font.unwrap(), &TOM_THUMB_3X5));
     }
 
     #[test]
