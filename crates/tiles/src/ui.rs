@@ -131,8 +131,8 @@ impl<A: App> Default for Handlers<A> {
 }
 
 // --- Node types ---
-pub enum NodeContent<A: App> {
-    Children(Vec<Node<A>>),
+pub enum NodeContent<N> {
+    Children(Vec<N>),
     Text(String),
 }
 
@@ -140,33 +140,37 @@ pub struct Node<A: App> {
     id: String,
     style: Style,
     handlers: Handlers<A>,
-    content: NodeContent<A>,
+    content: NodeContent<Self>,
 }
 
-impl<A: App> From<Vec<Node<A>>> for NodeContent<A> {
-    fn from(children: Vec<Node<A>>) -> Self {
+impl<N> From<Vec<N>> for NodeContent<N> {
+    fn from(children: Vec<N>) -> Self {
         NodeContent::Children(children)
     }
 }
 
-impl<A: App> From<String> for NodeContent<A> {
+impl<N> From<String> for NodeContent<N> {
     fn from(string: String) -> Self {
         NodeContent::Text(string)
     }
 }
 
-/// Size after layout
+/// Resolved dimensions after the size pass
 #[derive(Debug, Clone, Copy)]
 pub struct Size {
-    pub width: f32,
-    pub height: f32,
+    pub width: u32,
+    pub height: u32,
 }
 
-/// Size after layout
+/// Intermediate tree produced by the size pass, consumed by the position pass
 pub struct SizedNode<A: App> {
-    pub node: Node<A>,
-    pub size: Size,
-    pub children: Vec<SizedNode<A>>,
+    #[cfg(test)]
+    id: String,
+    style: Style,
+    handlers: Handlers<A>,
+    size: Size,
+    font: &'static Font,
+    content: NodeContent<Self>,
 }
 
 impl<A: App> Node<A> {
@@ -186,63 +190,35 @@ impl<A: App> Node<A> {
         }
     }
 
-    // fn size_hint(&self, parent_font: &'static Font) -> (u32, u32) {
-    //     if self.style.position != Position::Flow {
-    //         return (0, 0);
-    //     }
-
-    //     let font = self.style.font.unwrap_or(parent_font);
-    //     // let w = self.style.w.unwrap_or(0);
-    //     // let h = self.style.h.unwrap_or(0);
-    //     match &self.content {
-    //         NodeContent::Children(children) => {
-    //             let mut x = 0;
-    //             let mut y = 0;
-    //             for child in children {
-    //                 let (c_w, c_h) = child.size_hint(font);
-    //                 match &self.style.axis.unwrap_or_default() {
-    //                     Axis::Column => {
-    //                         x = x.max(c_w);
-    //                         y = y + self.style.gap.unwrap_or(0) + c_h;
-    //                     }
-    //                     Axis::Row => {
-    //                         y = y.max(c_h);
-    //                         x = x + self.style.gap.unwrap_or(0) + c_w;
-    //                     }
-    //                 }
-    //             }
-    //             x = x + 2 * self.style.padding.unwrap_or(0);
-    //             y = y + 2 * self.style.padding.unwrap_or(0);
-    //             return (x.max(w), y.max(h));
-    //         }
-    //         NodeContent::Text(text) => {
-    //             let text = Text::new(&self.style.font.unwrap_or(parent_font), text)
-    //                 .anchor(crate::AnchorBox::Tight, crate::AnchorCorner::TopLeft);
-    //             let padding = self.style.padding.unwrap_or(0) as i32;
-    //             let text_bounding_rect = text.bounds().expand(padding);
-    //             return (
-    //                 text_bounding_rect.width().max(w),
-    //                 text_bounding_rect.height().max(h),
-    //             );
-    //         }
-    //     }
-    // }
-
+    /// Entry point: two-pass layout (size → position)
     pub(crate) fn layout(self, screen_w: u32, screen_h: u32) -> ResolvedNode<A> {
-        let ctx = LayoutCtx {
-            origin_x: 0,
-            origin_y: 0,
-            available_w: screen_w,
-            available_h: screen_h,
-        };
-        self.layout_with_context(&ctx, None.unwrap_or_default())
+        let sized = self.size_pass(screen_w, screen_h, None.unwrap_or_default());
+        sized.position_pass(0, 0)
     }
 
-    fn layout_with_context(self, ctx: &LayoutCtx, parent_font: &'static Font) -> ResolvedNode<A> {
-        // inherited
+    /// Pass 1: compute sizes recursively. Fill nodes receive their share from the parent.
+    fn size_pass(self, available_w: u32, available_h: u32, parent_font: &'static Font) -> SizedNode<A> {
         let font = self.style.font.unwrap_or(parent_font);
 
         match self.content {
+            NodeContent::Text(text_str) => {
+                let padding = self.style.padding.unwrap_or(0);
+                let text = Text::new(font, &text_str)
+                    .anchor(crate::AnchorBox::Highlight, crate::AnchorCorner::TopLeft)
+                    .position(0.0, 0.0);
+                let text_rect = text.rect();
+                let w = text_rect.width() + padding * 2;
+                let h = text_rect.height() + padding * 2;
+                SizedNode {
+                    #[cfg(test)]
+                    id: self.id,
+                    style: self.style,
+                    handlers: self.handlers,
+                    size: Size { width: w, height: h },
+                    font,
+                    content: NodeContent::Text(text_str),
+                }
+            }
             NodeContent::Children(children) => {
                 let padding = self.style.padding.unwrap_or(0);
                 let axis = self.style.axis;
@@ -250,100 +226,233 @@ impl<A: App> Node<A> {
 
                 let own_w = match self.style.w {
                     Sizing::Fixed(w) => Some(w),
+                    Sizing::Fill => Some(available_w),
                     Sizing::Shrink => None,
-                    Sizing::Fill => Some(ctx.available_w),
                 };
-
                 let own_h = match self.style.h {
                     Sizing::Fixed(h) => Some(h),
+                    Sizing::Fill => Some(available_h),
                     Sizing::Shrink => None,
-                    Sizing::Fill => Some(ctx.available_h),
                 };
 
-                let (origin_x, origin_y) = match self.style.position {
-                    Position::Flow => (ctx.origin_x, ctx.origin_y),
-                    Position::Relative(rx, ry) => (ctx.origin_x + rx, ctx.origin_y + ry),
-                    Position::Absolute(ax, ay) => (ax, ay),
-                };
+                let content_w = own_w.unwrap_or(available_w).saturating_sub(padding * 2);
+                let content_h = own_h.unwrap_or(available_h).saturating_sub(padding * 2);
 
-                let content_available_w =
-                    own_w.unwrap_or(ctx.available_w).saturating_sub(padding * 2);
-                let content_available_h =
-                    own_h.unwrap_or(ctx.available_h).saturating_sub(padding * 2);
-                let content_origin_x = origin_x + padding as i32;
-                let content_origin_y = origin_y + padding as i32;
-
-                let mut resolved_children = Vec::new();
-                let mut absolute_children = Vec::new();
-                let mut relative_children = Vec::new();
-                let mut cursor_x: u32 = 0;
-                let mut cursor_y: u32 = 0;
-                let mut max_cross: u32 = 0;
-                let mut child_count: u32 = 0;
-
-                for child in children {
-                    let child_ctx = LayoutCtx {
-                        origin_x: content_origin_x + cursor_x as i32,
-                        origin_y: content_origin_y + cursor_y as i32,
-                        available_w: content_available_w,
-                        available_h: content_available_h,
-                    };
-                    let resolved_child = child.layout_with_context(&child_ctx, font);
-
-                    match resolved_child.base_style.position {
-                        Position::Relative(_, _) => {
-                            relative_children.push(resolved_child);
-                            continue;
-                        }
-                        Position::Absolute(_, _) => {
-                            absolute_children.push(resolved_child);
-                            continue;
-                        }
-                        _ => {}
-                    }
-
-                    let child_w = resolved_child.rect.width();
-                    let child_h = resolved_child.rect.height();
-                    match axis {
-                        Axis::Row => {
-                            cursor_x = cursor_x.saturating_add(child_w).saturating_add(gap);
-                            max_cross = max_cross.max(child_h);
-                        }
-                        Axis::Column => {
-                            cursor_y = cursor_y.saturating_add(child_h).saturating_add(gap);
-                            max_cross = max_cross.max(child_w);
-                        }
-                    }
-                    child_count += 1;
-                    resolved_children.push(resolved_child);
+                // Partition children: separate fill-along-main from non-fill
+                enum Slot<A: App> {
+                    Sized(SizedNode<A>),
+                    Deferred(Node<A>),
                 }
 
-                let (content_w, content_h) = match axis {
-                    Axis::Row => {
-                        let main = if child_count > 0 {
-                            cursor_x.saturating_sub(gap)
-                        } else {
-                            0
+                let mut slots: Vec<Slot<A>> = Vec::with_capacity(children.len());
+                let mut fill_count: u32 = 0;
+                let mut consumed_main: u32 = 0;
+                let mut flow_count: u32 = 0;
+
+                for child in children {
+                    let is_out_of_flow = !matches!(child.style.position, Position::Flow);
+                    let fills_main = match axis {
+                        Axis::Row => matches!(child.style.w, Sizing::Fill),
+                        Axis::Column => matches!(child.style.h, Sizing::Fill),
+                    };
+
+                    if is_out_of_flow || fills_main {
+                        if !is_out_of_flow {
+                            fill_count += 1;
+                            flow_count += 1;
+                        }
+                        slots.push(Slot::Deferred(child));
+                    } else {
+                        let sized = child.size_pass(content_w, content_h, font);
+                        let main_size = match axis {
+                            Axis::Row => sized.size.width,
+                            Axis::Column => sized.size.height,
                         };
-                        (main, max_cross)
+                        consumed_main += main_size;
+                        flow_count += 1;
+                        slots.push(Slot::Sized(sized));
                     }
-                    Axis::Column => {
-                        let main = if child_count > 0 {
-                            cursor_y.saturating_sub(gap)
-                        } else {
-                            0
+                }
+
+                // Compute fill budget with overflow redistribution.
+                let total_gap = if flow_count > 1 { gap * (flow_count - 1) } else { 0 };
+                let main_budget = match axis {
+                    Axis::Row => content_w,
+                    Axis::Column => content_h,
+                };
+                let remaining = main_budget.saturating_sub(consumed_main).saturating_sub(total_gap);
+                let fill_share = if fill_count > 0 { remaining / fill_count } else { 0 };
+
+                // Resolve all deferred children
+                let mut sized_children: Vec<SizedNode<A>> = Vec::with_capacity(slots.len());
+                let mut fill_indices: Vec<usize> = Vec::new();
+
+                for slot in slots {
+                    let idx = sized_children.len();
+                    match slot {
+                        Slot::Sized(s) => sized_children.push(s),
+                        Slot::Deferred(child) => {
+                            let is_out_of_flow = !matches!(child.style.position, Position::Flow);
+                            if is_out_of_flow {
+                                sized_children.push(child.size_pass(available_w, available_h, font));
+                            } else {
+                                let (child_w, child_h) = match axis {
+                                    Axis::Row => (fill_share, content_h),
+                                    Axis::Column => (content_w, fill_share),
+                                };
+                                sized_children.push(child.size_pass(child_w, child_h, font));
+                                fill_indices.push(idx);
+                            }
+                        }
+                    }
+                }
+
+                // Handle overflow: if any fill child exceeds its share, shrink siblings
+                let mut overflow_consumed: u32 = 0;
+                let mut overflow_count: u32 = 0;
+                for &i in &fill_indices {
+                    let actual = match axis {
+                        Axis::Row => sized_children[i].size.width,
+                        Axis::Column => sized_children[i].size.height,
+                    };
+                    if actual > fill_share {
+                        overflow_consumed += actual;
+                        overflow_count += 1;
+                    }
+                }
+
+                if overflow_count > 0 && overflow_count < fill_count {
+                    let new_remaining = remaining.saturating_sub(overflow_consumed);
+                    let new_share = new_remaining / (fill_count - overflow_count);
+                    for &i in &fill_indices {
+                        let actual = match axis {
+                            Axis::Row => sized_children[i].size.width,
+                            Axis::Column => sized_children[i].size.height,
                         };
-                        (max_cross, main)
+                        if actual <= fill_share {
+                            match axis {
+                                Axis::Row => sized_children[i].size.width = new_share,
+                                Axis::Column => sized_children[i].size.height = new_share,
+                            }
+                        }
                     }
+                }
+
+                // Compute final content size
+                let mut max_cross: u32 = 0;
+                let mut total_main: u32 = 0;
+                let mut final_flow_count: u32 = 0;
+
+                for sized in &sized_children {
+                    let is_out_of_flow = !matches!(sized.style.position, Position::Flow);
+                    if !is_out_of_flow {
+                        let (main, cross) = match axis {
+                            Axis::Row => (sized.size.width, sized.size.height),
+                            Axis::Column => (sized.size.height, sized.size.width),
+                        };
+                        total_main += main;
+                        max_cross = max_cross.max(cross);
+                        final_flow_count += 1;
+                    }
+                }
+
+                let total_main_with_gaps = if final_flow_count > 1 {
+                    total_main + gap * (final_flow_count - 1)
+                } else {
+                    total_main
                 };
 
-                let final_w = own_w.unwrap_or(content_w.saturating_add(padding * 2));
-                let final_h = own_h.unwrap_or(content_h.saturating_add(padding * 2));
-                let rect = Rect::from_top_left(origin_x as f32, origin_y as f32, final_w, final_h);
+                let content_total_w = (match axis {
+                    Axis::Row => total_main_with_gaps,
+                    Axis::Column => max_cross,
+                }) + padding * 2;
+                let content_total_h = (match axis {
+                    Axis::Row => max_cross,
+                    Axis::Column => total_main_with_gaps,
+                }) + padding * 2;
 
-                resolved_children.append(&mut relative_children);
-                resolved_children.append(&mut absolute_children);
+                let final_w = match self.style.w {
+                    Sizing::Fixed(w) => w,
+                    Sizing::Shrink => content_total_w,
+                    Sizing::Fill => content_total_w.max(available_w),
+                };
+                let final_h = match self.style.h {
+                    Sizing::Fixed(h) => h,
+                    Sizing::Shrink => content_total_h,
+                    Sizing::Fill => content_total_h.max(available_h),
+                };
 
+                SizedNode {
+                    #[cfg(test)]
+                    id: self.id,
+                    style: self.style,
+                    handlers: self.handlers,
+                    size: Size { width: final_w, height: final_h },
+                    font,
+                    content: NodeContent::Children(sized_children),
+                }
+            }
+        }
+    }
+}
+
+impl<A: App> SizedNode<A> {
+    /// Pass 2: assign positions to produce the final ResolvedNode tree.
+    fn position_pass(self, origin_x: i32, origin_y: i32) -> ResolvedNode<A> {
+        let (x, y) = match self.style.position {
+            Position::Flow => (origin_x, origin_y),
+            Position::Relative(rx, ry) => (origin_x + rx, origin_y + ry),
+            Position::Absolute(ax, ay) => (ax, ay),
+        };
+
+        match self.content {
+            NodeContent::Text(text_str) => {
+                let padding = self.style.padding.unwrap_or(0) as i32;
+                let text = Text::new(self.font, text_str)
+                    .anchor(crate::AnchorBox::Highlight, crate::AnchorCorner::TopLeft)
+                    .position((x + padding) as f32, (y + padding) as f32);
+                let rect = Rect::from_top_left(x as f32, y as f32, self.size.width, self.size.height);
+                ResolvedNode {
+                    #[cfg(test)]
+                    id: self.id,
+                    rect,
+                    base_style: self.style,
+                    text: Some(text),
+                    children: Vec::new(),
+                    handlers: self.handlers,
+                }
+            }
+            NodeContent::Children(children) => {
+                let padding = self.style.padding.unwrap_or(0);
+                let axis = self.style.axis;
+                let gap = self.style.gap.unwrap_or(0);
+                let content_x = x + padding as i32;
+                let content_y = y + padding as i32;
+
+                let mut resolved_children = Vec::new();
+                let mut cursor_x: u32 = 0;
+                let mut cursor_y: u32 = 0;
+
+                for child in children {
+                    let is_out_of_flow = !matches!(child.style.position, Position::Flow);
+
+                    let child_origin_x = content_x + cursor_x as i32;
+                    let child_origin_y = content_y + cursor_y as i32;
+                    let resolved = child.position_pass(child_origin_x, child_origin_y);
+
+                    if !is_out_of_flow {
+                        let child_w = resolved.rect.width();
+                        let child_h = resolved.rect.height();
+                        match axis {
+                            Axis::Row => cursor_x += child_w + gap,
+                            Axis::Column => cursor_y += child_h + gap,
+                        }
+                    }
+
+                    resolved_children.push(resolved);
+                }
+
+                let rect = Rect::from_top_left(x as f32, y as f32, self.size.width, self.size.height);
                 ResolvedNode {
                     #[cfg(test)]
                     id: self.id,
@@ -351,28 +460,6 @@ impl<A: App> Node<A> {
                     base_style: self.style,
                     text: None,
                     children: resolved_children,
-                    handlers: self.handlers,
-                }
-            }
-            NodeContent::Text(text) => {
-                let padding = self.style.padding.unwrap_or(0) as i32;
-
-                let (origin_x, origin_y) = match self.style.position {
-                    Position::Flow => (ctx.origin_x, ctx.origin_y),
-                    Position::Relative(rx, ry) => (ctx.origin_x + rx, ctx.origin_y + ry),
-                    Position::Absolute(ax, ay) => (ax, ay),
-                };
-
-                let text = Text::new(font, text)
-                    .anchor(crate::AnchorBox::Highlight, crate::AnchorCorner::TopLeft)
-                    .position((origin_x + padding) as f32, (origin_y + padding) as f32);
-                ResolvedNode {
-                    #[cfg(test)]
-                    id: self.id,
-                    rect: text.rect().expand(padding),
-                    base_style: self.style,
-                    text: Some(text),
-                    children: Vec::new(),
                     handlers: self.handlers,
                 }
             }
@@ -409,13 +496,6 @@ pub fn text<A: App>(content: impl Into<String>) -> Node<A> {
 }
 
 // --- Layout ---
-
-struct LayoutCtx {
-    origin_x: i32,
-    origin_y: i32,
-    available_w: u32,
-    available_h: u32,
-}
 
 pub(crate) struct ResolvedNode<A: App> {
     #[cfg(test)]
@@ -1346,5 +1426,102 @@ mod tests {
             }
         };
         assert_eq!(children.len(), 1);
+    }
+
+    // --- Fill distribution tests ---
+
+    #[test]
+    fn fill_children_share_space_equally() {
+        let node: Node<TestApp> = row().width(100).children(vec![
+            pane().fill_w().height(10),
+            pane().fill_w().height(10),
+        ]);
+        let resolved = node.layout(256, 256);
+        assert_eq!(resolved.children[0].rect.width(), 50);
+        assert_eq!(resolved.children[1].rect.width(), 50);
+        assert_eq!(resolved.children[1].rect.x(), 50.0);
+    }
+
+    #[test]
+    fn fill_children_share_remaining_after_fixed() {
+        let node: Node<TestApp> = row().width(100).children(vec![
+            pane().size(20, 10),
+            pane().fill_w().height(10),
+            pane().fill_w().height(10),
+        ]);
+        let resolved = node.layout(256, 256);
+        // 100 - 20 fixed = 80 remaining, split equally = 40 each
+        assert_eq!(resolved.children[0].rect.width(), 20);
+        assert_eq!(resolved.children[1].rect.width(), 40);
+        assert_eq!(resolved.children[2].rect.width(), 40);
+    }
+
+    #[test]
+    fn fill_with_gap_accounts_for_gaps() {
+        let node: Node<TestApp> = row().width(100).gap(10).children(vec![
+            pane().fill_w().height(10),
+            pane().fill_w().height(10),
+        ]);
+        let resolved = node.layout(256, 256);
+        // 100 - 10 gap = 90 remaining, split = 45 each
+        assert_eq!(resolved.children[0].rect.width(), 45);
+        assert_eq!(resolved.children[1].rect.width(), 45);
+        assert_eq!(resolved.children[1].rect.x(), 55.0); // 45 + 10 gap
+    }
+
+    #[test]
+    fn fill_in_column() {
+        let node: Node<TestApp> = col().height(60).children(vec![
+            pane().size(10, 20),
+            pane().fill_h().width(10),
+        ]);
+        let resolved = node.layout(256, 256);
+        // 60 - 20 fixed = 40 for fill child
+        assert_eq!(resolved.children[1].rect.height(), 40);
+        assert_eq!(resolved.children[1].rect.y(), 20.0);
+    }
+
+    #[test]
+    fn three_fill_children_equal() {
+        let node: Node<TestApp> = row().width(90).children(vec![
+            pane().fill_w().height(10),
+            pane().fill_w().height(10),
+            pane().fill_w().height(10),
+        ]);
+        let resolved = node.layout(256, 256);
+        assert_eq!(resolved.children[0].rect.width(), 30);
+        assert_eq!(resolved.children[1].rect.width(), 30);
+        assert_eq!(resolved.children[2].rect.width(), 30);
+    }
+
+    #[test]
+    fn fill_overflow_shrinks_siblings() {
+        // Child with fixed content wider than equal share forces siblings smaller
+        let node: Node<TestApp> = row().width(100).children(vec![
+            pane().fill_w().height(10).children(vec![
+                pane().size(60, 10), // content forces 60, equal share would be 50
+            ]),
+            pane().fill_w().height(10),
+        ]);
+        let resolved = node.layout(256, 256);
+        // First child overflows to 60, second gets remaining 40
+        assert_eq!(resolved.children[0].rect.width(), 60);
+        assert_eq!(resolved.children[1].rect.width(), 40);
+    }
+
+    #[test]
+    fn fill_overflow_multiple_siblings() {
+        let node: Node<TestApp> = row().width(120).children(vec![
+            pane().fill_w().height(10).children(vec![
+                pane().size(80, 10), // overflows the 40 equal share
+            ]),
+            pane().fill_w().height(10),
+            pane().fill_w().height(10),
+        ]);
+        let resolved = node.layout(256, 256);
+        // First overflows to 80, remaining 40 split equally = 20 each
+        assert_eq!(resolved.children[0].rect.width(), 80);
+        assert_eq!(resolved.children[1].rect.width(), 20);
+        assert_eq!(resolved.children[2].rect.width(), 20);
     }
 }

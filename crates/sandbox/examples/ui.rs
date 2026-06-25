@@ -36,7 +36,7 @@ impl App for Demo {
             .fill_h()
             .children(ui! {
                 // Title bar
-                row().size(50, 30).gap(1).padding(1).color(PANEL_BG) {
+                row().width(40).gap(1).padding(1).color(PANEL_BG) {
                     pane()
                         .fill_w()
                         .color(BTN_COLOR)
