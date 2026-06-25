@@ -37,9 +37,9 @@ impl App for Demo {
             .children(ui! {
                 // Title bar
                 row().width(150).justify_end().color(PANEL_BG) {
-                    row().width(50).gap(1).padding(1) {
+                    row().width(80).gap(1).padding(1) {
                         pane()
-                            .justify_end()
+                            .align_center()
                             .fill_w()
                             .color(BTN_COLOR)
                             .hover_color(BTN_HOVER)
@@ -49,6 +49,7 @@ impl App for Demo {
                                 text("+").font(&TINY5_4X5).padding(1)
                         }
                         pane()
+                            .align_center()
                             .fill_w()
                             .color(BTN_COLOR)
                             .hover_color(BTN_HOVER)
@@ -58,6 +59,7 @@ impl App for Demo {
                                 text("-").font(&TINY5_4X5).padding(1)
                         }
                         pane()
+                            .align_center()
                             .fill_w()
                             .color(BTN_COLOR)
                             .hover_color(BTN_HOVER)

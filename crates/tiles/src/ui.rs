@@ -274,17 +274,24 @@ impl<A: App> ProcessedNode<A> {
             NodeContent::Text(text) => {
                 let padding = self.style.padding.unwrap_or(0);
                 let text_rect = text.rect();
-                let w = text_rect.width() + padding * 2;
-                let h = text_rect.height() + padding * 2;
+                let intrinsic_w = text_rect.width() + padding * 2;
+                let intrinsic_h = text_rect.height() + padding * 2;
+                let w = match self.style.w {
+                    Sizing::Fixed(w) => w,
+                    Sizing::Fill => available_w.max(intrinsic_w),
+                    Sizing::Shrink => intrinsic_w,
+                };
+                let h = match self.style.h {
+                    Sizing::Fixed(h) => h,
+                    Sizing::Fill => available_h.max(intrinsic_h),
+                    Sizing::Shrink => intrinsic_h,
+                };
                 SizedNode {
                     #[cfg(test)]
                     id: self.id,
                     style: self.style,
                     handlers: self.handlers,
-                    size: Size {
-                        width: w,
-                        height: h,
-                    },
+                    size: Size { width: w, height: h },
                     content: NodeContent::Text(text),
                 }
             }
@@ -485,8 +492,29 @@ impl<A: App> SizedNode<A> {
 
         match self.content {
             NodeContent::Text(text) => {
-                let padding = self.style.padding.unwrap_or(0) as i32;
-                let text = text.position((x + padding) as f32, (y + padding) as f32);
+                let padding = self.style.padding.unwrap_or(0);
+                let text_rect = text.rect();
+                let content_w = self.size.width.saturating_sub(padding * 2);
+                let content_h = self.size.height.saturating_sub(padding * 2);
+                let text_w = text_rect.width();
+                let text_h = text_rect.height();
+
+                let text_offset_x = match self.style.justify {
+                    Justify::Start => 0,
+                    Justify::Center | Justify::SpaceBetween => {
+                        (content_w as i32 - text_w as i32) / 2
+                    }
+                    Justify::End => content_w as i32 - text_w as i32,
+                };
+                let text_offset_y = match self.style.align {
+                    Align::Start => 0,
+                    Align::Center => (content_h as i32 - text_h as i32) / 2,
+                    Align::End => content_h as i32 - text_h as i32,
+                };
+
+                let text_x = x + padding as i32 + text_offset_x;
+                let text_y = y + padding as i32 + text_offset_y;
+                let text = text.position(text_x as f32, text_y as f32);
                 let rect =
                     Rect::from_top_left(x as f32, y as f32, self.size.width, self.size.height);
                 ResolvedNode {
@@ -812,6 +840,14 @@ impl<A: App> ResolvedNode<A> {
                 children.iter().find_map(|c| (c.id == id).then_some(c))
             }
             NodeContent::Text(_) => None,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn text_rect(&self) -> Option<Rect> {
+        match &self.content {
+            NodeContent::Text(t) => Some(t.rect()),
+            NodeContent::Children(_) => None,
         }
     }
 }
@@ -2055,5 +2091,120 @@ mod tests {
         // child at: padding(10) + offset
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 40.0);
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 20.0);
+    }
+
+    // --- Text alignment tests ---
+
+    #[test]
+    fn text_fixed_size_larger_than_intrinsic() {
+        let node: Node<TestApp> = col().children(vec![text("A").size(50, 30)]);
+        let resolved = node.layout(256, 256);
+        let child = resolved.find_child_by_index(0).unwrap();
+        assert_eq!(child.rect.width(), 50);
+        assert_eq!(child.rect.height(), 30);
+    }
+
+    #[test]
+    fn text_fill_w_takes_available() {
+        let node: Node<TestApp> = row().width(100).children(vec![text("A").fill_w()]);
+        let resolved = node.layout(256, 256);
+        let child = resolved.find_child_by_index(0).unwrap();
+        assert_eq!(child.rect.width(), 100);
+    }
+
+    #[test]
+    fn text_justify_start_default() {
+        let node: Node<TestApp> = col().children(vec![text("A").width(50)]);
+        let resolved = node.layout(256, 256);
+        let child = resolved.find_child_by_index(0).unwrap();
+        let tr = child.text_rect().unwrap();
+        assert_eq!(tr.x(), 0.0);
+    }
+
+    #[test]
+    fn text_justify_center() {
+        let node: Node<TestApp> = col().children(vec![text("A").width(50).justify_center()]);
+        let resolved = node.layout(256, 256);
+        let child = resolved.find_child_by_index(0).unwrap();
+        let tr = child.text_rect().unwrap();
+        let text_w = tr.width();
+        let expected_x = (50 - text_w) / 2;
+        assert_eq!(tr.x(), expected_x as f32);
+    }
+
+    #[test]
+    fn text_justify_end() {
+        let node: Node<TestApp> = col().children(vec![text("A").width(50).justify_end()]);
+        let resolved = node.layout(256, 256);
+        let child = resolved.find_child_by_index(0).unwrap();
+        let tr = child.text_rect().unwrap();
+        let text_w = tr.width();
+        let expected_x = 50 - text_w;
+        assert_eq!(tr.x(), expected_x as f32);
+    }
+
+    #[test]
+    fn text_align_center() {
+        let node: Node<TestApp> = col().children(vec![text("A").size(50, 30).align_center()]);
+        let resolved = node.layout(256, 256);
+        let child = resolved.find_child_by_index(0).unwrap();
+        let tr = child.text_rect().unwrap();
+        let text_h = tr.height();
+        let expected_y = (30 - text_h) / 2;
+        assert_eq!(tr.y(), expected_y as f32);
+    }
+
+    #[test]
+    fn text_align_end() {
+        let node: Node<TestApp> = col().children(vec![text("A").size(50, 30).align_end()]);
+        let resolved = node.layout(256, 256);
+        let child = resolved.find_child_by_index(0).unwrap();
+        let tr = child.text_rect().unwrap();
+        let text_h = tr.height();
+        let expected_y = 30 - text_h;
+        assert_eq!(tr.y(), expected_y as f32);
+    }
+
+    #[test]
+    fn text_justify_center_align_center() {
+        let node: Node<TestApp> =
+            col().children(vec![text("A").size(50, 30).justify_center().align_center()]);
+        let resolved = node.layout(256, 256);
+        let child = resolved.find_child_by_index(0).unwrap();
+        let tr = child.text_rect().unwrap();
+        let text_w = tr.width();
+        let text_h = tr.height();
+        assert_eq!(tr.x(), ((50 - text_w) / 2) as f32);
+        assert_eq!(tr.y(), ((30 - text_h) / 2) as f32);
+    }
+
+    #[test]
+    fn text_justify_center_with_padding() {
+        let node: Node<TestApp> =
+            col().children(vec![text("A").width(50).padding(5).justify_center()]);
+        let resolved = node.layout(256, 256);
+        let child = resolved.find_child_by_index(0).unwrap();
+        let tr = child.text_rect().unwrap();
+        let text_w = tr.width();
+        // content area = 50 - 10 = 40, offset = (40 - text_w) / 2, then shifted by padding
+        let expected_x = 5 + (40 - text_w) / 2;
+        assert_eq!(tr.x(), expected_x as f32);
+    }
+
+    #[test]
+    fn text_positioned_in_parent_with_justify() {
+        let node: Node<TestApp> = row()
+            .width(100)
+            .justify_center()
+            .children(vec![text("A").width(40).justify_center()]);
+        let resolved = node.layout(256, 256);
+        let child = resolved.find_child_by_index(0).unwrap();
+        // child rect centered in parent: (100-40)/2 = 30
+        assert_eq!(child.rect.x(), 30.0);
+        // text centered within child
+        let tr = child.text_rect().unwrap();
+        let text_w = tr.width();
+        let expected_x = 30 + (40 - text_w) / 2;
+        assert_eq!(tr.x(), expected_x as f32);
     }
 }
