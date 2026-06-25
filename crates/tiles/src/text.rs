@@ -108,6 +108,10 @@ impl Text {
         Rect::from_top_left(ox, oy, self.highlight_size.0, self.highlight_size.1)
     }
 
+    pub fn font(&self) -> &'static Font {
+        self.font
+    }
+
     fn char_step(&self, ch: char) -> u32 {
         char_step(self.font, ch, self.gap_override)
     }

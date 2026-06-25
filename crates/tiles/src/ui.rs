@@ -108,25 +108,25 @@ impl<A: App> Default for Handlers<A> {
 }
 
 // --- Node types ---
-pub enum NodeContent<N> {
+pub enum NodeContent<N, T> {
     Children(Vec<N>),
-    Text(String),
+    Text(T),
 }
 
 pub struct Node<A: App> {
     id: String,
     style: Style,
     handlers: Handlers<A>,
-    content: NodeContent<Self>,
+    content: NodeContent<Self, String>,
 }
 
-impl<N> From<Vec<N>> for NodeContent<N> {
+impl<N, T> From<Vec<N>> for NodeContent<N, T> {
     fn from(children: Vec<N>) -> Self {
         NodeContent::Children(children)
     }
 }
 
-impl<N> From<String> for NodeContent<N> {
+impl<N> From<String> for NodeContent<N, String> {
     fn from(string: String) -> Self {
         NodeContent::Text(string)
     }
@@ -146,8 +146,7 @@ pub struct SizedNode<A: App> {
     style: Style,
     handlers: Handlers<A>,
     size: Size,
-    font: &'static Font,
-    content: NodeContent<Self>,
+    content: NodeContent<Self, Text>,
 }
 
 impl<A: App> Node<A> {
@@ -200,8 +199,7 @@ impl<A: App> Node<A> {
                         width: w,
                         height: h,
                     },
-                    font,
-                    content: NodeContent::Text(text_str),
+                    content: NodeContent::Text(text),
                 }
             }
             NodeContent::Children(children) => {
@@ -390,7 +388,6 @@ impl<A: App> Node<A> {
                         width: final_w,
                         height: final_h,
                     },
-                    font,
                     content: NodeContent::Children(sized_children),
                 }
             }
@@ -408,11 +405,9 @@ impl<A: App> SizedNode<A> {
         };
 
         match self.content {
-            NodeContent::Text(text_str) => {
+            NodeContent::Text(text) => {
                 let padding = self.style.padding.unwrap_or(0) as i32;
-                let text = Text::new(self.font, text_str)
-                    .anchor(crate::AnchorBox::Highlight, crate::AnchorCorner::TopLeft)
-                    .position((x + padding) as f32, (y + padding) as f32);
+                let text = text.position((x + padding) as f32, (y + padding) as f32);
                 let rect =
                     Rect::from_top_left(x as f32, y as f32, self.size.width, self.size.height);
                 ResolvedNode {
@@ -420,8 +415,7 @@ impl<A: App> SizedNode<A> {
                     id: self.id,
                     rect,
                     style: self.style,
-                    text: Some(text),
-                    children: Vec::new(),
+                    content: NodeContent::Text(text),
                     handlers: self.handlers,
                 }
             }
@@ -462,8 +456,7 @@ impl<A: App> SizedNode<A> {
                     id: self.id,
                     rect,
                     style: self.style,
-                    text: None,
-                    children: resolved_children,
+                    content: NodeContent::Children(resolved_children),
                     handlers: self.handlers,
                 }
             }
@@ -506,8 +499,7 @@ pub(crate) struct ResolvedNode<A: App> {
     id: String,
     rect: Rect,
     style: Style,
-    text: Option<Text>,
-    children: Vec<ResolvedNode<A>>,
+    content: NodeContent<Self, Text>,
     handlers: Handlers<A>,
 }
 
@@ -563,9 +555,15 @@ impl<A: App> ResolvedNode<A> {
         }
         .or(text_color);
 
-        for node in self.children.into_iter().rev() {
-            node.evaluate_recursive(app, state, cells, consumed, text_color, depth + 1.0);
-        }
+        let text = match self.content {
+            NodeContent::Children(children) => {
+                for node in children.into_iter().rev() {
+                    node.evaluate_recursive(app, state, cells, consumed, text_color, depth + 1.0);
+                }
+                None
+            }
+            NodeContent::Text(text) => Some(text),
+        };
 
         if hit.is_hovered() {
             if let Some(f) = self.handlers.on_hover {
@@ -653,7 +651,7 @@ impl<A: App> ResolvedNode<A> {
         }
 
         // Draw text glyphs
-        if let (Some(text), Some(text_color)) = (self.text, text_color) {
+        if let (Some(text), Some(text_color)) = (text, text_color) {
             text.color(text_color).emit_cells(&mut |mut c| {
                 c.position.z = depth + 0.5;
                 cells.push(c);
@@ -662,8 +660,21 @@ impl<A: App> ResolvedNode<A> {
     }
 
     #[cfg(test)]
+    pub(crate) fn find_child_by_index(&self, index: usize) -> Option<&Self> {
+        match &self.content {
+            NodeContent::Children(children) => children.get(index),
+            NodeContent::Text(_) => None,
+        }
+    }
+
+    #[cfg(test)]
     pub(crate) fn find_child_by_id(&self, id: &str) -> Option<&Self> {
-        self.children.iter().find_map(|c| (c.id == id).then_some(c))
+        match &self.content {
+            NodeContent::Children(children) => {
+                children.iter().find_map(|c| (c.id == id).then_some(c))
+            }
+            NodeContent::Text(_) => None,
+        }
     }
 }
 
@@ -822,9 +833,9 @@ mod tests {
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 10);
         assert_eq!(resolved.rect.height(), 15);
-        assert_eq!(resolved.children[0].rect.y(), 0.0);
-        assert_eq!(resolved.children[1].rect.y(), 5.0);
-        assert_eq!(resolved.children[2].rect.y(), 10.0);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 0.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.y(), 5.0);
+        assert_eq!(resolved.find_child_by_index(2).unwrap().rect.y(), 10.0);
     }
 
     #[test]
@@ -833,8 +844,8 @@ mod tests {
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 20);
         assert_eq!(resolved.rect.height(), 5);
-        assert_eq!(resolved.children[0].rect.x(), 0.0);
-        assert_eq!(resolved.children[1].rect.x(), 10.0);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 0.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 10.0);
     }
 
     #[test]
@@ -844,7 +855,7 @@ mod tests {
             .children(vec![row().size(10, 5), row().size(10, 5)]);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 24);
-        assert_eq!(resolved.children[1].rect.x(), 14.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 14.0);
     }
 
     #[test]
@@ -853,8 +864,8 @@ mod tests {
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.rect.width(), 10); // 4 + 3*2
         assert_eq!(resolved.rect.height(), 10);
-        assert_eq!(resolved.children[0].rect.x(), 3.0);
-        assert_eq!(resolved.children[0].rect.y(), 3.0);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 3.0);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 3.0);
     }
 
     #[test]
@@ -894,7 +905,7 @@ mod tests {
             .children(vec![row().size(10, 10).relative(3, 3)]);
         let resolved = node.layout(256, 256);
         // Child positioned at parent cursor (5,5) + relative offset (3,3) = (8,8)
-        let child = &resolved.children[0];
+        let child = resolved.find_child_by_index(0).unwrap();
         assert_eq!(child.rect.x(), 8.0);
         assert_eq!(child.rect.y(), 8.0);
     }
@@ -1359,7 +1370,7 @@ mod tests {
     fn text_node_intrinsic_size() {
         let node: Node<TestApp> = col().children(vec![text("Hi")]);
         let resolved = node.layout(256, 256);
-        let child = &resolved.children[0];
+        let child = resolved.find_child_by_index(0).unwrap();
         assert!(child.rect.width() > 0);
         assert!(child.rect.height() > 0);
     }
@@ -1368,10 +1379,10 @@ mod tests {
     fn text_node_with_padding() {
         let node: Node<TestApp> = col().children(vec![text("A").padding(3)]);
         let resolved = node.layout(256, 256);
-        let child = &resolved.children[0];
+        let child = resolved.find_child_by_index(0).unwrap();
         let no_pad: Node<TestApp> = col().children(vec![text("A")]);
         let no_pad_resolved = no_pad.layout(256, 256);
-        let no_pad_child = &no_pad_resolved.children[0];
+        let no_pad_child = no_pad_resolved.find_child_by_index(0).unwrap();
         assert_eq!(child.rect.width(), no_pad_child.rect.width() + 6);
         assert_eq!(child.rect.height(), no_pad_child.rect.height() + 6);
     }
@@ -1415,8 +1426,13 @@ mod tests {
         use crate::font::TOM_THUMB_3X5;
         let node: Node<TestApp> = col().font(&TOM_THUMB_3X5).children(vec![text("A")]);
         let resolved = node.layout(256, 256);
-        let child = &resolved.children[0];
-        assert!(std::ptr::eq(child.style.font.unwrap(), &TOM_THUMB_3X5));
+        match &resolved.content {
+            NodeContent::Children(children) => match &children[0].content {
+                NodeContent::Text(t) => assert!(std::ptr::eq(t.font(), &TOM_THUMB_3X5)),
+                _ => panic!("expected text node"),
+            },
+            _ => panic!("expected children"),
+        }
     }
 
     #[test]
@@ -1438,9 +1454,9 @@ mod tests {
             .width(100)
             .children(vec![pane().fill_w().height(10), pane().fill_w().height(10)]);
         let resolved = node.layout(256, 256);
-        assert_eq!(resolved.children[0].rect.width(), 50);
-        assert_eq!(resolved.children[1].rect.width(), 50);
-        assert_eq!(resolved.children[1].rect.x(), 50.0);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 50);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 50);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 50.0);
     }
 
     #[test]
@@ -1452,9 +1468,9 @@ mod tests {
         ]);
         let resolved = node.layout(256, 256);
         // 100 - 20 fixed = 80 remaining, split equally = 40 each
-        assert_eq!(resolved.children[0].rect.width(), 20);
-        assert_eq!(resolved.children[1].rect.width(), 40);
-        assert_eq!(resolved.children[2].rect.width(), 40);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 20);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 40);
+        assert_eq!(resolved.find_child_by_index(2).unwrap().rect.width(), 40);
     }
 
     #[test]
@@ -1465,9 +1481,9 @@ mod tests {
             .children(vec![pane().fill_w().height(10), pane().fill_w().height(10)]);
         let resolved = node.layout(256, 256);
         // 100 - 10 gap = 90 remaining, split = 45 each
-        assert_eq!(resolved.children[0].rect.width(), 45);
-        assert_eq!(resolved.children[1].rect.width(), 45);
-        assert_eq!(resolved.children[1].rect.x(), 55.0); // 45 + 10 gap
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 45);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 45);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 55.0); // 45 + 10 gap
     }
 
     #[test]
@@ -1477,8 +1493,8 @@ mod tests {
             .children(vec![pane().size(10, 20), pane().fill_h().width(10)]);
         let resolved = node.layout(256, 256);
         // 60 - 20 fixed = 40 for fill child
-        assert_eq!(resolved.children[1].rect.height(), 40);
-        assert_eq!(resolved.children[1].rect.y(), 20.0);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.height(), 40);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.y(), 20.0);
     }
 
     #[test]
@@ -1489,9 +1505,9 @@ mod tests {
             pane().fill_w().height(10),
         ]);
         let resolved = node.layout(256, 256);
-        assert_eq!(resolved.children[0].rect.width(), 30);
-        assert_eq!(resolved.children[1].rect.width(), 30);
-        assert_eq!(resolved.children[2].rect.width(), 30);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 30);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 30);
+        assert_eq!(resolved.find_child_by_index(2).unwrap().rect.width(), 30);
     }
 
     #[test]
@@ -1505,8 +1521,8 @@ mod tests {
         ]);
         let resolved = node.layout(256, 256);
         // First child overflows to 60, second gets remaining 40
-        assert_eq!(resolved.children[0].rect.width(), 60);
-        assert_eq!(resolved.children[1].rect.width(), 40);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 60);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 40);
     }
 
     #[test]
@@ -1520,8 +1536,8 @@ mod tests {
         ]);
         let resolved = node.layout(256, 256);
         // First overflows to 80, remaining 40 split equally = 20 each
-        assert_eq!(resolved.children[0].rect.width(), 80);
-        assert_eq!(resolved.children[1].rect.width(), 20);
-        assert_eq!(resolved.children[2].rect.width(), 20);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 80);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 20);
+        assert_eq!(resolved.find_child_by_index(2).unwrap().rect.width(), 20);
     }
 }
