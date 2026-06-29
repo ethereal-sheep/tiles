@@ -111,7 +111,7 @@ impl App for Sandbox {
     fn draw(&mut self, state: &mut State) {
         for p in &self.particles {
             let [r, g, b, a] = p.color();
-            state.draw(Cell::new(p.pos.x, p.pos.y).color(Color::linear(r, g, b, a)));
+            state.draw_world(Cell::new(p.pos.x, p.pos.y).color(Color::linear(r, g, b, a)));
         }
     }
 

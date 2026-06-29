@@ -155,7 +155,7 @@ impl App for FireDemo {
                 cell = cell.rotation(Rotation::Z(rot));
             }
 
-            state.draw(cell);
+            state.draw_world(cell);
         }
     }
 

@@ -57,6 +57,7 @@ pub struct State {
     start_timer: Instant,
     quit: bool,
     debug: bool,
+    pub rejected_cell_count: u32,
 }
 
 impl State {
@@ -64,6 +65,7 @@ impl State {
         let fixed_dt = Duration::from_secs_f32(1.0 / config.steps_per_second as f32);
         let camera = Camera::new(config.viewport_width, config.viewport_height);
         Self {
+            rejected_cell_count: 0,
             window: None,
             renderer: None,
             cells: Vec::new(),
@@ -99,40 +101,6 @@ impl State {
     #[cfg(test)]
     pub(crate) fn set_input(&mut self, input: InputState) {
         self.input = input;
-    }
-
-    // --- Drawing ---
-
-    pub fn draw(&mut self, drawable: impl Drawable) {
-        let half_w = self.camera.viewport_width / 2.0;
-        let half_h = self.camera.viewport_height / 2.0;
-        let min_x = self.camera.position.x - half_w - 1.0;
-        let max_x = self.camera.position.x + half_w + 1.0;
-        let min_y = self.camera.position.y - half_h - 1.0;
-        let max_y = self.camera.position.y + half_h + 1.0;
-        drawable.emit_cells(&mut |cell| {
-            if cell.position.x >= min_x
-                && cell.position.x <= max_x
-                && cell.position.y >= min_y
-                && cell.position.y <= max_y
-            {
-                self.cells.push(cell);
-            }
-        });
-    }
-
-    pub fn draw_screen(&mut self, drawable: impl Drawable) {
-        let vw = self.camera.viewport_width;
-        let vh = self.camera.viewport_height;
-        drawable.emit_cells(&mut |cell| {
-            if cell.position.x >= -1.0
-                && cell.position.x <= vw
-                && cell.position.y >= -1.0
-                && cell.position.y <= vh
-            {
-                self.screen_cells.push(cell);
-            }
-        });
     }
 
     // --- Camera ---
@@ -289,6 +257,44 @@ impl State {
         element::test_shape(&self.input, shape, true)
     }
 
+    // --- Drawing ---
+
+    pub fn draw_world(&mut self, drawable: impl Drawable) {
+        let half_w = self.camera.viewport_width / 2.0;
+        let half_h = self.camera.viewport_height / 2.0;
+        let min_x = self.camera.position.x - half_w - 1.0;
+        let max_x = self.camera.position.x + half_w + 1.0;
+        let min_y = self.camera.position.y - half_h - 1.0;
+        let max_y = self.camera.position.y + half_h + 1.0;
+        drawable.emit_cells(&mut |cell| {
+            if cell.position.x >= min_x
+                && cell.position.x <= max_x
+                && cell.position.y >= min_y
+                && cell.position.y <= max_y
+            {
+                self.cells.push(cell);
+            } else {
+                self.rejected_cell_count += 1;
+            }
+        });
+    }
+
+    pub fn draw_screen(&mut self, drawable: impl Drawable) {
+        let vw = self.camera.viewport_width;
+        let vh = self.camera.viewport_height;
+        drawable.emit_cells(&mut |cell| {
+            if cell.position.x >= -1.0
+                && cell.position.x <= vw
+                && cell.position.y >= -1.0
+                && cell.position.y <= vh
+            {
+                self.screen_cells.push(cell);
+            } else {
+                self.rejected_cell_count += 1;
+            }
+        });
+    }
+
     pub fn draw_world_overlay(&mut self, drawable: impl Drawable) {
         let min_x = self.camera.position.x - self.camera.viewport_width / 2.0 - 1.0;
         let max_x = self.camera.position.x + self.camera.viewport_width / 2.0 + 1.0;
@@ -301,6 +307,8 @@ impl State {
                 && cell.position.y <= max_y
             {
                 self.world_overlay_cells.push(cell);
+            } else {
+                self.rejected_cell_count += 1;
             }
         });
     }
@@ -315,6 +323,8 @@ impl State {
                 && cell.position.y <= vh
             {
                 self.screen_overlay_cells.push(cell);
+            } else {
+                self.rejected_cell_count += 1;
             }
         });
     }
@@ -602,12 +612,13 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                 self.app.pre_update(&mut self.state);
 
                 let tree = self.app.ui(&self.state);
+                self.state.rejected_cell_count = 0;
                 let resolved = tree.layout(
                     self.state.camera.viewport_width as u32,
                     self.state.camera.viewport_height as u32,
                 );
                 let (cells, _result) = resolved.evaluate(self.app, &mut self.state);
-                self.state.screen_overlay_cells.extend(cells);
+                self.state.draw_screen_overlay(cells);
 
                 self.state.dt = self.state.fixed_dt;
                 for i in 1..=update_count {

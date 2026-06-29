@@ -173,7 +173,7 @@ impl App for Boids {
             // Rotation::Z maps 0→1 to 0→90°, so divide by PI/2
             let rot_val = angle / FRAC_PI_2;
             let (r, g, b) = hue_to_rgb(boid.hue);
-            state.draw(
+            state.draw_world(
                 Cell::new(boid.pos.x, boid.pos.y)
                     .rotation(Rotation::Z(rot_val))
                     .color(Color::linear(r, g, b, 1.0)),

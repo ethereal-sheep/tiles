@@ -212,7 +212,7 @@ impl App for RotationDemo {
                         WaveRotation::Z => Rotation::Z(rot_val),
                     };
 
-                    state.draw(
+                    state.draw_world(
                         Cell::new(cx, cy)
                             .rotation(rotation)
                             .color(Color::linear(r, g, b, 1.0)),
@@ -220,7 +220,7 @@ impl App for RotationDemo {
                 } else {
                     let hue = self.cells_hue[idx];
                     let (r, g, b) = hue_to_rgb(hue);
-                    state.draw(Cell::new(cx, cy).color(Color::linear(r, g, b, 1.0)));
+                    state.draw_world(Cell::new(cx, cy).color(Color::linear(r, g, b, 1.0)));
                 }
             }
         }

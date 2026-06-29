@@ -8,7 +8,10 @@ pub trait Drawable {
     where
         Self: Sized,
     {
-        Colored { inner: self, color: c }
+        Colored {
+            inner: self,
+            color: c,
+        }
     }
 }
 

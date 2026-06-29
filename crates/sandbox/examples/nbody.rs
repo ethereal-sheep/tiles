@@ -226,7 +226,7 @@ impl App for NBodySim {
                     .intensity(body.mass.sqrt().min(3.0));
             }
 
-            state.draw(cell);
+            state.draw_world(cell);
         }
 
         // Draw drag line preview
@@ -239,7 +239,7 @@ impl App for NBodySim {
                 for i in 0..steps {
                     let t = i as f32 / steps as f32;
                     let p = start + dir * t;
-                    state.draw(
+                    state.draw_world(
                         Cell::new(p.x, p.y)
                             .color(Color::linear(0.3, 0.3, 0.5, 0.5))
                             .emissive(),

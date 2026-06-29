@@ -48,7 +48,7 @@ impl App for LightingDemo {
                 } else {
                     (0.18, 0.16, 0.22)
                 };
-                state.draw(Cell::new(cx, cy).color(Color::linear(r, g, b, 1.0)));
+                state.draw_world(Cell::new(cx, cy).color(Color::linear(r, g, b, 1.0)));
             }
         }
 
@@ -63,7 +63,7 @@ impl App for LightingDemo {
             let hue = (i as f32) / self.num_orbiting as f32;
             let (r, g, b) = hue_to_rgb(hue);
 
-            state.draw(
+            state.draw_world(
                 Cell::new(x, y)
                     .color(Color::linear(r, g, b, 1.0))
                     .light(self.light_radius)
@@ -74,7 +74,7 @@ impl App for LightingDemo {
         // Mouse light (follows cursor)
         if state.is_mouse_down(MouseButton::Left) {
             let pos = state.mouse_position();
-            state.draw(
+            state.draw_world(
                 Cell::new(pos.x, pos.y)
                     .color(Color::linear(1.0, 0.95, 0.8, 1.0))
                     .light(self.light_radius * 1.5)
@@ -84,7 +84,7 @@ impl App for LightingDemo {
 
         // Center emissive cell
         let pulse = (self.time * 2.0).sin() * 0.3 + 0.7;
-        state.draw(
+        state.draw_world(
             Cell::new(0.0, 0.0)
                 .color(Color::linear(1.0, 0.4, 0.1, 1.0))
                 .emissive()

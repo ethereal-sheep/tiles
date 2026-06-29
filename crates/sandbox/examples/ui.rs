@@ -28,6 +28,7 @@ impl App for Demo {
     }
 
     fn ui(&self, _state: &State) -> Node<Self> {
+        let row_count = 20;
         col()
             .padding(16)
             .gap(4)
@@ -36,53 +37,64 @@ impl App for Demo {
             .fill_h()
             .children(ui! {
                 // Title bar
-                row().width(150).justify_end().color(PANEL_BG) {
-                    row().width(80).gap(1).padding(1) {
-                        pane()
-                            .align_center()
-                            .fill_w()
-                            .color(BTN_COLOR)
-                            .hover_color(BTN_HOVER)
-                            .pressed_color(BTN_PRESS)
-                            .text_color(INDICATOR)
-                            .on_click(|app: &mut Demo, _state| { app.count += 1; }) {
-                                text("+").font(&TINY5_4X5).padding(1)
-                        }
-                        pane()
-                            .align_center()
-                            .fill_w()
-                            .color(BTN_COLOR)
-                            .hover_color(BTN_HOVER)
-                            .pressed_color(BTN_PRESS)
-                            .text_color(RED)
-                            .on_click(|app: &mut Demo, _state| { app.count -= 1; }) {
-                                text("-").font(&TINY5_4X5).padding(1)
-                        }
-                        pane()
-                            .align_center()
-                            .fill_w()
-                            .color(BTN_COLOR)
-                            .hover_color(BTN_HOVER)
-                            .pressed_color(BTN_PRESS)
-                            .on_click(|app: &mut Demo, _state| { app.count = 0; }) {
-                                text("clear").font(&TINY5_4X5).padding(1)
-                        }
+                row().fill_w().padding(1).gap(1).color(PANEL_BG) {
+                    pane()
+                        .align_center()
+                        .fill_w()
+                        .color(BTN_COLOR) {
+                            text(_state.rejected_cell_count.to_string()).font(&TINY5_4X5).padding(1)
                     }
+                    pane()
+                        .align_center()
+                        .fill_w()
+                        .color(BTN_COLOR)
+                        .hover_color(BTN_HOVER)
+                        .pressed_color(BTN_PRESS)
+                        .text_color(INDICATOR)
+                        .on_press(|app: &mut Demo, _state| { app.count += 1; })
+                        .on_hold(|app: &mut Demo, _state| { app.count += 1; }) {
+                            text("+").font(&TINY5_4X5).padding(1)
+                    }
+                    pane()
+                        .align_center()
+                        .fill_w()
+                        .color(BTN_COLOR)
+                        .hover_color(BTN_HOVER)
+                        .pressed_color(BTN_PRESS)
+                        .text_color(RED)
+                        .on_press(|app: &mut Demo, _state| { app.count -= 1; })
+                        .on_hold(|app: &mut Demo, _state| { app.count -= 1; }) {
+                            text("-").font(&TINY5_4X5).padding(1)
+                    }
+                    pane()
+                        .align_center()
+                        .fill_w()
+                        .color(BTN_COLOR)
+                        .hover_color(BTN_HOVER)
+                        .pressed_color(BTN_PRESS)
+                        .on_click(|app: &mut Demo, _state| { app.count = 0; }) {
+                            text("clear").font(&TINY5_4X5).padding(1)
+                    }
+
                 }
 
 
                 // Counter indicator
-                row().gap(1) {
-                    @ for i in 0..=self.count.unsigned_abs() {
-                        pane().size(4, 8).color(
-                            if i == 0 {
-                                Color::linear(0.0, 0.0, 0.0, 0.0)
-                            } else if self.count > 0 {
-                                INDICATOR
-                            } else {
-                                RED
+                col().gap(1) {
+                    @ for j in 0..=(self.count.unsigned_abs().saturating_sub(1) / row_count) {
+                        row().gap(1) {
+                            @ for i in 0..row_count {
+                                @ if j * row_count + i < self.count.unsigned_abs() {
+                                    pane().size(4, 8).color(
+                                        if self.count > 0 {
+                                            INDICATOR
+                                        } else {
+                                            RED
+                                        }
+                                    );
+                                }
                             }
-                        );
+                        }
                     }
                 }
 
