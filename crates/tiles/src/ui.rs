@@ -1412,8 +1412,8 @@ mod tests {
 
     #[test]
     fn macro_simple_nodes() {
-        use crate::ui;
-        let children: Vec<Node<TestApp>> = ui! {
+        use crate::view;
+        let children: Vec<Node<TestApp>> = view! {
             row().size(5, 5).color(RED);
             row().size(3, 3).color(BLUE);
         };
@@ -1422,24 +1422,23 @@ mod tests {
 
     #[test]
     fn macro_nested_children() {
-        use crate::ui;
-        let children: Vec<Node<TestApp>> = ui! {
+        use crate::view;
+        let node: Node<TestApp> = view! {
             row().gap(4) {
                 row().size(5, 5).color(RED);
                 row().size(5, 5).color(BLUE);
             }
         };
-        assert_eq!(children.len(), 1);
-        let resolved = children.into_iter().next().unwrap().layout(256, 256);
+        let resolved = node.layout(256, 256);
         // 5 + 4 + 5 = 14
         assert_eq!(resolved.rect.width(), 14);
     }
 
     #[test]
     fn macro_if_control_flow() {
-        use crate::ui;
+        use crate::view;
         let show = true;
-        let children: Vec<Node<TestApp>> = ui! {
+        let children: Vec<Node<TestApp>> = view! {
             row().size(5, 5).color(RED);
             @ if show {
                 row().size(3, 3).color(BLUE);
@@ -1448,7 +1447,7 @@ mod tests {
         assert_eq!(children.len(), 2);
 
         let show = false;
-        let children: Vec<Node<TestApp>> = ui! {
+        let children: Vec<Node<TestApp>> = view! {
             row().size(5, 5).color(RED);
             @ if show {
                 row().size(3, 3).color(BLUE);
@@ -1459,9 +1458,9 @@ mod tests {
 
     #[test]
     fn macro_for_loop() {
-        use crate::ui;
+        use crate::view;
         let colors = [RED, BLUE, GREEN];
-        let children: Vec<Node<TestApp>> = ui! {
+        let children: Vec<Node<TestApp>> = view! {
             @ for c in colors {
                 row().size(5, 5).color(c);
             }
@@ -1471,8 +1470,8 @@ mod tests {
 
     #[test]
     fn macro_raw_escape() {
-        use crate::ui;
-        let children: Vec<Node<TestApp>> = ui! {
+        use crate::view;
+        let children: Vec<Node<TestApp>> = view! {
             row().size(5, 5).color(RED);
             |c| {
                 c.push(row().size(3, 3).color(BLUE).into());
@@ -1484,19 +1483,18 @@ mod tests {
 
     #[test]
     fn macro_with_handlers() {
-        use crate::ui;
-        let children: Vec<Node<TestApp>> = ui! {
+        use crate::view;
+        let child: Node<TestApp> = view! {
             pane()
                 .size(5, 3)
                 .color(RED)
                 .hover_color(BLUE)
                 .on_click(|app: &mut TestApp, _state| { app.clicked = true; });
         };
-        assert_eq!(children.len(), 1);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(2.0, 1.0);
-        let node = col::<TestApp>().children(children);
+        let node = col::<TestApp>().children(vec![child]);
         let (_, result) = {
             state.set_input(input);
             eval(node, &mut app, &mut state)
@@ -1507,8 +1505,8 @@ mod tests {
 
     #[test]
     fn macro_deeply_nested() {
-        use crate::ui;
-        let children: Vec<Node<TestApp>> = ui! {
+        use crate::view;
+        let node: Node<TestApp> = view! {
             col().padding(2) {
                 row().gap(2) {
                     row().size(5, 5).color(RED);
@@ -1517,8 +1515,7 @@ mod tests {
                 row().size(10, 3).color(GREEN);
             }
         };
-        assert_eq!(children.len(), 1);
-        let resolved = children.into_iter().next().unwrap().layout(256, 256);
+        let resolved = node.layout(256, 256);
         // row: 5+2+5=12, col content: max(12,10)=12 wide, 5+3=8 tall
         // with padding 2: 12+4=16 wide, 8+4=12 tall
         assert_eq!(resolved.rect.width(), 16);
@@ -1527,9 +1524,9 @@ mod tests {
 
     #[test]
     fn macro_for_with_expr_iter() {
-        use crate::ui;
+        use crate::view;
         let items = vec![(5, RED), (3, BLUE), (7, GREEN)];
-        let children: Vec<Node<TestApp>> = ui! {
+        let children: Vec<Node<TestApp>> = view! {
             @ for (size, color) in items.iter().copied() {
                 row().size(size, size).color(color)
             }
@@ -1610,13 +1607,12 @@ mod tests {
 
     #[test]
     fn text_in_macro() {
-        use crate::ui;
-        let children: Vec<Node<TestApp>> = ui! {
+        use crate::view;
+        let _node: Node<TestApp> = view! {
             col().text_color(RED) {
                 text("hello");
             }
         };
-        assert_eq!(children.len(), 1);
     }
 
     // --- Fill distribution tests ---

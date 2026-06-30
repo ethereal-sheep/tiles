@@ -1,3 +1,5 @@
+extern crate self as tiles;
+
 mod camera;
 mod cell;
 mod color;
@@ -29,7 +31,12 @@ pub use rect::{Rect, RoundedRect};
 pub use runner::{App, State};
 pub use shape::{Fill, Shape, Stroke, StrokePosition};
 pub use text::Text;
-pub use tiles_macros::ui;
+pub use tiles_macros::view;
+
+#[doc(hidden)]
+pub mod __private {
+    pub use crate::ui::Node;
+}
 pub use ui::{text, Node};
 
 #[cfg(feature = "runtime")]

@@ -142,7 +142,7 @@ fn expand_block(block: &UiBlock) -> TokenStream2 {
     }
     quote! {
         {
-            let mut __children: Vec<crate::ui::Node<_>> = Vec::new();
+            let mut __children: Vec<::tiles::__private::Node<_>> = Vec::new();
             #(#pushes)*
             __children
         }
@@ -208,10 +208,27 @@ fn expand_stmt(stmt: &UiStmt) -> TokenStream2 {
     }
 }
 
-/// Builds a `Vec<Node<A>>` from a UI description block.
+/// Builds a UI node tree.
+///
+/// If there is exactly one top-level widget, returns `Node<A>` directly.
+/// Otherwise returns `Vec<Node<A>>`.
 #[proc_macro]
-pub fn ui(input: TokenStream) -> TokenStream {
+pub fn view(input: TokenStream) -> TokenStream {
     let block = syn::parse_macro_input!(input as UiBlock);
+
+    // Single top-level widget → return Node<A> directly
+    if block.stmts.len() == 1 {
+        if let UiStmt::Widget { expr, children } = &block.stmts[0] {
+            let expanded = if let Some(child_block) = children {
+                let children_expr = expand_block(child_block);
+                quote! { #expr.children(#children_expr).into() }
+            } else {
+                quote! { #expr.into() }
+            };
+            return TokenStream::from(expanded);
+        }
+    }
+
     let expanded = expand_block(&block);
     TokenStream::from(expanded)
 }
