@@ -20,7 +20,7 @@ pub use camera::Camera;
 pub use cell::{Cell, Rotation};
 pub use color::Color;
 pub use config::{Config, ConfigBuilder};
-pub use drawable::{Colored, Drawable};
+pub use drawable::{Drawable, Transformable};
 pub use element::{DragInfo, Element, ElementState, HitState};
 pub use input::{KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent};
 pub use line::Line;

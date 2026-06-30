@@ -1,6 +1,6 @@
 use crate::cell::Cell;
 use crate::color::Color;
-use crate::drawable::Drawable;
+use crate::drawable::Transformable;
 use crate::font::Font;
 use crate::rect::Rect;
 
@@ -85,6 +85,11 @@ impl Text {
         self
     }
 
+    pub fn color(mut self, c: Color) -> Self {
+        self.color = c;
+        self
+    }
+
     pub fn width(&self) -> u32 {
         self.highlight_size.0
     }
@@ -164,9 +169,12 @@ impl Text {
     }
 }
 
-impl Drawable for Text {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
-        let (origin_x, origin_y) = self.layout_origin();
+impl Transformable for Text {
+    fn original_position(&self) -> (f32, f32) {
+        self.layout_origin()
+    }
+
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
         let mut cursor_x = 0u32;
 
         for (i, ch) in self.content.chars().enumerate() {
@@ -187,8 +195,8 @@ impl Drawable for Text {
                     .map(|cm| cm(i, ch))
                     .unwrap_or(self.color);
 
-                let char_x = origin_x + cursor_x as f32 + dx;
-                let char_y = origin_y + glyph.top as f32 + dy;
+                let char_x = cursor_x as f32 + dx;
+                let char_y = glyph.top as f32 + dy;
 
                 for row in 0..glyph.height as usize {
                     for col in 0..glyph.width as usize {
@@ -283,6 +291,7 @@ fn compute_tight_info(
 mod tests {
     use super::*;
     use crate::color::Color;
+    use crate::drawable::Drawable;
     use crate::font::{MONO_5X7, TOM_THUMB_3X5};
 
     #[test]

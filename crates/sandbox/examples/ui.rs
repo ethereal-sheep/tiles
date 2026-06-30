@@ -1,8 +1,10 @@
+use core::f32;
+
 use tiles::{
     font::TINY5_4X5,
     ui,
     ui::{col, pane, row, text, Node},
-    App, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, State,
+    App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, State, Text, Transformable,
 };
 
 const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
@@ -29,118 +31,123 @@ impl App for Demo {
 
     fn ui(&self, _state: &State) -> Node<Self> {
         let row_count = 20;
-        col()
-            .padding(16)
-            .gap(4)
-            .color(BG)
-            .fill_w()
-            .fill_h()
-            .children(ui! {
-                // Title bar
-                row().fill_w().padding(1).gap(1).color(PANEL_BG) {
-                    pane()
-                        .align_center()
-                        .fill_w()
-                        .color(BTN_COLOR) {
-                            text(_state.rejected_cell_count.to_string()).font(&TINY5_4X5).padding(1)
-                    }
-                    pane()
-                        .align_center()
-                        .fill_w()
-                        .color(BTN_COLOR)
-                        .hover_color(BTN_HOVER)
-                        .pressed_color(BTN_PRESS)
-                        .text_color(INDICATOR)
-                        .on_press(|app: &mut Demo, _state| { app.count += 1; })
-                        .on_hold(|app: &mut Demo, _state| { app.count += 1; }) {
-                            text("+").font(&TINY5_4X5).padding(1)
-                    }
-                    pane()
-                        .align_center()
-                        .fill_w()
-                        .color(BTN_COLOR)
-                        .hover_color(BTN_HOVER)
-                        .pressed_color(BTN_PRESS)
-                        .text_color(RED)
-                        .on_press(|app: &mut Demo, _state| { app.count -= 1; })
-                        .on_hold(|app: &mut Demo, _state| { app.count -= 1; }) {
-                            text("-").font(&TINY5_4X5).padding(1)
-                    }
-                    pane()
-                        .align_center()
-                        .fill_w()
-                        .color(BTN_COLOR)
-                        .hover_color(BTN_HOVER)
-                        .pressed_color(BTN_PRESS)
-                        .on_click(|app: &mut Demo, _state| { app.count = 0; }) {
-                            text("clear").font(&TINY5_4X5).padding(1)
-                    }
-
+        col().padding(16).gap(4).fill_w().fill_h().children(ui! {
+            // Title bar
+            row().fill_w().padding(1).gap(1).color(PANEL_BG) {
+                pane()
+                    .align_center()
+                    .fill_w()
+                    .color(BTN_COLOR)
+                    .hover_color(BTN_HOVER)
+                    .pressed_color(BTN_PRESS)
+                    .text_color(INDICATOR)
+                    .on_press(|app: &mut Demo, _state| { app.count += 1; })
+                    .on_hold(|app: &mut Demo, _state| { app.count += 1; }) {
+                        text("+").font(&TINY5_4X5).padding(1)
+                }
+                pane()
+                    .align_center()
+                    .fill_w()
+                    .color(BTN_COLOR)
+                    .hover_color(BTN_HOVER)
+                    .pressed_color(BTN_PRESS)
+                    .text_color(RED)
+                    .on_press(|app: &mut Demo, _state| { app.count -= 1; })
+                    .on_hold(|app: &mut Demo, _state| { app.count -= 1; }) {
+                        text("-").font(&TINY5_4X5).padding(1)
+                }
+                pane()
+                    .align_center()
+                    .fill_w()
+                    .color(BTN_COLOR)
+                    .hover_color(BTN_HOVER)
+                    .pressed_color(BTN_PRESS)
+                    .on_click(|app: &mut Demo, _state| { app.count = 0; }) {
+                        text("clear").font(&TINY5_4X5).padding(1)
                 }
 
+            }
 
-                // Counter indicator
-                col().gap(1) {
-                    @ for j in 0..=(self.count.unsigned_abs().saturating_sub(1) / row_count) {
-                        row().gap(1) {
-                            @ for i in 0..row_count {
-                                @ if j * row_count + i < self.count.unsigned_abs() {
-                                    pane().size(4, 8).color(
-                                        if self.count > 0 {
-                                            INDICATOR
-                                        } else {
-                                            RED
-                                        }
-                                    );
-                                }
+
+            // Counter indicator
+            col().gap(1) {
+                @ for j in 0..=(self.count.unsigned_abs().saturating_sub(1) / row_count) {
+                    row().gap(1) {
+                        @ for i in 0..row_count {
+                            @ if j * row_count + i < self.count.unsigned_abs() {
+                                pane().size(4, 8).color(
+                                    if self.count > 0 {
+                                        INDICATOR
+                                    } else {
+                                        RED
+                                    }
+                                );
                             }
                         }
                     }
                 }
+            }
 
-                // Toggle pane
-                pane()
-                    .size(30, 10)
-                    .color(if self.show_panel { BLUE } else { BTN_COLOR })
-                    .hover_color(BTN_HOVER)
-                    .pressed_color(BTN_PRESS)
-                    .on_click(|app: &mut Demo, _state| { app.show_panel = !app.show_panel; });
+            // Toggle pane
+            pane()
+                .size(30, 10)
+                .color(if self.show_panel { BLUE } else { BTN_COLOR })
+                .hover_color(BTN_HOVER)
+                .pressed_color(BTN_PRESS)
+                .on_click(|app: &mut Demo, _state| { app.show_panel = !app.show_panel; });
 
-                // Conditional panel
-                @ if self.show_panel {
-                    col().padding(3).gap(2).color(PANEL_BG) {
-                        @ for (i, color) in self.items.iter().enumerate() {
-                            pane()
-                                .size(40, 8)
-                                .color(*color)
-                                .hover_color(BTN_HOVER)
-                                .pressed_color(BTN_PRESS)
-                                .on_click(move |app: &mut Demo, _state| {
-                                    app.items.remove(i);
-                                });
-                        }
+            // Conditional panel
+            @ if self.show_panel {
+                col().padding(3).gap(2).color(PANEL_BG) {
+                    @ for (i, color) in self.items.iter().enumerate() {
                         pane()
                             .size(40, 8)
-                            .color(BTN_COLOR)
+                            .color(*color)
                             .hover_color(BTN_HOVER)
                             .pressed_color(BTN_PRESS)
-                            .on_click(|app: &mut Demo, _state| {
-                                let c = match app.items.len() % 3 {
-                                    0 => RED,
-                                    1 => BLUE,
-                                    _ => INDICATOR,
-                                };
-                                app.items.push(c);
+                            .on_click(move |app: &mut Demo, _state| {
+                                app.items.remove(i);
                             });
                     }
+                    pane()
+                        .size(40, 8)
+                        .color(BTN_COLOR)
+                        .hover_color(BTN_HOVER)
+                        .pressed_color(BTN_PRESS)
+                        .on_click(|app: &mut Demo, _state| {
+                            let c = match app.items.len() % 3 {
+                                0 => RED,
+                                1 => BLUE,
+                                _ => INDICATOR,
+                            };
+                            app.items.push(c);
+                        });
                 }
-            })
+            }
+        })
     }
 
     fn on_key(&mut self, state: &mut State, event: KeyEvent) {
         if event.state == KeyState::Pressed && event.key == KeyCode::Escape {
             state.quit();
         }
+    }
+
+    fn draw(&mut self, state: &mut State) {
+        let elapsed = state.elapsed();
+        state.draw_world(
+            Text::new(&TINY5_4X5, "Hello World")
+                .anchor(
+                    tiles::AnchorBox::Highlight,
+                    tiles::AnchorCorner::BottomRight,
+                )
+                .map_position(move |i, _c| {
+                    (0.0, 0.5 * f32::sin((elapsed + i as f32 * 10.0) * (10.0)))
+                })
+                .color(Color::rgb8(0, 0, 0))
+                .flip_y(),
+        );
+        state.draw_world(Cell::new(0.0, 0.0).color(Color::rgb8(0, 0, 0)));
     }
 
     fn on_mouse(&mut self, _state: &mut State, _event: MouseEvent) {}

@@ -1,8 +1,15 @@
 use crate::cell::Cell;
 use crate::color::Color;
 
+pub struct DrawableWrapper<F>
+where
+    F: Fn(&mut dyn FnMut(Cell)),
+{
+    emit_cells: F,
+}
+
 pub trait Drawable {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell));
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell));
 
     fn to_cells(&self) -> Vec<Cell> {
         let mut cells = vec![];
@@ -10,47 +17,51 @@ pub trait Drawable {
         cells
     }
 
-    fn color(self, c: Color) -> Colored<Self>
+    fn color(self, c: Color) -> DrawableWrapper<impl Fn(&mut dyn FnMut(Cell))>
     where
         Self: Sized,
     {
-        Colored {
-            inner: self,
-            color: c,
+        self.map_cell(move |mut cell| {
+            cell.color = c.to_array();
+            cell
+        })
+    }
+
+    fn map_cell(self, map: impl Fn(Cell) -> Cell) -> DrawableWrapper<impl Fn(&mut dyn FnMut(Cell))>
+    where
+        Self: Sized,
+    {
+        DrawableWrapper {
+            emit_cells: move |out: &mut dyn FnMut(Cell)| {
+                self.emit_cells(&mut |cell| {
+                    out(map(cell));
+                });
+            },
         }
     }
 }
 
-pub struct Colored<D> {
-    inner: D,
-    color: Color,
-}
-
-impl<D: Drawable> Drawable for Colored<D> {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
-        let color = self.color;
-        self.inner.emit_cells(&mut |mut cell| {
-            cell.color = color.to_array();
-            f(cell);
-        });
+impl<F: Fn(&mut dyn FnMut(Cell))> Drawable for DrawableWrapper<F> {
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
+        (self.emit_cells)(f);
     }
 }
 
 impl Drawable for Cell {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
         f(*self);
     }
 }
 
 impl<A: Drawable, B: Drawable> Drawable for (A, B) {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
         self.0.emit_cells(f);
         self.1.emit_cells(f);
     }
 }
 
 impl<A: Drawable, B: Drawable, C: Drawable> Drawable for (A, B, C) {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
         self.0.emit_cells(f);
         self.1.emit_cells(f);
         self.2.emit_cells(f);
@@ -58,7 +69,7 @@ impl<A: Drawable, B: Drawable, C: Drawable> Drawable for (A, B, C) {
 }
 
 impl<D: Drawable> Drawable for Vec<D> {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
         for d in self {
             d.emit_cells(f);
         }
@@ -66,7 +77,7 @@ impl<D: Drawable> Drawable for Vec<D> {
 }
 
 impl<D: Drawable, const N: usize> Drawable for [D; N] {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
         for d in self {
             d.emit_cells(f);
         }
@@ -84,7 +95,7 @@ pub struct Transformed<T: Transformable + Sized> {
 
 pub trait Transformable {
     fn original_position(&self) -> (f32, f32);
-    fn emit_local_cells(&self, f: &mut impl FnMut(Cell));
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell));
 
     fn transformed(self) -> Transformed<Self>
     where
@@ -229,7 +240,7 @@ impl<T: Transformable> Transformed<T> {
 }
 
 impl<T: Transformable> Drawable for T {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
         let position = self.original_position();
         self.emit_local_cells(&mut |mut cell| {
             cell.position.x += position.0;
@@ -240,7 +251,7 @@ impl<T: Transformable> Drawable for T {
 }
 
 impl<T: Transformable> Drawable for Transformed<T> {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
         let position = self.inner.original_position();
         self.inner.emit_local_cells(&mut |mut cell| {
             if self.flip_x {
@@ -298,7 +309,7 @@ mod tests {
             self.origin
         }
 
-        fn emit_local_cells(&self, f: &mut impl FnMut(Cell)) {
+        fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
             for &(x, y) in &self.cells {
                 f(Cell::new(x, y));
             }
@@ -345,7 +356,11 @@ mod tests {
 
     #[test]
     fn vec_emits_all() {
-        let v = vec![Cell::new(0.0, 0.0), Cell::new(1.0, 1.0), Cell::new(2.0, 2.0)];
+        let v = vec![
+            Cell::new(0.0, 0.0),
+            Cell::new(1.0, 1.0),
+            Cell::new(2.0, 2.0),
+        ];
         let cells = v.to_cells();
         assert_eq!(cells.len(), 3);
     }
@@ -446,7 +461,9 @@ mod tests {
 
     #[test]
     fn flip_y_twice_is_identity() {
-        let s = TestShape::at((0.0, 0.0), vec![(0.0, 5.0)]).flip_y().flip_y();
+        let s = TestShape::at((0.0, 0.0), vec![(0.0, 5.0)])
+            .flip_y()
+            .flip_y();
         let pos = positions(&s);
         assert!(approx_eq(pos[0], (0.0, 5.0)));
     }
@@ -521,8 +538,7 @@ mod tests {
 
     #[test]
     fn multiple_cells_transform() {
-        let s = TestShape::at((0.0, 0.0), vec![(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0)])
-            .rotate_90_cw();
+        let s = TestShape::at((0.0, 0.0), vec![(1.0, 0.0), (0.0, 1.0), (-1.0, 0.0)]).rotate_90_cw();
         let pos = positions(&s);
         assert!(approx_eq(pos[0], (0.0, 1.0)));
         assert!(approx_eq(pos[1], (-1.0, 0.0)));

@@ -12,7 +12,13 @@ pub struct Line {
 
 impl Line {
     pub fn new(x1: f32, y1: f32, x2: f32, y2: f32) -> Self {
-        Self { x1, y1, x2, y2, width: 1 }
+        Self {
+            x1,
+            y1,
+            x2,
+            y2,
+            width: 1,
+        }
     }
 
     pub fn width(mut self, width: u32) -> Self {
@@ -22,7 +28,7 @@ impl Line {
 }
 
 impl Drawable for Line {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
         if self.width == 0 {
             return;
         }

@@ -21,7 +21,11 @@ pub trait Shape: Sized {
     }
 
     fn stroke(self, width: u32, position: StrokePosition) -> Stroke<Self> {
-        Stroke { inner: self, width, position }
+        Stroke {
+            inner: self,
+            width,
+            position,
+        }
     }
 }
 
@@ -30,7 +34,7 @@ pub struct Fill<S> {
 }
 
 impl<S: Shape> Drawable for Fill<S> {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
         self.inner.fill_cells(&mut |x, y| f(Cell::new(x, y)));
     }
 }
@@ -42,7 +46,7 @@ pub struct Stroke<S> {
 }
 
 impl<S: Shape> Drawable for Stroke<S> {
-    fn emit_cells(&self, f: &mut impl FnMut(Cell)) {
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
         if self.width == 0 {
             return;
         }
@@ -118,11 +122,7 @@ mod tests {
     fn fill_rect_emits_all_interior_cells() {
         let r = Rect::from_top_left(2.0, 3.0, 3, 2);
         let cells = collect_positions(r.fill());
-        assert_eq!(cells, vec![
-            (2, 3), (2, 4),
-            (3, 3), (3, 4),
-            (4, 3), (4, 4),
-        ]);
+        assert_eq!(cells, vec![(2, 3), (2, 4), (3, 3), (3, 4), (4, 3), (4, 4),]);
     }
 
     #[test]
