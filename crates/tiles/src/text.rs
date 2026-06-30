@@ -132,7 +132,7 @@ impl Text {
         self.tight_size = tight_size;
     }
 
-    fn layout_origin(&self) -> (f32, f32) {
+    fn anchor_offset(&self) -> (f32, f32) {
         let (box_w, box_h, box_offset_x, box_offset_y) = match self.anchor_box {
             AnchorBox::Highlight => (
                 self.highlight_size.0 as f32,
@@ -149,32 +149,26 @@ impl Text {
         };
 
         match self.anchor_corner {
-            AnchorCorner::TopLeft => (
-                self.position.0 - box_offset_x,
-                self.position.1 - box_offset_y,
-            ),
-            AnchorCorner::TopRight => (
-                self.position.0 - box_w - box_offset_x,
-                self.position.1 - box_offset_y,
-            ),
-            AnchorCorner::BottomLeft => (
-                self.position.0 - box_offset_x,
-                self.position.1 - box_h - box_offset_y,
-            ),
-            AnchorCorner::BottomRight => (
-                self.position.0 - box_w - box_offset_x,
-                self.position.1 - box_h - box_offset_y,
-            ),
+            AnchorCorner::TopLeft => (-box_offset_x, -box_offset_y),
+            AnchorCorner::TopRight => (-box_w - box_offset_x, -box_offset_y),
+            AnchorCorner::BottomLeft => (-box_offset_x, -box_h - box_offset_y),
+            AnchorCorner::BottomRight => (-box_w - box_offset_x, -box_h - box_offset_y),
         }
+    }
+
+    fn layout_origin(&self) -> (f32, f32) {
+        let (ax, ay) = self.anchor_offset();
+        (self.position.0 + ax, self.position.1 + ay)
     }
 }
 
 impl Drawable for Text {
     fn origin(&self) -> Option<(f32, f32)> {
-        Some(self.layout_origin())
+        Some(self.position)
     }
 
     fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
+        let (ax, ay) = self.anchor_offset();
         let mut cursor_x = 0u32;
 
         for (i, ch) in self.content.chars().enumerate() {
@@ -195,8 +189,8 @@ impl Drawable for Text {
                     .map(|cm| cm(i, ch))
                     .unwrap_or(self.color);
 
-                let char_x = cursor_x as f32 + dx;
-                let char_y = glyph.top as f32 + dy;
+                let char_x = ax + cursor_x as f32 + dx;
+                let char_y = ay + glyph.top as f32 + dy;
 
                 for row in 0..glyph.height as usize {
                     for col in 0..glyph.width as usize {
@@ -513,5 +507,133 @@ mod tests {
             (min_y - 0.0).abs() < 0.001,
             "Tight anchor should start cells at y=0, got {min_y}"
         );
+    }
+
+    #[test]
+    fn text_anchor_bottom_left() {
+        let t = Text::new(&TOM_THUMB_3X5, "Hi")
+            .position(10.0, 50.0)
+            .anchor(AnchorBox::Highlight, AnchorCorner::BottomLeft);
+
+        let mut cells = Vec::new();
+        t.emit_cells(&mut |c| cells.push(c));
+        assert!(!cells.is_empty());
+
+        for cell in &cells {
+            assert!(
+                cell.position.y <= 50.0,
+                "All cells should be above anchor y, got {}",
+                cell.position.y
+            );
+            assert!(
+                cell.position.x >= 10.0,
+                "All cells should be right of anchor x, got {}",
+                cell.position.x
+            );
+        }
+    }
+
+    #[test]
+    fn text_anchor_bottom_right() {
+        let t = Text::new(&TOM_THUMB_3X5, "Hi")
+            .position(50.0, 50.0)
+            .anchor(AnchorBox::Highlight, AnchorCorner::BottomRight);
+
+        let mut cells = Vec::new();
+        t.emit_cells(&mut |c| cells.push(c));
+        assert!(!cells.is_empty());
+
+        for cell in &cells {
+            assert!(
+                cell.position.x <= 50.0,
+                "All cells should be left of anchor x, got {}",
+                cell.position.x
+            );
+            assert!(
+                cell.position.y <= 50.0,
+                "All cells should be above anchor y, got {}",
+                cell.position.y
+            );
+        }
+    }
+
+    #[test]
+    fn text_anchor_bottom_left_with_flip_y() {
+        let t = Text::new(&TOM_THUMB_3X5, "Hi")
+            .position(0.0, 0.0)
+            .anchor(AnchorBox::Highlight, AnchorCorner::BottomLeft);
+
+        let mut cells = Vec::new();
+        t.flip_y().emit_cells(&mut |c| cells.push(c));
+        assert!(!cells.is_empty());
+
+        for cell in &cells {
+            assert!(
+                cell.position.y >= 0.0,
+                "After flip_y, BottomLeft anchored text should be above position (y >= 0), got {}",
+                cell.position.y
+            );
+        }
+    }
+
+    #[test]
+    fn text_anchor_bottom_right_with_flip_y() {
+        let t = Text::new(&TOM_THUMB_3X5, "Hi")
+            .position(0.0, 0.0)
+            .anchor(AnchorBox::Highlight, AnchorCorner::BottomRight);
+
+        let mut cells = Vec::new();
+        t.flip_y().emit_cells(&mut |c| cells.push(c));
+        assert!(!cells.is_empty());
+
+        for cell in &cells {
+            assert!(
+                cell.position.y >= 0.0,
+                "After flip_y, BottomRight anchored text should be above position (y >= 0), got {}",
+                cell.position.y
+            );
+        }
+    }
+
+    #[test]
+    fn text_anchor_top_left_with_flip_y() {
+        let t = Text::new(&TOM_THUMB_3X5, "Hi")
+            .position(0.0, 0.0)
+            .anchor(AnchorBox::Highlight, AnchorCorner::TopLeft);
+
+        let mut cells = Vec::new();
+        t.flip_y().emit_cells(&mut |c| cells.push(c));
+        assert!(!cells.is_empty());
+
+        for cell in &cells {
+            assert!(
+                cell.position.y <= 0.0,
+                "After flip_y, TopLeft anchored text should be below position (y <= 0), got {}",
+                cell.position.y
+            );
+        }
+    }
+
+    #[test]
+    fn text_origin_is_position_invariant_of_anchor() {
+        let pos = (25.0, 30.0);
+        let corners = [
+            AnchorCorner::TopLeft,
+            AnchorCorner::TopRight,
+            AnchorCorner::BottomLeft,
+            AnchorCorner::BottomRight,
+        ];
+
+        for corner in corners {
+            let t = Text::new(&TOM_THUMB_3X5, "Hi")
+                .position(pos.0, pos.1)
+                .anchor(AnchorBox::Highlight, corner);
+            assert_eq!(
+                t.origin(),
+                Some(pos),
+                "origin() should equal position regardless of anchor corner {:?}",
+                corner
+            );
+        }
     }
 }

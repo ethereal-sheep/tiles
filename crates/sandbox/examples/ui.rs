@@ -139,13 +139,10 @@ impl App for Demo {
         let text_pos = glam::Vec2::from_angle(elapsed * PI) * 10.0;
         state.draw_world(
             Text::new(&TINY5_4X5, "Hello World")
+                .anchor(tiles::AnchorBox::Highlight, tiles::AnchorCorner::BottomLeft)
                 .map_position(move |i, _c| {
                     (0.0, 0.5 * f32::sin((elapsed + i as f32 * 10.0) * (10.0)))
-                })
-                .position(text_pos.x, text_pos.y)
-                .rotate_180()
-                .flip_y()
-                .flip_x(),
+                }), // .position(text_pos.x, text_pos.y),
         );
         state.draw_world(Cell::new(0.0, 0.0).color(Color::rgb8(0, 0, 0)));
     }
