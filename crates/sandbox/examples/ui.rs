@@ -31,7 +31,7 @@ impl App for Demo {
 
     fn ui(&self, _state: &State) -> Node<Self> {
         let row_count = 20;
-        view! {
+        view! { Self;
             col().padding(16).gap(4).fill_w().fill_h() {
                 // Title bar
                 row().fill_w().padding(1).gap(1).color(PANEL_BG) {
@@ -42,8 +42,8 @@ impl App for Demo {
                         .hover_color(BTN_HOVER)
                         .pressed_color(BTN_PRESS)
                         .text_color(INDICATOR)
-                        .on_press(|app: &mut Demo, _state| { app.count += 1; })
-                        .on_hold(|app: &mut Demo, _state| { app.count += 1; }) {
+                        .on_press(|app, _state| { app.count += 1; })
+                        .on_hold(|app, _state| { app.count += 1; }) {
                             text("+").font(&TINY5_4X5).padding(1)
                     }
                     pane()
@@ -53,8 +53,8 @@ impl App for Demo {
                         .hover_color(BTN_HOVER)
                         .pressed_color(BTN_PRESS)
                         .text_color(RED)
-                        .on_press(|app: &mut Demo, _state| { app.count -= 1; })
-                        .on_hold(|app: &mut Demo, _state| { app.count -= 1; }) {
+                        .on_press(|app, _state| { app.count -= 1; })
+                        .on_hold(|app, _state| { app.count -= 1; }) {
                             text("-").font(&TINY5_4X5).padding(1)
                     }
                     pane()
@@ -63,7 +63,7 @@ impl App for Demo {
                         .color(BTN_COLOR)
                         .hover_color(BTN_HOVER)
                         .pressed_color(BTN_PRESS)
-                        .on_click(|app: &mut Demo, _state| { app.count = 0; }) {
+                        .on_click(|app, _state| { app.count = 0; }) {
                             text("clear").font(&TINY5_4X5).padding(1)
                     }
                 }
@@ -93,7 +93,7 @@ impl App for Demo {
                     .color(if self.show_panel { BLUE } else { BTN_COLOR })
                     .hover_color(BTN_HOVER)
                     .pressed_color(BTN_PRESS)
-                    .on_click(|app: &mut Demo, _state| { app.show_panel = !app.show_panel; });
+                    .on_click(|app, _state| { app.show_panel = !app.show_panel; });
 
                 // Conditional panel
                 @ if self.show_panel {
@@ -104,7 +104,7 @@ impl App for Demo {
                                 .color(*color)
                                 .hover_color(BTN_HOVER)
                                 .pressed_color(BTN_PRESS)
-                                .on_click(move |app: &mut Demo, _state| {
+                                .on_click(move |app, _state| {
                                     app.items.remove(i);
                                 });
                         }
@@ -113,7 +113,7 @@ impl App for Demo {
                             .color(BTN_COLOR)
                             .hover_color(BTN_HOVER)
                             .pressed_color(BTN_PRESS)
-                            .on_click(|app: &mut Demo, _state| {
+                            .on_click(|app, _state| {
                                 let c = match app.items.len() % 3 {
                                     0 => RED,
                                     1 => BLUE,

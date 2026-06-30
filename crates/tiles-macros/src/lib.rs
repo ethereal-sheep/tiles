@@ -3,11 +3,36 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::token::Brace;
-use syn::{braced, Expr, Ident, Pat, Token};
+use syn::{braced, Expr, Ident, Pat, Token, Type};
 
 // =============================================================================
-// ui! macro
+// view! macro
 // =============================================================================
+
+struct ViewInput {
+    app_type: Option<Type>,
+    block: UiBlock,
+}
+
+impl Parse for ViewInput {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        // Try to parse `Type;` prefix
+        let app_type = if input.peek(Token![self]) || input.peek(syn::Ident) || input.peek(Token![Self]) {
+            let fork = input.fork();
+            if fork.parse::<Type>().is_ok() && fork.peek(Token![;]) {
+                let ty: Type = input.parse()?;
+                input.parse::<Token![;]>()?;
+                Some(ty)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let block: UiBlock = input.parse()?;
+        Ok(ViewInput { app_type, block })
+    }
+}
 
 struct UiBlock {
     stmts: Vec<UiStmt>,
@@ -135,36 +160,75 @@ impl Parse for UiStmt {
     }
 }
 
-fn expand_block(block: &UiBlock) -> TokenStream2 {
+fn expand_block(block: &UiBlock, app_type: Option<&Type>) -> TokenStream2 {
     let mut pushes = Vec::new();
     for stmt in &block.stmts {
-        pushes.push(expand_stmt(stmt));
+        pushes.push(expand_stmt(stmt, app_type));
     }
+    let vec_decl = if let Some(ty) = app_type {
+        quote! { let mut __children: Vec<::tiles::__private::Node<#ty>> = Vec::new(); }
+    } else {
+        quote! { let mut __children = Vec::new(); }
+    };
     quote! {
         {
-            let mut __children: Vec<::tiles::__private::Node<_>> = Vec::new();
+            #vec_decl
             #(#pushes)*
             __children
         }
     }
 }
 
-fn expand_stmt(stmt: &UiStmt) -> TokenStream2 {
+fn turbofish_root_call(expr: &Expr, ty: &Type) -> TokenStream2 {
+    // Walk the method chain to find the root function call and add a turbofish.
+    // e.g. pane().color(X).on_click(f) → pane::<Ty>().color(X).on_click(f)
+    match expr {
+        Expr::MethodCall(mc) => {
+            let receiver = turbofish_root_call(&mc.receiver, ty);
+            let method = &mc.method;
+            let turbofish = &mc.turbofish;
+            let args = &mc.args;
+            quote! { #receiver.#method #turbofish(#args) }
+        }
+        Expr::Call(call) => {
+            let func = &call.func;
+            let args = &call.args;
+            quote! { #func::<#ty>(#args) }
+        }
+        _ => quote! { #expr },
+    }
+}
+
+fn expand_stmt(stmt: &UiStmt, app_type: Option<&Type>) -> TokenStream2 {
     match stmt {
         UiStmt::Widget { expr, children } => {
-            if let Some(block) = children {
-                let children_expr = expand_block(block);
-                quote! {
-                    __children.push(#expr.children(#children_expr).into());
+            if let Some(ty) = app_type {
+                let typed_expr = turbofish_root_call(expr, ty);
+                if let Some(block) = children {
+                    let children_expr = expand_block(block, app_type);
+                    quote! {
+                        __children.push(#typed_expr.children(#children_expr));
+                    }
+                } else {
+                    quote! {
+                        __children.push(#typed_expr);
+                    }
                 }
             } else {
-                quote! {
-                    __children.push(#expr.into());
+                if let Some(block) = children {
+                    let children_expr = expand_block(block, app_type);
+                    quote! {
+                        __children.push(#expr.children(#children_expr));
+                    }
+                } else {
+                    quote! {
+                        __children.push(#expr);
+                    }
                 }
             }
         }
         UiStmt::If { cond, body } => {
-            let stmts: Vec<_> = body.stmts.iter().map(|s| expand_stmt(s)).collect();
+            let stmts: Vec<_> = body.stmts.iter().map(|s| expand_stmt(s, app_type)).collect();
             quote! {
                 if #cond {
                     #(#stmts)*
@@ -172,7 +236,7 @@ fn expand_stmt(stmt: &UiStmt) -> TokenStream2 {
             }
         }
         UiStmt::For { pat, iter, body } => {
-            let stmts: Vec<_> = body.stmts.iter().map(|s| expand_stmt(s)).collect();
+            let stmts: Vec<_> = body.stmts.iter().map(|s| expand_stmt(s, app_type)).collect();
             quote! {
                 for #pat in #iter {
                     #(#stmts)*
@@ -193,15 +257,15 @@ fn expand_stmt(stmt: &UiStmt) -> TokenStream2 {
             children,
         } => {
             if let Some(block) = children {
-                let children_expr = expand_block(block);
+                let children_expr = expand_block(block, app_type);
                 quote! {
                     let #pat = #widget_expr.children(#children_expr);
-                    __children.push(#pat.into());
+                    __children.push(#pat);
                 }
             } else {
                 quote! {
                     let #pat = #widget_expr;
-                    __children.push(#pat.into());
+                    __children.push(#pat);
                 }
             }
         }
@@ -210,26 +274,30 @@ fn expand_stmt(stmt: &UiStmt) -> TokenStream2 {
 
 /// Builds a UI node tree.
 ///
+/// Optionally accepts a leading type annotation `Type;` to enable closure
+/// parameter inference: `view! { Self; col() { pane().on_click(|app, _| ...) } }`
+///
 /// If there is exactly one top-level widget, returns `Node<A>` directly.
 /// Otherwise returns `Vec<Node<A>>`.
 #[proc_macro]
 pub fn view(input: TokenStream) -> TokenStream {
-    let block = syn::parse_macro_input!(input as UiBlock);
+    let ViewInput { app_type, block } = syn::parse_macro_input!(input as ViewInput);
+    let ty_ref = app_type.as_ref();
 
     // Single top-level widget → return Node<A> directly
     if block.stmts.len() == 1 {
         if let UiStmt::Widget { expr, children } = &block.stmts[0] {
             let expanded = if let Some(child_block) = children {
-                let children_expr = expand_block(child_block);
-                quote! { #expr.children(#children_expr).into() }
+                let children_expr = expand_block(child_block, ty_ref);
+                quote! { #expr.children(#children_expr) }
             } else {
-                quote! { #expr.into() }
+                quote! { #expr }
             };
             return TokenStream::from(expanded);
         }
     }
 
-    let expanded = expand_block(&block);
+    let expanded = expand_block(&block, ty_ref);
     TokenStream::from(expanded)
 }
 
@@ -250,7 +318,7 @@ pub fn view(input: TokenStream) -> TokenStream {
 // a struct-level attribute:
 //   #[builders(owner = "PaneNode<A: App>", access = "self.style")]
 
-use syn::{Data, DeriveInput, Fields, Type};
+use syn::{Data, DeriveInput, Fields};
 
 #[proc_macro_derive(Builders, attributes(builder, builders))]
 pub fn derive_builders(input: TokenStream) -> TokenStream {
