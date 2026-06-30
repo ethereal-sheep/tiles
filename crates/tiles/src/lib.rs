@@ -28,7 +28,7 @@ pub use rect::{Rect, RoundedRect};
 #[cfg(feature = "runtime")]
 pub use runner::{App, State};
 pub use shape::{Fill, Shape, Stroke, StrokePosition};
-pub use text::{AnchorBox, AnchorCorner, Text};
+pub use text::Text;
 pub use tiles_macros::ui;
 pub use ui::{text, Node};
 

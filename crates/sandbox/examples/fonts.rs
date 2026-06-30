@@ -11,7 +11,6 @@ use tiles::{
         MONO_SPLEEN_12X24, MONO_SPLEEN_16X32, MONO_SPLEEN_32X64, MONO_SPLEEN_5X8, MONO_SPLEEN_8X16,
         TINY5_4X5, TOM_THUMB_3X5,
     },
-    AnchorCorner::TopLeft,
     App, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Shape, State,
     StrokePosition::Middle,
     Text,
@@ -123,7 +122,7 @@ impl App for FontDemo {
         let header = format!("[{}/{}]", self.font_index + 1, FONTS.len());
         let test = Text::new(font, "Hello World")
             .position(start_x, start_y - line_height)
-            .anchor(tiles::AnchorBox::Tight, TopLeft);
+            .tight().top_left();
         let bounds = test.bounds().offset(1);
         state.draw_screen(
             bounds

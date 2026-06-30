@@ -4,18 +4,25 @@ use crate::drawable::Drawable;
 use crate::font::Font;
 use crate::rect::Rect;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum AnchorBox {
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub(crate) enum AnchorBox {
+    #[default]
     Highlight,
     Tight,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum AnchorCorner {
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
+pub(crate) enum AnchorCorner {
+    #[default]
     TopLeft,
     TopRight,
     BottomLeft,
     BottomRight,
+    TopCenter,
+    BottomCenter,
+    CenterLeft,
+    CenterRight,
+    Center,
 }
 
 pub struct Text {
@@ -44,8 +51,8 @@ impl Text {
             font,
             content,
             position: (0.0, 0.0),
-            anchor_box: AnchorBox::Highlight,
-            anchor_corner: AnchorCorner::TopLeft,
+            anchor_box: AnchorBox::default(),
+            anchor_corner: AnchorCorner::default(),
             gap_override: None,
             color: Color::linear(1.0, 1.0, 1.0, 1.0),
             color_map: None,
@@ -61,11 +68,56 @@ impl Text {
         self
     }
 
-    pub fn anchor(mut self, anchor_box: AnchorBox, anchor_corner: AnchorCorner) -> Self {
-        self.anchor_box = anchor_box;
-        self.anchor_corner = anchor_corner;
+    pub fn tight(mut self) -> Self {
+        self.anchor_box = AnchorBox::Tight;
         self
     }
+
+    pub fn top_left(mut self) -> Self {
+        self.anchor_corner = AnchorCorner::TopLeft;
+        self
+    }
+
+    pub fn top_right(mut self) -> Self {
+        self.anchor_corner = AnchorCorner::TopRight;
+        self
+    }
+
+    pub fn bottom_left(mut self) -> Self {
+        self.anchor_corner = AnchorCorner::BottomLeft;
+        self
+    }
+
+    pub fn bottom_right(mut self) -> Self {
+        self.anchor_corner = AnchorCorner::BottomRight;
+        self
+    }
+
+    pub fn top_center(mut self) -> Self {
+        self.anchor_corner = AnchorCorner::TopCenter;
+        self
+    }
+
+    pub fn bottom_center(mut self) -> Self {
+        self.anchor_corner = AnchorCorner::BottomCenter;
+        self
+    }
+
+    pub fn center_left(mut self) -> Self {
+        self.anchor_corner = AnchorCorner::CenterLeft;
+        self
+    }
+
+    pub fn center_right(mut self) -> Self {
+        self.anchor_corner = AnchorCorner::CenterRight;
+        self
+    }
+
+    pub fn center(mut self) -> Self {
+        self.anchor_corner = AnchorCorner::Center;
+        self
+    }
+
 
     pub fn gap(mut self, gap: usize) -> Self {
         self.gap_override = Some(gap);
@@ -148,11 +200,19 @@ impl Text {
             ),
         };
 
+        let half_w = box_w / 2.0;
+        let half_h = box_h / 2.0;
+
         match self.anchor_corner {
             AnchorCorner::TopLeft => (-box_offset_x, -box_offset_y),
             AnchorCorner::TopRight => (-box_w - box_offset_x, -box_offset_y),
             AnchorCorner::BottomLeft => (-box_offset_x, -box_h - box_offset_y),
             AnchorCorner::BottomRight => (-box_w - box_offset_x, -box_h - box_offset_y),
+            AnchorCorner::TopCenter => (-half_w - box_offset_x, -box_offset_y),
+            AnchorCorner::BottomCenter => (-half_w - box_offset_x, -box_h - box_offset_y),
+            AnchorCorner::CenterLeft => (-box_offset_x, -half_h - box_offset_y),
+            AnchorCorner::CenterRight => (-box_w - box_offset_x, -half_h - box_offset_y),
+            AnchorCorner::Center => (-half_w - box_offset_x, -half_h - box_offset_y),
         }
     }
 
@@ -473,7 +533,7 @@ mod tests {
     fn text_anchor_top_right() {
         let t = Text::new(&TOM_THUMB_3X5, "Hi")
             .position(50.0, 10.0)
-            .anchor(AnchorBox::Highlight, AnchorCorner::TopRight);
+            .top_right();
 
         let mut cells = Vec::new();
         t.emit_cells(&mut |c| cells.push(c));
@@ -491,7 +551,8 @@ mod tests {
     fn text_anchor_tight() {
         let at_origin = Text::new(&TOM_THUMB_3X5, "A")
             .position(0.0, 0.0)
-            .anchor(AnchorBox::Tight, AnchorCorner::TopLeft);
+            .tight()
+            .top_left();
 
         let mut cells = Vec::new();
         at_origin.emit_cells(&mut |c| cells.push(c));
@@ -513,7 +574,7 @@ mod tests {
     fn text_anchor_bottom_left() {
         let t = Text::new(&TOM_THUMB_3X5, "Hi")
             .position(10.0, 50.0)
-            .anchor(AnchorBox::Highlight, AnchorCorner::BottomLeft);
+            .bottom_left();
 
         let mut cells = Vec::new();
         t.emit_cells(&mut |c| cells.push(c));
@@ -537,7 +598,7 @@ mod tests {
     fn text_anchor_bottom_right() {
         let t = Text::new(&TOM_THUMB_3X5, "Hi")
             .position(50.0, 50.0)
-            .anchor(AnchorBox::Highlight, AnchorCorner::BottomRight);
+            .bottom_right();
 
         let mut cells = Vec::new();
         t.emit_cells(&mut |c| cells.push(c));
@@ -561,7 +622,7 @@ mod tests {
     fn text_anchor_bottom_left_with_flip_y() {
         let t = Text::new(&TOM_THUMB_3X5, "Hi")
             .position(0.0, 0.0)
-            .anchor(AnchorBox::Highlight, AnchorCorner::BottomLeft);
+            .bottom_left();
 
         let mut cells = Vec::new();
         t.flip_y().emit_cells(&mut |c| cells.push(c));
@@ -580,7 +641,7 @@ mod tests {
     fn text_anchor_bottom_right_with_flip_y() {
         let t = Text::new(&TOM_THUMB_3X5, "Hi")
             .position(0.0, 0.0)
-            .anchor(AnchorBox::Highlight, AnchorCorner::BottomRight);
+            .bottom_right();
 
         let mut cells = Vec::new();
         t.flip_y().emit_cells(&mut |c| cells.push(c));
@@ -599,7 +660,7 @@ mod tests {
     fn text_anchor_top_left_with_flip_y() {
         let t = Text::new(&TOM_THUMB_3X5, "Hi")
             .position(0.0, 0.0)
-            .anchor(AnchorBox::Highlight, AnchorCorner::TopLeft);
+            .top_left();
 
         let mut cells = Vec::new();
         t.flip_y().emit_cells(&mut |c| cells.push(c));
@@ -615,24 +676,121 @@ mod tests {
     }
 
     #[test]
+    fn text_anchor_center() {
+        let t = Text::new(&TOM_THUMB_3X5, "Hi")
+            .position(50.0, 50.0)
+            .center();
+
+        let mut cells = Vec::new();
+        t.emit_cells(&mut |c| cells.push(c));
+        assert!(!cells.is_empty());
+
+        let min_x = cells.iter().map(|c| c.position.x).fold(f32::MAX, f32::min);
+        let max_x = cells.iter().map(|c| c.position.x).fold(f32::MIN, f32::max);
+        let min_y = cells.iter().map(|c| c.position.y).fold(f32::MAX, f32::min);
+        let max_y = cells.iter().map(|c| c.position.y).fold(f32::MIN, f32::max);
+
+        assert!(min_x < 50.0 && max_x >= 50.0, "Center should straddle x");
+        assert!(min_y < 50.0 && max_y >= 50.0, "Center should straddle y");
+    }
+
+    #[test]
+    fn text_anchor_top_center() {
+        let t = Text::new(&TOM_THUMB_3X5, "Hi")
+            .position(50.0, 10.0)
+            .top_center();
+
+        let mut cells = Vec::new();
+        t.emit_cells(&mut |c| cells.push(c));
+        assert!(!cells.is_empty());
+
+        let min_x = cells.iter().map(|c| c.position.x).fold(f32::MAX, f32::min);
+        let max_x = cells.iter().map(|c| c.position.x).fold(f32::MIN, f32::max);
+
+        assert!(min_x < 50.0 && max_x >= 50.0, "TopCenter should straddle x");
+        for cell in &cells {
+            assert!(cell.position.y >= 10.0, "TopCenter cells should be at or below anchor y");
+        }
+    }
+
+    #[test]
+    fn text_anchor_bottom_center() {
+        let t = Text::new(&TOM_THUMB_3X5, "Hi")
+            .position(50.0, 50.0)
+            .bottom_center();
+
+        let mut cells = Vec::new();
+        t.emit_cells(&mut |c| cells.push(c));
+        assert!(!cells.is_empty());
+
+        let min_x = cells.iter().map(|c| c.position.x).fold(f32::MAX, f32::min);
+        let max_x = cells.iter().map(|c| c.position.x).fold(f32::MIN, f32::max);
+
+        assert!(min_x < 50.0 && max_x >= 50.0, "BottomCenter should straddle x");
+        for cell in &cells {
+            assert!(cell.position.y <= 50.0, "BottomCenter cells should be at or above anchor y");
+        }
+    }
+
+    #[test]
+    fn text_anchor_center_left() {
+        let t = Text::new(&TOM_THUMB_3X5, "Hi")
+            .position(10.0, 50.0)
+            .center_left();
+
+        let mut cells = Vec::new();
+        t.emit_cells(&mut |c| cells.push(c));
+        assert!(!cells.is_empty());
+
+        let min_y = cells.iter().map(|c| c.position.y).fold(f32::MAX, f32::min);
+        let max_y = cells.iter().map(|c| c.position.y).fold(f32::MIN, f32::max);
+
+        assert!(min_y < 50.0 && max_y >= 50.0, "CenterLeft should straddle y");
+        for cell in &cells {
+            assert!(cell.position.x >= 10.0, "CenterLeft cells should be at or right of anchor x");
+        }
+    }
+
+    #[test]
+    fn text_anchor_center_right() {
+        let t = Text::new(&TOM_THUMB_3X5, "Hi")
+            .position(50.0, 50.0)
+            .center_right();
+
+        let mut cells = Vec::new();
+        t.emit_cells(&mut |c| cells.push(c));
+        assert!(!cells.is_empty());
+
+        let min_y = cells.iter().map(|c| c.position.y).fold(f32::MAX, f32::min);
+        let max_y = cells.iter().map(|c| c.position.y).fold(f32::MIN, f32::max);
+
+        assert!(min_y < 50.0 && max_y >= 50.0, "CenterRight should straddle y");
+        for cell in &cells {
+            assert!(cell.position.x <= 50.0, "CenterRight cells should be at or left of anchor x");
+        }
+    }
+
+    #[test]
     fn text_origin_is_position_invariant_of_anchor() {
         let pos = (25.0, 30.0);
-        let corners = [
-            AnchorCorner::TopLeft,
-            AnchorCorner::TopRight,
-            AnchorCorner::BottomLeft,
-            AnchorCorner::BottomRight,
+
+        let builders: Vec<Text> = vec![
+            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).top_left(),
+            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).top_right(),
+            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).bottom_left(),
+            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).bottom_right(),
+            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).top_center(),
+            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).bottom_center(),
+            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).center_left(),
+            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).center_right(),
+            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).center(),
         ];
 
-        for corner in corners {
-            let t = Text::new(&TOM_THUMB_3X5, "Hi")
-                .position(pos.0, pos.1)
-                .anchor(AnchorBox::Highlight, corner);
+        for t in &builders {
             assert_eq!(
                 t.origin(),
                 Some(pos),
-                "origin() should equal position regardless of anchor corner {:?}",
-                corner
+                "origin() should equal position regardless of anchor"
             );
         }
     }

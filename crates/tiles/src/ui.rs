@@ -219,7 +219,6 @@ impl<A: App> Node<A> {
                 let fills_row = matches!(self.style.w, Sizing::Fill);
                 let fills_col = matches!(self.style.h, Sizing::Fill);
                 let text = Text::new(font, &text_str)
-                    .anchor(crate::AnchorBox::Highlight, crate::AnchorCorner::TopLeft)
                     .position(0.0, 0.0);
                 ProcessedNode {
                     #[cfg(test)]

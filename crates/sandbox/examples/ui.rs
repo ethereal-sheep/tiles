@@ -136,13 +136,14 @@ impl App for Demo {
 
     fn draw(&mut self, state: &mut State) {
         let elapsed = state.elapsed();
-        let text_pos = glam::Vec2::from_angle(elapsed * PI) * 10.0;
+        let text_pos = glam::Vec2::from_angle(elapsed * PI / 2.0) * 30.0;
         state.draw_world(
             Text::new(&TINY5_4X5, "Hello World")
-                .anchor(tiles::AnchorBox::Highlight, tiles::AnchorCorner::BottomLeft)
+                .center()
                 .map_position(move |i, _c| {
                     (0.0, 0.5 * f32::sin((elapsed + i as f32 * 10.0) * (10.0)))
-                }), // .position(text_pos.x, text_pos.y),
+                })
+                .position(text_pos.x, text_pos.y),
         );
         state.draw_world(Cell::new(0.0, 0.0).color(Color::rgb8(0, 0, 0)));
     }
