@@ -264,7 +264,7 @@ impl State {
         let max_x = self.camera.position.x + half_w + 1.0;
         let min_y = self.camera.position.y - half_h - 1.0;
         let max_y = self.camera.position.y + half_h + 1.0;
-        drawable.emit_cells(&mut |cell| {
+        drawable.flip_y().emit_cells(&mut |cell| {
             if cell.position.x >= min_x
                 && cell.position.x <= max_x
                 && cell.position.y >= min_y
@@ -294,7 +294,7 @@ impl State {
         let max_x = self.camera.position.x + self.camera.viewport_width / 2.0 + 1.0;
         let min_y = self.camera.position.y - self.camera.viewport_height / 2.0 - 1.0;
         let max_y = self.camera.position.y + self.camera.viewport_height / 2.0 + 1.0;
-        drawable.emit_cells(&mut |cell| {
+        drawable.flip_y().emit_cells(&mut |cell| {
             if cell.position.x >= min_x
                 && cell.position.x <= max_x
                 && cell.position.y >= min_y

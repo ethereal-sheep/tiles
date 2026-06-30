@@ -28,7 +28,7 @@ impl Line {
 }
 
 impl Drawable for Line {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
         if self.width == 0 {
             return;
         }

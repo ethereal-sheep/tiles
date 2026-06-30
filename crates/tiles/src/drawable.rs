@@ -1,15 +1,29 @@
 use crate::cell::Cell;
 use crate::color::Color;
 
-pub struct DrawableWrapper<F>
-where
-    F: Fn(&mut dyn FnMut(Cell)),
-{
-    emit_cells: F,
+pub struct Mapped<T: Drawable, F: Fn(Cell) -> Cell> {
+    inner: T,
+    map: F,
 }
 
 pub trait Drawable {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell));
+    fn origin(&self) -> Option<(f32, f32)> {
+        None
+    }
+
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell));
+
+    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
+        if let Some((ox, oy)) = self.origin() {
+            self.emit_local_cells(&mut |mut cell| {
+                cell.position.x += ox;
+                cell.position.y += oy;
+                f(cell);
+            });
+        } else {
+            self.emit_local_cells(f);
+        }
+    }
 
     fn to_cells(&self) -> Vec<Cell> {
         let mut cells = vec![];
@@ -17,7 +31,14 @@ pub trait Drawable {
         cells
     }
 
-    fn color(self, c: Color) -> DrawableWrapper<impl Fn(&mut dyn FnMut(Cell))>
+    fn map_cell(self, map: impl Fn(Cell) -> Cell) -> Mapped<Self, impl Fn(Cell) -> Cell>
+    where
+        Self: Sized,
+    {
+        Mapped { inner: self, map }
+    }
+
+    fn color(self, c: Color) -> Mapped<Self, impl Fn(Cell) -> Cell>
     where
         Self: Sized,
     {
@@ -27,41 +48,114 @@ pub trait Drawable {
         })
     }
 
-    fn map_cell(self, map: impl Fn(Cell) -> Cell) -> DrawableWrapper<impl Fn(&mut dyn FnMut(Cell))>
+    fn flip_y(self) -> Mapped<Self, impl Fn(Cell) -> Cell>
     where
         Self: Sized,
     {
-        DrawableWrapper {
-            emit_cells: move |out: &mut dyn FnMut(Cell)| {
-                self.emit_cells(&mut |cell| {
-                    out(map(cell));
-                });
-            },
-        }
+        self.map_cell(|mut cell| {
+            cell.position.y = -cell.position.y;
+            cell
+        })
+    }
+
+    fn flip_x(self) -> Mapped<Self, impl Fn(Cell) -> Cell>
+    where
+        Self: Sized,
+    {
+        self.map_cell(|mut cell| {
+            cell.position.x = -cell.position.x;
+            cell
+        })
+    }
+
+    fn rotate_90_cw(self) -> Mapped<Self, impl Fn(Cell) -> Cell>
+    where
+        Self: Sized,
+    {
+        self.map_cell(|mut cell| {
+            let (x, y) = (cell.position.x, cell.position.y);
+            cell.position.x = -y;
+            cell.position.y = x;
+            cell
+        })
+    }
+
+    fn rotate_90_ccw(self) -> Mapped<Self, impl Fn(Cell) -> Cell>
+    where
+        Self: Sized,
+    {
+        self.map_cell(|mut cell| {
+            let (x, y) = (cell.position.x, cell.position.y);
+            cell.position.x = y;
+            cell.position.y = -x;
+            cell
+        })
+    }
+
+    fn rotate_180(self) -> Mapped<Self, impl Fn(Cell) -> Cell>
+    where
+        Self: Sized,
+    {
+        self.map_cell(|mut cell| {
+            cell.position.x = -cell.position.x;
+            cell.position.y = -cell.position.y;
+            cell
+        })
+    }
+
+    fn translate(self, dx: f32, dy: f32) -> Mapped<Self, impl Fn(Cell) -> Cell>
+    where
+        Self: Sized,
+    {
+        self.map_cell(move |mut cell| {
+            cell.position.x += dx;
+            cell.position.y += dy;
+            cell
+        })
+    }
+
+    fn translate_x(self, dx: f32) -> Mapped<Self, impl Fn(Cell) -> Cell>
+    where
+        Self: Sized,
+    {
+        self.translate(dx, 0.0)
+    }
+
+    fn translate_y(self, dy: f32) -> Mapped<Self, impl Fn(Cell) -> Cell>
+    where
+        Self: Sized,
+    {
+        self.translate(0.0, dy)
     }
 }
 
-impl<F: Fn(&mut dyn FnMut(Cell))> Drawable for DrawableWrapper<F> {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
-        (self.emit_cells)(f);
+impl<T: Drawable, F: Fn(Cell) -> Cell> Drawable for Mapped<T, F> {
+    fn origin(&self) -> Option<(f32, f32)> {
+        self.inner.origin()
+    }
+
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
+        self.inner.emit_local_cells(&mut |cell| {
+            f((self.map)(cell));
+        });
     }
 }
 
 impl Drawable for Cell {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
         f(*self);
     }
 }
 
 impl<A: Drawable, B: Drawable> Drawable for (A, B) {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
         self.0.emit_cells(f);
         self.1.emit_cells(f);
     }
 }
 
 impl<A: Drawable, B: Drawable, C: Drawable> Drawable for (A, B, C) {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
         self.0.emit_cells(f);
         self.1.emit_cells(f);
         self.2.emit_cells(f);
@@ -69,7 +163,7 @@ impl<A: Drawable, B: Drawable, C: Drawable> Drawable for (A, B, C) {
 }
 
 impl<D: Drawable> Drawable for Vec<D> {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
         for d in self {
             d.emit_cells(f);
         }
@@ -77,207 +171,10 @@ impl<D: Drawable> Drawable for Vec<D> {
 }
 
 impl<D: Drawable, const N: usize> Drawable for [D; N] {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
         for d in self {
             d.emit_cells(f);
         }
-    }
-}
-
-pub struct Transformed<T: Transformable + Sized> {
-    flip_x: bool,
-    flip_y: bool,
-    rotate_90: bool,
-    rotate_180: bool,
-    translate: (f32, f32),
-    inner: T,
-}
-
-pub trait Transformable {
-    fn original_position(&self) -> (f32, f32);
-    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell));
-
-    fn transformed(self) -> Transformed<Self>
-    where
-        Self: Sized,
-    {
-        Transformed {
-            flip_x: false,
-            flip_y: false,
-            rotate_90: false,
-            rotate_180: false,
-            translate: (0.0, 0.0),
-            inner: self,
-        }
-    }
-
-    fn flip_y(self) -> Transformed<Self>
-    where
-        Self: Sized,
-    {
-        self.transformed().flip_y()
-    }
-
-    fn flip_x(self) -> Transformed<Self>
-    where
-        Self: Sized,
-    {
-        self.transformed().flip_x()
-    }
-
-    fn rotate_90_cw(self) -> Transformed<Self>
-    where
-        Self: Sized,
-    {
-        self.transformed().rotate_90_cw()
-    }
-
-    fn rotate_90_ccw(self) -> Transformed<Self>
-    where
-        Self: Sized,
-    {
-        self.transformed().rotate_90_ccw()
-    }
-
-    fn rotate_180(self) -> Transformed<Self>
-    where
-        Self: Sized,
-    {
-        self.transformed().rotate_180()
-    }
-
-    fn translate(self, dx: f32, dy: f32) -> Transformed<Self>
-    where
-        Self: Sized,
-    {
-        self.transformed().translate(dx, dy)
-    }
-
-    fn translate_x(self, dx: f32) -> Transformed<Self>
-    where
-        Self: Sized,
-    {
-        self.transformed().translate_x(dx)
-    }
-
-    fn translate_y(self, dy: f32) -> Transformed<Self>
-    where
-        Self: Sized,
-    {
-        self.transformed().translate_y(dy)
-    }
-}
-
-impl<T: Transformable> Transformed<T> {
-    fn flip_y(mut self) -> Transformed<T> {
-        self.flip_y = !self.flip_y;
-        self
-    }
-
-    fn flip_x(mut self) -> Transformed<T> {
-        self.flip_x = !self.flip_x;
-        self
-    }
-
-    fn rotate_90_cw(mut self) -> Transformed<T> {
-        match (self.rotate_180, self.rotate_90) {
-            (false, false) => {
-                self.rotate_90 = true;
-            } // 0 -> 90
-            (false, true) => {
-                self.rotate_180 = true;
-                self.rotate_90 = false;
-            } // 90 -> 180
-            (true, false) => {
-                self.rotate_180 = true;
-                self.rotate_90 = true;
-            } // 180 -> 270
-            (true, true) => {
-                self.rotate_180 = false;
-                self.rotate_90 = false;
-            } // 270 -> 0
-        }
-        self
-    }
-
-    fn rotate_90_ccw(mut self) -> Transformed<T> {
-        match (self.rotate_180, self.rotate_90) {
-            (false, false) => {
-                self.rotate_180 = true;
-                self.rotate_90 = true;
-            } // 0 -> 270
-            (false, true) => {
-                self.rotate_90 = false;
-            } // 90 -> 0
-            (true, false) => {
-                self.rotate_90 = true;
-            } // 180 -> 90
-            (true, true) => {
-                self.rotate_180 = false;
-            } // 270 -> 180
-        }
-        self
-    }
-
-    fn rotate_180(mut self) -> Transformed<T> {
-        self.rotate_180 = !self.rotate_180;
-        self
-    }
-
-    fn translate(self, dx: f32, dy: f32) -> Transformed<T> {
-        self.translate_x(dx).translate_y(dy)
-    }
-
-    fn translate_x(mut self, dx: f32) -> Transformed<T> {
-        self.translate.0 += dx;
-        self
-    }
-
-    fn translate_y(mut self, dy: f32) -> Transformed<T> {
-        self.translate.1 += dy;
-        self
-    }
-}
-
-impl<T: Transformable> Drawable for T {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
-        let position = self.original_position();
-        self.emit_local_cells(&mut |mut cell| {
-            cell.position.x += position.0;
-            cell.position.y += position.1;
-            f(cell);
-        });
-    }
-}
-
-impl<T: Transformable> Drawable for Transformed<T> {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
-        let position = self.inner.original_position();
-        self.inner.emit_local_cells(&mut |mut cell| {
-            if self.flip_x {
-                cell.position.x = -cell.position.x;
-            }
-            if self.flip_y {
-                cell.position.y = -cell.position.y;
-            }
-            if self.rotate_90 {
-                let (nx, ny) = (-cell.position.y, cell.position.x);
-                cell.position.x = nx;
-                cell.position.y = ny;
-            }
-            if self.rotate_180 {
-                let (nx, ny) = (-cell.position.x, -cell.position.y);
-                cell.position.x = nx;
-                cell.position.y = ny;
-            }
-
-            cell.position.x += self.translate.0;
-            cell.position.y += self.translate.1;
-
-            cell.position.x += position.0;
-            cell.position.y += position.1;
-            f(cell);
-        });
     }
 }
 
@@ -304,9 +201,9 @@ mod tests {
         }
     }
 
-    impl Transformable for TestShape {
-        fn original_position(&self) -> (f32, f32) {
-            self.origin
+    impl Drawable for TestShape {
+        fn origin(&self) -> Option<(f32, f32)> {
+            Some(self.origin)
         }
 
         fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
@@ -390,23 +287,23 @@ mod tests {
         assert_eq!(cells[0].position, Vec3::new(4.0, 5.0, 0.0));
     }
 
-    // --- Transformable: base emit ---
+    // --- Origin ---
 
     #[test]
-    fn transformable_adds_origin() {
+    fn drawable_adds_origin() {
         let s = TestShape::at((10.0, 20.0), vec![(1.0, 2.0)]);
         let pos = positions(&s);
         assert!(approx_eq(pos[0], (11.0, 22.0)));
     }
 
     #[test]
-    fn transformable_zero_origin() {
+    fn drawable_zero_origin() {
         let s = TestShape::unit();
         let pos = positions(&s);
         assert!(approx_eq(pos[0], (1.0, 0.0)));
     }
 
-    // --- Transformed: translate ---
+    // --- Translate ---
 
     #[test]
     fn translate_x() {
@@ -436,7 +333,7 @@ mod tests {
         assert!(approx_eq(pos[0], (16.0, 16.0)));
     }
 
-    // --- Transformed: flip ---
+    // --- Flip ---
 
     #[test]
     fn flip_x() {
@@ -468,11 +365,10 @@ mod tests {
         assert!(approx_eq(pos[0], (0.0, 5.0)));
     }
 
-    // --- Transformed: rotate ---
+    // --- Rotate ---
 
     #[test]
     fn rotate_90_cw() {
-        // (1, 0) -> rotate_90 flag: (-y, x) = (0, 1)
         let s = TestShape::unit().rotate_90_cw();
         let pos = positions(&s);
         assert!(approx_eq(pos[0], (0.0, 1.0)));
@@ -480,8 +376,6 @@ mod tests {
 
     #[test]
     fn rotate_90_ccw() {
-        // (1, 0) -> 270 = rotate_180 + rotate_90
-        // rotate_90: (-y, x) = (0, 1), then rotate_180: (0, -1)
         let s = TestShape::unit().rotate_90_ccw();
         let pos = positions(&s);
         assert!(approx_eq(pos[0], (0.0, -1.0)));
@@ -489,7 +383,6 @@ mod tests {
 
     #[test]
     fn rotate_180() {
-        // (1, 0) -> (-1, 0)
         let s = TestShape::unit().rotate_180();
         let pos = positions(&s);
         assert!(approx_eq(pos[0], (-1.0, 0.0)));
@@ -520,7 +413,7 @@ mod tests {
         assert!(approx_eq(pos[0], (1.0, 0.0)));
     }
 
-    // --- Transformed: combined ---
+    // --- Combined ---
 
     #[test]
     fn flip_x_then_translate() {
@@ -549,7 +442,34 @@ mod tests {
     fn transform_with_origin_offset() {
         let s = TestShape::at((5.0, 5.0), vec![(1.0, 0.0)]).flip_x();
         let pos = positions(&s);
-        // flip_x negates local x: -1, then adds origin: (-1+5, 0+5) = (4, 5)
         assert!(approx_eq(pos[0], (4.0, 5.0)));
+    }
+
+    // --- Chaining color + transforms ---
+
+    #[test]
+    fn color_then_flip() {
+        let s = TestShape::at((0.0, 0.0), vec![(1.0, 2.0)])
+            .color(Color::linear(1.0, 0.0, 0.0, 1.0))
+            .flip_y();
+        let cells = s.to_cells();
+        assert_eq!(cells[0].color, [1.0, 0.0, 0.0, 1.0]);
+        assert!(approx_eq(
+            (cells[0].position.x, cells[0].position.y),
+            (1.0, -2.0)
+        ));
+    }
+
+    #[test]
+    fn flip_then_color() {
+        let s = TestShape::at((0.0, 0.0), vec![(1.0, 2.0)])
+            .flip_y()
+            .color(Color::linear(0.0, 1.0, 0.0, 1.0));
+        let cells = s.to_cells();
+        assert_eq!(cells[0].color, [0.0, 1.0, 0.0, 1.0]);
+        assert!(approx_eq(
+            (cells[0].position.x, cells[0].position.y),
+            (1.0, -2.0)
+        ));
     }
 }

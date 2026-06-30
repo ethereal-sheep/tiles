@@ -1,10 +1,11 @@
 use core::f32;
+use std::f32::consts::PI;
 
 use tiles::{
     font::TINY5_4X5,
     ui,
     ui::{col, pane, row, text, Node},
-    App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, State, Text, Transformable,
+    App, Cell, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, State, Text,
 };
 
 const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
@@ -135,17 +136,16 @@ impl App for Demo {
 
     fn draw(&mut self, state: &mut State) {
         let elapsed = state.elapsed();
+        let text_pos = glam::Vec2::from_angle(elapsed * PI) * 10.0;
         state.draw_world(
             Text::new(&TINY5_4X5, "Hello World")
-                .anchor(
-                    tiles::AnchorBox::Highlight,
-                    tiles::AnchorCorner::BottomRight,
-                )
                 .map_position(move |i, _c| {
                     (0.0, 0.5 * f32::sin((elapsed + i as f32 * 10.0) * (10.0)))
                 })
-                .color(Color::rgb8(0, 0, 0))
-                .flip_y(),
+                .position(text_pos.x, text_pos.y)
+                .rotate_180()
+                .flip_y()
+                .flip_x(),
         );
         state.draw_world(Cell::new(0.0, 0.0).color(Color::rgb8(0, 0, 0)));
     }

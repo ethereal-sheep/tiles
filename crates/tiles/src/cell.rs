@@ -67,7 +67,7 @@ impl Rotation {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Default)]
 pub struct Cell {
     pub position: Vec3,
     pub color: [f32; 4],
@@ -208,7 +208,9 @@ mod tests {
     #[test]
     fn is_opaque_check() {
         assert!(Cell::new(0.0, 0.0).is_opaque());
-        assert!(!Cell::new(0.0, 0.0).color(Color::linear(1.0, 1.0, 1.0, 0.5)).is_opaque());
+        assert!(!Cell::new(0.0, 0.0)
+            .color(Color::linear(1.0, 1.0, 1.0, 0.5))
+            .is_opaque());
     }
 
     #[test]

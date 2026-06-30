@@ -1,6 +1,6 @@
 use crate::cell::Cell;
 use crate::color::Color;
-use crate::drawable::Transformable;
+use crate::drawable::Drawable;
 use crate::font::Font;
 use crate::rect::Rect;
 
@@ -169,9 +169,9 @@ impl Text {
     }
 }
 
-impl Transformable for Text {
-    fn original_position(&self) -> (f32, f32) {
-        self.layout_origin()
+impl Drawable for Text {
+    fn origin(&self) -> Option<(f32, f32)> {
+        Some(self.layout_origin())
     }
 
     fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {

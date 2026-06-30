@@ -34,7 +34,7 @@ pub struct Fill<S> {
 }
 
 impl<S: Shape> Drawable for Fill<S> {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
         self.inner.fill_cells(&mut |x, y| f(Cell::new(x, y)));
     }
 }
@@ -46,7 +46,7 @@ pub struct Stroke<S> {
 }
 
 impl<S: Shape> Drawable for Stroke<S> {
-    fn emit_cells(&self, f: &mut dyn FnMut(Cell)) {
+    fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
         if self.width == 0 {
             return;
         }
