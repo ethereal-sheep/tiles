@@ -45,7 +45,7 @@ pub struct State {
     screen_overlay_cells: Vec<Cell>,
     config: Config,
     camera: Camera,
-    input: InputState,
+    pub(crate) input: InputState,
     window_bg: [f32; 4],
     viewport_bg: [f32; 4],
     ambient_illumination: f32,

@@ -116,6 +116,12 @@ pub(crate) struct InputState {
     pub scroll_delta: f32,
     pub keys_states: HashMap<KeyCode, ButtonState>,
     pub mouse_buttons_states: HashMap<MouseButton, ButtonState>,
+    pub drag_capture: Option<DragCapture>,
+}
+
+pub(crate) struct DragCapture {
+    pub id: String,
+    pub rect: crate::rect::Rect,
 }
 
 impl InputState {
@@ -130,6 +136,7 @@ impl InputState {
             scroll_delta: 0.0,
             keys_states: HashMap::new(),
             mouse_buttons_states: HashMap::new(),
+            drag_capture: None,
         }
     }
 

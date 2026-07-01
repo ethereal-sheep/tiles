@@ -1,6 +1,7 @@
 use core::f32;
 use std::f32::consts::PI;
 
+use glam::Vec2;
 use tiles::{
     font::TINY5_4X5,
     ui::{col, pane, row, text, Node},
@@ -20,6 +21,7 @@ struct Demo {
     count: i32,
     items: Vec<Color>,
     show_panel: bool,
+    pos: glam::Vec2,
 }
 
 impl App for Demo {
@@ -31,97 +33,115 @@ impl App for Demo {
 
     fn ui(&self, _state: &State) -> Node<Self> {
         let row_count = 20;
+        let pos = self.pos;
+        let elapsed = _state.elapsed();
         view! { Self;
-            col().padding(16).gap(4).fill_w().fill_h() {
-                // Title bar
-                row().fill_w().padding(1).gap(1).color(PANEL_BG) {
-                    pane()
-                        .align_center()
-                        .fill_w()
-                        .color(BTN_COLOR)
-                        .hover_color(BTN_HOVER)
-                        .pressed_color(BTN_PRESS)
-                        .text_color(INDICATOR)
-                        .on_press(|app, _state| { app.count += 1; })
-                        .on_hold(|app, _state| { app.count += 1; }) {
-                            text("+").font(&TINY5_4X5).padding(1)
+            col().fill_w().fill_h() {
+                col().padding(16).gap(4).fill_w().fill_h() {
+                    // Title bar
+                    row().fill_w().padding(1).gap(1).color(PANEL_BG) {
+                        pane()
+                            .align_center()
+                            .fill_w()
+                            .color(BTN_COLOR)
+                            .hover_color(BTN_HOVER)
+                            .pressed_color(BTN_PRESS)
+                            .text_color(INDICATOR)
+                            .on_press(|app, _state| { app.count += 1; })
+                            .on_hold(|app, _state| { app.count += 1; }) {
+                                text("+").font(&TINY5_4X5).padding(1)
+                        }
+                        pane()
+                            .align_center()
+                            .fill_w()
+                            .color(BTN_COLOR)
+                            .hover_color(BTN_HOVER)
+                            .pressed_color(BTN_PRESS)
+                            .text_color(RED)
+                            .on_press(|app, _state| { app.count -= 1; })
+                            .on_hold(|app, _state| { app.count -= 1; }) {
+                                text("-").font(&TINY5_4X5).padding(1)
+                        }
+                        pane()
+                            .align_center()
+                            .fill_w()
+                            .color(BTN_COLOR)
+                            .hover_color(BTN_HOVER)
+                            .pressed_color(BTN_PRESS)
+                            .on_click(|app, _state| { app.count = 0; }) {
+                                text("clear").font(&TINY5_4X5).padding(1)
+                        }
                     }
-                    pane()
-                        .align_center()
-                        .fill_w()
-                        .color(BTN_COLOR)
-                        .hover_color(BTN_HOVER)
-                        .pressed_color(BTN_PRESS)
-                        .text_color(RED)
-                        .on_press(|app, _state| { app.count -= 1; })
-                        .on_hold(|app, _state| { app.count -= 1; }) {
-                            text("-").font(&TINY5_4X5).padding(1)
-                    }
-                    pane()
-                        .align_center()
-                        .fill_w()
-                        .color(BTN_COLOR)
-                        .hover_color(BTN_HOVER)
-                        .pressed_color(BTN_PRESS)
-                        .on_click(|app, _state| { app.count = 0; }) {
-                            text("clear").font(&TINY5_4X5).padding(1)
-                    }
-                }
 
-                // Counter indicator
-                col().gap(1) {
-                    @ for j in 0..=(self.count.unsigned_abs().saturating_sub(1) / row_count) {
-                        row().gap(1) {
-                            @ for i in 0..row_count {
-                                @ if j * row_count + i < self.count.unsigned_abs() {
-                                    pane().size(4, 8).color(
-                                        if self.count > 0 {
-                                            INDICATOR
-                                        } else {
-                                            RED
-                                        }
-                                    );
+                    // Counter indicator
+                    col().gap(1) {
+                        @ for j in 0..=(self.count.unsigned_abs().saturating_sub(1) / row_count) {
+                            row().gap(1) {
+                                @ for i in 0..row_count {
+                                    @ if j * row_count + i < self.count.unsigned_abs() {
+                                        pane().size(4, 8).color(
+                                            if self.count > 0 {
+                                                INDICATOR
+                                            } else {
+                                                RED
+                                            }
+                                        );
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-                // Toggle pane
-                pane()
-                    .size(30, 10)
-                    .color(if self.show_panel { BLUE } else { BTN_COLOR })
-                    .hover_color(BTN_HOVER)
-                    .pressed_color(BTN_PRESS)
-                    .on_click(|app, _state| { app.show_panel = !app.show_panel; });
+                    // Toggle pane
+                    pane()
+                        .size(30, 10)
+                        .color(if self.show_panel { BLUE } else { BTN_COLOR })
+                        .hover_color(BTN_HOVER)
+                        .pressed_color(BTN_PRESS)
+                        .on_click(|app, _state| { app.show_panel = !app.show_panel; });
 
-                // Conditional panel
-                @ if self.show_panel {
-                    col().padding(3).gap(2).color(PANEL_BG) {
-                        @ for (i, color) in self.items.iter().enumerate() {
+                    // Conditional panel
+                    @ if self.show_panel {
+                        col().padding(3).gap(2).color(PANEL_BG) {
+                            @ for (i, color) in self.items.iter().enumerate() {
+                                pane()
+                                    .size(40, 8)
+                                    .color(*color)
+                                    .hover_color(BTN_HOVER)
+                                    .pressed_color(BTN_PRESS)
+                                    .on_click(move |app, _state| {
+                                        app.items.remove(i);
+                                    });
+                            }
                             pane()
                                 .size(40, 8)
-                                .color(*color)
+                                .color(BTN_COLOR)
                                 .hover_color(BTN_HOVER)
                                 .pressed_color(BTN_PRESS)
-                                .on_click(move |app, _state| {
-                                    app.items.remove(i);
+                                .on_click(|app, _state| {
+                                    let c = match app.items.len() % 3 {
+                                        0 => RED,
+                                        1 => BLUE,
+                                        _ => INDICATOR,
+                                    };
+                                    app.items.push(c);
                                 });
                         }
-                        pane()
-                            .size(40, 8)
-                            .color(BTN_COLOR)
-                            .hover_color(BTN_HOVER)
-                            .pressed_color(BTN_PRESS)
-                            .on_click(|app, _state| {
-                                let c = match app.items.len() % 3 {
-                                    0 => RED,
-                                    1 => BLUE,
-                                    _ => INDICATOR,
-                                };
-                                app.items.push(c);
-                            });
                     }
+                }
+
+                // Draggable pane
+                pane()
+                    .id("yo")
+                    .absolute(pos.x, pos.y)
+                    .size(60, 40)
+                    .color(PANEL_BG)
+                    .hover_color(BTN_HOVER)
+                    .pressed_color(BTN_PRESS)
+                    .on_drag(|app, _state, drag| {
+                        app.pos += drag.delta_screen;
+                    }) {
+                        text("drag me").font(&TINY5_4X5).padding(2)
                 }
             }
         }
@@ -163,6 +183,7 @@ fn main() {
         count: 0,
         items: vec![RED, BLUE, INDICATOR],
         show_panel: true,
+        pos: Vec2::new(100.0, 100.0),
     };
 
     tiles::run(demo, config).unwrap();

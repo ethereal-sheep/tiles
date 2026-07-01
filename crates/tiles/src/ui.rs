@@ -48,8 +48,8 @@ pub enum Sizing {
 pub enum Position {
     #[default]
     Flow,
-    Relative(i32, i32),
-    Absolute(i32, i32),
+    Relative(f32, f32),
+    Absolute(f32, f32),
 }
 
 // --- Styles ---
@@ -82,8 +82,8 @@ pub struct Style {
     #[builder(variant(name = "align_center", variant = "Center"))]
     #[builder(variant(name = "align_end", variant = "End"))]
     pub align: Align,
-    #[builder(variant(name = "relative", variant = "Relative", args = "x: i32, y: i32"))]
-    #[builder(variant(name = "absolute", variant = "Absolute", args = "x: i32, y: i32"))]
+    #[builder(variant(name = "relative", variant = "Relative", args = "x: f32, y: f32"))]
+    #[builder(variant(name = "absolute", variant = "Absolute", args = "x: f32, y: f32"))]
     pub position: Position,
     pub z_index: i32,
     pub color: Option<Color>,
@@ -167,7 +167,6 @@ pub struct Size {
 
 /// Intermediate tree produced by the pre-process pass, consumed by the size pass
 struct ProcessedNode<A: App> {
-    #[cfg(test)]
     id: String,
     style: Style,
     handlers: Handlers<A>,
@@ -178,7 +177,6 @@ struct ProcessedNode<A: App> {
 
 /// Intermediate tree produced by the size pass, consumed by the position pass
 pub struct SizedNode<A: App> {
-    #[cfg(test)]
     id: String,
     style: Style,
     handlers: Handlers<A>,
@@ -205,24 +203,33 @@ impl<A: App> Node<A> {
 
     /// Entry point: three-pass layout (pre-process → size → position)
     pub(crate) fn layout(self, screen_w: u32, screen_h: u32) -> ResolvedNode<A> {
-        let processed = self.pre_process(None.unwrap_or_default());
+        let processed = self.pre_process(None.unwrap_or_default(), "0");
         let sized = processed.size_pass(screen_w, screen_h);
-        sized.position_pass(0, 0)
+        sized.position_pass(0.0, 0.0)
+    }
+
+    fn resolve_id(&self, parent_path: &str, index: usize) -> String {
+        if !self.id.is_empty() {
+            return self.id.clone();
+        }
+        match self.style.position {
+            Position::Absolute(x, y) => format!("{parent_path}/abs({x},{y})"),
+            Position::Relative(x, y) => format!("{parent_path}/rel({x},{y})"),
+            Position::Flow => format!("{parent_path}/{index}"),
+        }
     }
 
     /// Pass 0: resolve font inheritance, marshal text, and compute effective fill info.
-    fn pre_process(self, parent_font: &'static Font) -> ProcessedNode<A> {
+    fn pre_process(self, parent_font: &'static Font, path: &str) -> ProcessedNode<A> {
         let font = self.style.font.unwrap_or(parent_font);
 
         match self.content {
             NodeContent::Text(text_str) => {
                 let fills_row = matches!(self.style.w, Sizing::Fill);
                 let fills_col = matches!(self.style.h, Sizing::Fill);
-                let text = Text::new(font, &text_str)
-                    .position(0.0, 0.0);
+                let text = Text::new(font, &text_str).position(0.0, 0.0);
                 ProcessedNode {
-                    #[cfg(test)]
-                    id: self.id,
+                    id: path.to_string(),
                     style: self.style,
                     handlers: self.handlers,
                     fills_row,
@@ -231,8 +238,14 @@ impl<A: App> Node<A> {
                 }
             }
             NodeContent::Children(children) => {
-                let processed_children: Vec<ProcessedNode<A>> =
-                    children.into_iter().map(|c| c.pre_process(font)).collect();
+                let processed_children: Vec<ProcessedNode<A>> = children
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, c)| {
+                        let child_path = c.resolve_id(path, i);
+                        c.pre_process(font, &child_path)
+                    })
+                    .collect();
 
                 let fills_row = match self.style.w {
                     Sizing::Fill => true,
@@ -246,8 +259,7 @@ impl<A: App> Node<A> {
                 };
 
                 ProcessedNode {
-                    #[cfg(test)]
-                    id: self.id,
+                    id: path.to_string(),
                     style: self.style,
                     handlers: self.handlers,
                     fills_row,
@@ -286,11 +298,13 @@ impl<A: App> ProcessedNode<A> {
                     Sizing::Shrink => intrinsic_h,
                 };
                 SizedNode {
-                    #[cfg(test)]
                     id: self.id,
                     style: self.style,
                     handlers: self.handlers,
-                    size: Size { width: w, height: h },
+                    size: Size {
+                        width: w,
+                        height: h,
+                    },
                     content: NodeContent::Text(text),
                 }
             }
@@ -465,7 +479,6 @@ impl<A: App> ProcessedNode<A> {
                 };
 
                 SizedNode {
-                    #[cfg(test)]
                     id: self.id,
                     style: self.style,
                     handlers: self.handlers,
@@ -482,10 +495,10 @@ impl<A: App> ProcessedNode<A> {
 
 impl<A: App> SizedNode<A> {
     /// Pass 2: assign positions to produce the final ResolvedNode tree.
-    fn position_pass(self, origin_x: i32, origin_y: i32) -> ResolvedNode<A> {
+    fn position_pass(self, origin_x: f32, origin_y: f32) -> ResolvedNode<A> {
         let (x, y) = match self.style.position {
-            Position::Flow => (origin_x, origin_y),
-            Position::Relative(rx, ry) => (origin_x + rx, origin_y + ry),
+            Position::Flow => (origin_x as f32, origin_y as f32),
+            Position::Relative(rx, ry) => (origin_x as f32 + rx, origin_y as f32 + ry),
             Position::Absolute(ax, ay) => (ax, ay),
         };
 
@@ -511,13 +524,11 @@ impl<A: App> SizedNode<A> {
                     Align::End => content_h as i32 - text_h as i32,
                 };
 
-                let text_x = x + padding as i32 + text_offset_x;
-                let text_y = y + padding as i32 + text_offset_y;
-                let text = text.position(text_x as f32, text_y as f32);
-                let rect =
-                    Rect::from_top_left(x as f32, y as f32, self.size.width, self.size.height);
+                let text_x = x + padding as f32 + text_offset_x as f32;
+                let text_y = y + padding as f32 + text_offset_y as f32;
+                let text = text.position(text_x, text_y);
+                let rect = Rect::from_top_left(x, y, self.size.width, self.size.height);
                 ResolvedNode {
-                    #[cfg(test)]
                     id: self.id,
                     rect,
                     style: self.style,
@@ -531,8 +542,8 @@ impl<A: App> SizedNode<A> {
                 let gap = self.style.gap.unwrap_or(0);
                 let justify = self.style.justify;
                 let align = self.style.align;
-                let content_x = x + padding as i32;
-                let content_y = y + padding as i32;
+                let content_x = x + padding as f32;
+                let content_y = y + padding as f32;
                 let content_w = self.size.width.saturating_sub(padding * 2);
                 let content_h = self.size.height.saturating_sub(padding * 2);
 
@@ -598,8 +609,14 @@ impl<A: App> SizedNode<A> {
                     };
 
                     let (child_origin_x, child_origin_y) = match axis {
-                        Axis::Row => (content_x + main_cursor, content_y + cross_offset),
-                        Axis::Column => (content_x + cross_offset, content_y + main_cursor),
+                        Axis::Row => (
+                            content_x + main_cursor as f32,
+                            content_y + cross_offset as f32,
+                        ),
+                        Axis::Column => (
+                            content_x + cross_offset as f32,
+                            content_y + main_cursor as f32,
+                        ),
                     };
                     let resolved = child.position_pass(child_origin_x, child_origin_y);
 
@@ -614,10 +631,8 @@ impl<A: App> SizedNode<A> {
                     resolved_children.push(resolved);
                 }
 
-                let rect =
-                    Rect::from_top_left(x as f32, y as f32, self.size.width, self.size.height);
+                let rect = Rect::from_top_left(x, y, self.size.width, self.size.height);
                 ResolvedNode {
-                    #[cfg(test)]
                     id: self.id,
                     rect,
                     style: self.style,
@@ -660,7 +675,6 @@ pub fn text<A: App>(content: impl Into<String>) -> Node<A> {
 // --- Layout ---
 
 pub(crate) struct ResolvedNode<A: App> {
-    #[cfg(test)]
     id: String,
     rect: Rect,
     style: Style,
@@ -695,7 +709,16 @@ impl<A: App> ResolvedNode<A> {
         text_color: Option<Color>,
         depth: f32,
     ) {
-        let hit = state.test_shape_screen(&self.rect);
+        let is_captured = state
+            .input
+            .drag_capture
+            .as_ref()
+            .is_some_and(|c| c.id == self.id);
+        let hit = if is_captured {
+            state.test_shape_screen(&state.input.drag_capture.as_ref().unwrap().rect)
+        } else {
+            state.test_shape_screen(&self.rect)
+        };
 
         let color = if hit.is_down() {
             self.style
@@ -760,6 +783,12 @@ impl<A: App> ResolvedNode<A> {
                 }
             }
             if hit.is_pressed() {
+                if self.handlers.on_drag.is_some() {
+                    state.input.drag_capture = Some(crate::input::DragCapture {
+                        id: self.id.clone(),
+                        rect: self.rect,
+                    });
+                }
                 if let Some(f) = self.handlers.on_press {
                     f(app, state);
                     consumed.left = true;
@@ -789,6 +818,9 @@ impl<A: App> ResolvedNode<A> {
                     consumed.left = true;
                 }
             }
+        }
+        if is_captured && hit.is_drag_end().is_some() {
+            state.input.drag_capture = None;
         }
         if !consumed.right {
             if hit.is_right_clicked() {
@@ -1057,7 +1089,7 @@ mod tests {
     fn absolute_position_skips_cursor() {
         let node: Node<TestApp> = col().children(vec![
             row().size(10, 10),
-            row().id("abs").size(5, 5).absolute(50, 50),
+            row().id("abs").size(5, 5).absolute(50.0, 50.0),
             row().id("flow2").size(10, 10),
         ]);
         let resolved = node.layout(256, 256);
@@ -1075,7 +1107,7 @@ mod tests {
     fn relative_position() {
         let node: Node<TestApp> = col()
             .padding(5)
-            .children(vec![row().size(10, 10).relative(3, 3)]);
+            .children(vec![row().size(10, 10).relative(3.0, 3.0)]);
         let resolved = node.layout(256, 256);
         // Child positioned at parent cursor (5,5) + relative offset (3,3) = (8,8)
         let child = resolved.find_child_by_index(0).unwrap();
@@ -1329,20 +1361,19 @@ mod tests {
 
     #[test]
     fn positioned_node_tested_before_flow() {
-        let node =
-            col().size(50, 50).children(vec![
-                row()
-                    .size(20, 20)
-                    .color(RED)
-                    .on_click(|app: &mut TestApp, _state| {
-                        app.count += 1;
-                    }),
-                row().size(20, 20).color(BLUE).absolute(0, 0).on_click(
-                    |app: &mut TestApp, _state| {
-                        app.count += 10;
-                    },
-                ),
-            ]);
+        let node = col().size(50, 50).children(vec![
+            row()
+                .size(20, 20)
+                .color(RED)
+                .on_click(|app: &mut TestApp, _state| {
+                    app.count += 1;
+                }),
+            row().size(20, 20).color(BLUE).absolute(0.0, 0.0).on_click(
+                |app: &mut TestApp, _state| {
+                    app.count += 10;
+                },
+            ),
+        ]);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(5.0, 5.0); // inside both
@@ -1941,14 +1972,11 @@ mod tests {
 
     #[test]
     fn justify_space_between_row() {
-        let node: Node<TestApp> = row()
-            .width(100)
-            .justify_full()
-            .children(vec![
-                pane().size(20, 10),
-                pane().size(20, 10),
-                pane().size(20, 10),
-            ]);
+        let node: Node<TestApp> = row().width(100).justify_full().children(vec![
+            pane().size(20, 10),
+            pane().size(20, 10),
+            pane().size(20, 10),
+        ]);
         let resolved = node.layout(256, 256);
         // leftover = 100 - 60 = 40, gap = 40 / 2 = 20
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 0.0);
@@ -1996,9 +2024,7 @@ mod tests {
 
     #[test]
     fn align_start_is_default() {
-        let node: Node<TestApp> = row()
-            .size(100, 60)
-            .children(vec![pane().size(20, 20)]);
+        let node: Node<TestApp> = row().size(100, 60).children(vec![pane().size(20, 20)]);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 0.0);
     }

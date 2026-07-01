@@ -188,12 +188,9 @@ impl Shape for Rect {
     }
 
     fn fill_cells(&self, f: &mut impl FnMut(f32, f32)) {
-        let x0 = self.x.floor() as i32;
-        let y0 = self.y.floor() as i32;
-
         for y in 0..self.h as i32 {
             for x in 0..self.w as i32 {
-                f((x0 + x) as f32, (y0 + y) as f32);
+                f(self.x + x as f32, self.y + y as f32);
             }
         }
     }
@@ -203,21 +200,19 @@ impl Shape for Rect {
             return;
         }
 
-        let x0 = self.x.floor() as i32;
-        let y0 = self.y.floor() as i32;
         let w = self.w as i32;
         let h = self.h as i32;
 
         for x in 0..w {
-            f((x0 + x) as f32, y0 as f32);
+            f(self.x + x as f32, self.y);
             if h > 1 {
-                f((x0 + x) as f32, (y0 + h - 1) as f32);
+                f(self.x + x as f32, self.y + (h - 1) as f32);
             }
         }
         for y in 1..(h - 1) {
-            f(x0 as f32, (y0 + y) as f32);
+            f(self.x, self.y + y as f32);
             if w > 1 {
-                f((x0 + w - 1) as f32, (y0 + y) as f32);
+                f(self.x + (w - 1) as f32, self.y + y as f32);
             }
         }
     }
