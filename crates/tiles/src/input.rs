@@ -160,6 +160,8 @@ impl InputState {
         for (_, state) in self.mouse_buttons_states.iter_mut() {
             state.reset();
         }
+        self.prev_mouse_screen_pos = self.mouse_screen_pos;
+        self.prev_mouse_world_pos = self.mouse_world_pos;
     }
 
     pub fn is_key_down(&self, key: KeyCode) -> bool {

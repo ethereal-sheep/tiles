@@ -140,6 +140,7 @@ impl App for Demo {
                     .pressed_color(BTN_PRESS)
                     .on_drag(|app, _state, drag| {
                         app.pos += drag.delta_screen;
+                        eprintln!("{}", drag.delta_screen.x);
                     }) {
                         text("drag me").font(&TINY5_4X5).padding(2)
                 }
