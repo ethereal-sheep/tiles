@@ -16,6 +16,7 @@ mod renderer;
 #[cfg(feature = "runtime")]
 mod runner;
 mod shape;
+mod size;
 mod text;
 pub mod ui {
     pub use crate::node::{col, pane, row, text};
@@ -35,6 +36,7 @@ pub use rect::{Rect, RoundedRect};
 #[cfg(feature = "runtime")]
 pub use runner::{App, State};
 pub use shape::{Fill, Shape, Stroke, StrokePosition};
+pub use size::Size;
 pub use text::Text;
 
 #[doc(hidden)]

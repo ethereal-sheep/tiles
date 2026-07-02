@@ -8,8 +8,8 @@ pub struct Config {
     pub title: String,
     pub resizable: bool,
     pub vsync: bool,
-    pub viewport_width: f32,
-    pub viewport_height: f32,
+    pub viewport_width: u32,
+    pub viewport_height: u32,
     pub steps_per_second: u32,
     #[serde(skip)]
     pub(crate) file_path: Option<PathBuf>,
@@ -25,8 +25,8 @@ impl Default for Config {
             title: String::from("Tiles"),
             resizable: true,
             vsync: true,
-            viewport_width: 128.0,
-            viewport_height: 128.0,
+            viewport_width: 128,
+            viewport_height: 128,
             steps_per_second: 120,
             file_path: None,
             no_file: false,
@@ -51,7 +51,9 @@ impl Config {
     }
 
     fn resolve_path(&self) -> PathBuf {
-        self.file_path.clone().unwrap_or_else(|| PathBuf::from("tiles.toml"))
+        self.file_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("tiles.toml"))
     }
 }
 
@@ -85,7 +87,7 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn viewport(mut self, width: f32, height: f32) -> Self {
+    pub fn viewport(mut self, width: u32, height: u32) -> Self {
         self.config.viewport_width = width;
         self.config.viewport_height = height;
         self
@@ -115,7 +117,10 @@ impl ConfigBuilder {
 }
 
 fn merge_with_file(defaults: Config) -> Config {
-    let path = defaults.file_path.clone().unwrap_or_else(|| PathBuf::from("tiles.toml"));
+    let path = defaults
+        .file_path
+        .clone()
+        .unwrap_or_else(|| PathBuf::from("tiles.toml"));
     let content = match std::fs::read_to_string(&path) {
         Ok(c) => c,
         Err(_) => return defaults,
@@ -142,11 +147,11 @@ fn merge_with_file(defaults: Config) -> Config {
         if let Some(v) = table.get("vsync").and_then(|v| v.as_bool()) {
             config.vsync = v;
         }
-        if let Some(v) = table.get("viewport_width").and_then(|v| v.as_float()) {
-            config.viewport_width = v as f32;
+        if let Some(v) = table.get("viewport_width").and_then(|v| v.as_integer()) {
+            config.viewport_width = v as u32;
         }
-        if let Some(v) = table.get("viewport_height").and_then(|v| v.as_float()) {
-            config.viewport_height = v as f32;
+        if let Some(v) = table.get("viewport_height").and_then(|v| v.as_integer()) {
+            config.viewport_height = v as u32;
         }
         if let Some(v) = table.get("steps_per_second").and_then(|v| v.as_integer()) {
             config.steps_per_second = v as u32;

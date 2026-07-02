@@ -578,7 +578,7 @@ fn main() {
         .title("Palette Partition")
         .width(512)
         .height(512)
-        .viewport(256.0, 256.0)
+        .viewport(256, 256)
         .no_file()
         .build();
 

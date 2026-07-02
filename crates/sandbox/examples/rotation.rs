@@ -267,7 +267,7 @@ fn main() {
         .title("Rotation Wave Demo")
         .width(900)
         .height(900)
-        .viewport(64.0, 64.0)
+        .viewport(64, 64)
         .no_file()
         .build();
 

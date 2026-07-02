@@ -5,6 +5,7 @@ use crate::font::Font;
 use crate::input::ConsumedState;
 use crate::rect::Rect;
 use crate::runner::{App, State};
+use crate::size::Size;
 use crate::{Drawable, Shape, Text};
 use tiles_macros::Builders;
 
@@ -156,13 +157,6 @@ impl<N> From<String> for NodeContent<N, String> {
     fn from(string: String) -> Self {
         NodeContent::Text(string)
     }
-}
-
-/// Resolved dimensions after the size pass
-#[derive(Debug, Clone, Copy)]
-struct Size {
-    pub width: u32,
-    pub height: u32,
 }
 
 /// Intermediate tree produced by the pre-process pass, consumed by the size pass

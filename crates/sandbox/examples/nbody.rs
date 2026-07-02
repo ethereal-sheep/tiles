@@ -300,7 +300,7 @@ fn main() {
         .title("N-Body")
         .width(900)
         .height(900)
-        .viewport(256.0, 256.0)
+        .viewport(256, 256)
         .no_file()
         .build();
 

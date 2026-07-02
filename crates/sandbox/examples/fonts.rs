@@ -98,13 +98,13 @@ impl App for FontDemo {
     fn update(&mut self, state: &mut State) {
         let (_, font) = FONTS[self.font_index];
         let max_chars = SAMPLE_LINES.iter().map(|l| l.len()).max().unwrap_or(10);
-        let text_width = max_chars as f32 * font.char_advance('A') as f32;
-        let line_height = font.height as f32 + 2.0;
-        let text_height = (SAMPLE_LINES.len() as f32 + 2.0) * line_height;
+        let text_width = max_chars * font.char_advance('A');
+        let line_height = font.height + 2;
+        let text_height = (SAMPLE_LINES.len() + 2) * line_height;
 
-        let vp_w = (text_width + 20.0).max(128.0);
-        let vp_h = (text_height + 20.0).max(128.0);
-        state.set_viewport(vp_w, vp_h);
+        let vp_w = (text_width + 20).max(128);
+        let vp_h = (text_height + 20).max(128);
+        state.set_viewport(vp_w as u32, vp_h as u32);
 
         let pixels_per_cell = 4u32;
         let win_w = vp_w as u32 * pixels_per_cell;
@@ -122,7 +122,8 @@ impl App for FontDemo {
         let header = format!("[{}/{}]", self.font_index + 1, FONTS.len());
         let test = Text::new(font, "Hello World")
             .position(start_x, start_y - line_height)
-            .tight().top_left();
+            .tight()
+            .top_left();
         let bounds = test.bounds().offset(1);
         state.draw_screen(
             bounds
@@ -165,7 +166,7 @@ fn main() {
         .title("Fonts")
         .width(1200)
         .height(800)
-        .viewport(256.0, 256.0)
+        .viewport(256, 256)
         .no_file()
         .build();
 

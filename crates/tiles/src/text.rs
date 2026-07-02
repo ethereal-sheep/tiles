@@ -3,6 +3,7 @@ use crate::color::Color;
 use crate::drawable::Drawable;
 use crate::font::Font;
 use crate::rect::Rect;
+use crate::size::Size;
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub(crate) enum AnchorBox {
@@ -36,9 +37,9 @@ pub struct Text {
     color_map: Option<Box<dyn Fn(usize, char) -> Color>>,
     position_map: Option<Box<dyn Fn(usize, char) -> (f32, f32)>>,
     // Content-derived, independent of position/anchor
-    highlight_size: (u32, u32),
+    highlight_size: Size,
     tight_offset: (f32, f32), // from layout origin to tight box top-left
-    tight_size: (u32, u32),
+    tight_size: Size,
 }
 
 impl Text {
@@ -118,7 +119,6 @@ impl Text {
         self
     }
 
-
     pub fn gap(mut self, gap: usize) -> Self {
         self.gap_override = Some(gap);
         self.highlight_size = compute_highlight_box(self.font, &self.content, self.gap_override);
@@ -143,11 +143,11 @@ impl Text {
     }
 
     pub fn width(&self) -> u32 {
-        self.highlight_size.0
+        self.highlight_size.width
     }
 
     pub fn height(&self) -> u32 {
-        self.highlight_size.1
+        self.highlight_size.height
     }
 
     pub fn bounds(&self) -> Rect {
@@ -155,14 +155,19 @@ impl Text {
         Rect::from_top_left(
             ox + self.tight_offset.0,
             oy + self.tight_offset.1,
-            self.tight_size.0,
-            self.tight_size.1,
+            self.tight_size.width,
+            self.tight_size.height,
         )
     }
 
     pub fn rect(&self) -> Rect {
         let (ox, oy) = self.layout_origin();
-        Rect::from_top_left(ox, oy, self.highlight_size.0, self.highlight_size.1)
+        Rect::from_top_left(
+            ox,
+            oy,
+            self.highlight_size.width,
+            self.highlight_size.height,
+        )
     }
 
     pub fn font(&self) -> &'static Font {
@@ -187,14 +192,14 @@ impl Text {
     fn anchor_offset(&self) -> (f32, f32) {
         let (box_w, box_h, box_offset_x, box_offset_y) = match self.anchor_box {
             AnchorBox::Highlight => (
-                self.highlight_size.0 as f32,
-                self.highlight_size.1 as f32,
+                self.highlight_size.width as f32,
+                self.highlight_size.width as f32,
                 0.0,
                 0.0,
             ),
             AnchorBox::Tight => (
-                self.tight_size.0 as f32,
-                self.tight_size.1 as f32,
+                self.tight_size.width as f32,
+                self.tight_size.height as f32,
                 self.tight_offset.0,
                 self.tight_offset.1,
             ),
@@ -277,10 +282,10 @@ fn char_step(font: &Font, ch: char, gap_override: Option<usize>) -> u32 {
     w as u32 + gap as u32
 }
 
-fn compute_highlight_box(font: &Font, content: &str, gap_override: Option<usize>) -> (u32, u32) {
+fn compute_highlight_box(font: &Font, content: &str, gap_override: Option<usize>) -> Size {
     let chars: Vec<char> = content.chars().collect();
     if chars.is_empty() {
-        return (0, font.height as u32);
+        return Size::new(0, font.height as u32);
     }
 
     let mut width = 0u32;
@@ -292,7 +297,7 @@ fn compute_highlight_box(font: &Font, content: &str, gap_override: Option<usize>
         }
     }
 
-    (width, font.height as u32)
+    Size::new(width, font.height as u32)
 }
 
 fn compute_tight_info(
@@ -300,7 +305,7 @@ fn compute_tight_info(
     content: &str,
     gap_override: Option<usize>,
     position_map: Option<&dyn Fn(usize, char) -> (f32, f32)>,
-) -> ((f32, f32), (u32, u32)) {
+) -> ((f32, f32), Size) {
     let mut min_x = f32::MAX;
     let mut min_y = f32::MAX;
     let mut max_x = f32::MIN;
@@ -333,12 +338,12 @@ fn compute_tight_info(
     }
 
     if !has_pixels {
-        return ((0.0, 0.0), (0, 0));
+        return ((0.0, 0.0), Size::default());
     }
 
     let w = (max_x - min_x + 1.0) as u32;
     let h = (max_y - min_y + 1.0) as u32;
-    ((min_x, min_y), (w, h))
+    ((min_x, min_y), Size::new(w, h))
 }
 
 #[cfg(test)]
@@ -709,7 +714,10 @@ mod tests {
 
         assert!(min_x < 50.0 && max_x >= 50.0, "TopCenter should straddle x");
         for cell in &cells {
-            assert!(cell.position.y >= 10.0, "TopCenter cells should be at or below anchor y");
+            assert!(
+                cell.position.y >= 10.0,
+                "TopCenter cells should be at or below anchor y"
+            );
         }
     }
 
@@ -726,9 +734,15 @@ mod tests {
         let min_x = cells.iter().map(|c| c.position.x).fold(f32::MAX, f32::min);
         let max_x = cells.iter().map(|c| c.position.x).fold(f32::MIN, f32::max);
 
-        assert!(min_x < 50.0 && max_x >= 50.0, "BottomCenter should straddle x");
+        assert!(
+            min_x < 50.0 && max_x >= 50.0,
+            "BottomCenter should straddle x"
+        );
         for cell in &cells {
-            assert!(cell.position.y <= 50.0, "BottomCenter cells should be at or above anchor y");
+            assert!(
+                cell.position.y <= 50.0,
+                "BottomCenter cells should be at or above anchor y"
+            );
         }
     }
 
@@ -745,9 +759,15 @@ mod tests {
         let min_y = cells.iter().map(|c| c.position.y).fold(f32::MAX, f32::min);
         let max_y = cells.iter().map(|c| c.position.y).fold(f32::MIN, f32::max);
 
-        assert!(min_y < 50.0 && max_y >= 50.0, "CenterLeft should straddle y");
+        assert!(
+            min_y < 50.0 && max_y >= 50.0,
+            "CenterLeft should straddle y"
+        );
         for cell in &cells {
-            assert!(cell.position.x >= 10.0, "CenterLeft cells should be at or right of anchor x");
+            assert!(
+                cell.position.x >= 10.0,
+                "CenterLeft cells should be at or right of anchor x"
+            );
         }
     }
 
@@ -764,9 +784,15 @@ mod tests {
         let min_y = cells.iter().map(|c| c.position.y).fold(f32::MAX, f32::min);
         let max_y = cells.iter().map(|c| c.position.y).fold(f32::MIN, f32::max);
 
-        assert!(min_y < 50.0 && max_y >= 50.0, "CenterRight should straddle y");
+        assert!(
+            min_y < 50.0 && max_y >= 50.0,
+            "CenterRight should straddle y"
+        );
         for cell in &cells {
-            assert!(cell.position.x <= 50.0, "CenterRight cells should be at or left of anchor x");
+            assert!(
+                cell.position.x <= 50.0,
+                "CenterRight cells should be at or left of anchor x"
+            );
         }
     }
 
@@ -775,15 +801,33 @@ mod tests {
         let pos = (25.0, 30.0);
 
         let builders: Vec<Text> = vec![
-            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).top_left(),
-            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).top_right(),
-            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).bottom_left(),
-            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).bottom_right(),
-            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).top_center(),
-            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).bottom_center(),
-            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).center_left(),
-            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).center_right(),
-            Text::new(&TOM_THUMB_3X5, "Hi").position(pos.0, pos.1).center(),
+            Text::new(&TOM_THUMB_3X5, "Hi")
+                .position(pos.0, pos.1)
+                .top_left(),
+            Text::new(&TOM_THUMB_3X5, "Hi")
+                .position(pos.0, pos.1)
+                .top_right(),
+            Text::new(&TOM_THUMB_3X5, "Hi")
+                .position(pos.0, pos.1)
+                .bottom_left(),
+            Text::new(&TOM_THUMB_3X5, "Hi")
+                .position(pos.0, pos.1)
+                .bottom_right(),
+            Text::new(&TOM_THUMB_3X5, "Hi")
+                .position(pos.0, pos.1)
+                .top_center(),
+            Text::new(&TOM_THUMB_3X5, "Hi")
+                .position(pos.0, pos.1)
+                .bottom_center(),
+            Text::new(&TOM_THUMB_3X5, "Hi")
+                .position(pos.0, pos.1)
+                .center_left(),
+            Text::new(&TOM_THUMB_3X5, "Hi")
+                .position(pos.0, pos.1)
+                .center_right(),
+            Text::new(&TOM_THUMB_3X5, "Hi")
+                .position(pos.0, pos.1)
+                .center(),
         ];
 
         for t in &builders {

@@ -193,7 +193,7 @@ fn main() {
         .title("UI Demo")
         .width(1024)
         .height(768)
-        .viewport(256.0, 256.0)
+        .viewport(256, 256)
         .no_file()
         .build();
 

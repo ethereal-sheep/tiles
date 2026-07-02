@@ -227,7 +227,7 @@ fn main() {
         .title("Boids")
         .width(900)
         .height(900)
-        .viewport(128.0, 128.0)
+        .viewport(128, 128)
         .no_file()
         .build();
 

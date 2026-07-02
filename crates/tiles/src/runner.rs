@@ -61,7 +61,7 @@ pub struct State {
 impl State {
     fn new(config: Config) -> Self {
         let fixed_dt = Duration::from_secs_f32(1.0 / config.steps_per_second as f32);
-        let camera = Camera::new(config.viewport_width, config.viewport_height);
+        let camera = Camera::new(config.viewport_width as f32, config.viewport_height as f32);
         Self {
             window: None,
             renderer: None,
@@ -89,8 +89,8 @@ impl State {
     #[cfg(test)]
     pub(crate) fn new_for_test(viewport_w: u32, viewport_h: u32) -> Self {
         let mut config = Config::default();
-        config.viewport_width = viewport_w as f32;
-        config.viewport_height = viewport_h as f32;
+        config.viewport_width = viewport_w;
+        config.viewport_height = viewport_h;
         config.no_file = true;
         Self::new(config)
     }
@@ -129,9 +129,9 @@ impl State {
         self.camera.position
     }
 
-    pub fn set_viewport(&mut self, width: f32, height: f32) {
-        self.camera.viewport_width = width;
-        self.camera.viewport_height = height;
+    pub fn set_viewport(&mut self, width: u32, height: u32) {
+        self.camera.viewport_width = width as f32;
+        self.camera.viewport_height = height as f32;
         self.config.viewport_width = width;
         self.config.viewport_height = height;
         self.config.save();
