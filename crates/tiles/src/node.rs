@@ -1154,7 +1154,7 @@ mod tests {
         state.set_input(input);
         eval(node, &mut app, &mut state);
         assert!(app.clicked);
-        assert!(state.click_consumed_by_ui());
+        assert!(state.is_left_mouse_click_consumed_by_ui());
     }
 
     #[test]
@@ -1172,7 +1172,7 @@ mod tests {
         state.set_input(input);
         eval(node, &mut app, &mut state);
         assert!(!app.clicked);
-        assert!(!state.click_consumed_by_ui());
+        assert!(!state.is_left_mouse_click_consumed_by_ui());
     }
 
     #[test]
@@ -1323,8 +1323,8 @@ mod tests {
 
         state.set_input(input);
         eval(node, &mut app, &mut state);
-        assert!(state.click_consumed_by_ui());
-        assert!(!state.right_click_consumed_by_ui());
+        assert!(state.is_left_mouse_click_consumed_by_ui());
+        assert!(!state.is_right_mouse_click_consumed_by_ui());
     }
 
     #[test]
@@ -1368,7 +1368,7 @@ mod tests {
         state.set_input(input);
         eval(node, &mut app, &mut state);
         assert_eq!(app.scroll_amount, 3.0);
-        assert!(state.scroll_consumed_by_ui());
+        assert!(state.is_scroll_consumed_by_ui());
     }
 
     #[test]
@@ -1387,7 +1387,7 @@ mod tests {
         state.set_input(input);
         eval(node, &mut app, &mut state);
         assert!(app.clicked);
-        assert!(state.click_consumed_by_ui());
+        assert!(state.is_left_mouse_click_consumed_by_ui());
         // Hovered at click point, should use hover_color
         assert_eq!(state.get_cells()[0].color, BLUE.to_array());
     }
@@ -1495,7 +1495,7 @@ mod tests {
         state.set_input(input);
         eval(node, &mut app, &mut state);
         assert!(app.clicked);
-        assert!(state.click_consumed_by_ui());
+        assert!(state.is_left_mouse_click_consumed_by_ui());
     }
 
     #[test]

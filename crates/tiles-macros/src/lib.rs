@@ -4,7 +4,10 @@ use quote::quote;
 use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::token::Brace;
-use syn::{braced, Expr, Ident, Pat, Token, Type};
+use syn::{
+    braced, parse_macro_input, Expr, FnArg, Ident, ImplItem, ItemImpl, LitStr, Pat, Path, Token,
+    Type,
+};
 
 // =============================================================================
 // widget! macro
@@ -1215,4 +1218,90 @@ fn parse_args_list(
         result.push((ident, ty));
     }
     Ok(result)
+}
+
+struct DelegateArgs {
+    target_ty: Path,
+    getter: Ident,
+}
+
+impl Parse for DelegateArgs {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let target_ty: Path = input.parse()?;
+        input.parse::<Token![,]>()?;
+        let getter_lit: LitStr = input.parse()?;
+        let getter = Ident::new(&getter_lit.value(), getter_lit.span());
+        Ok(DelegateArgs { target_ty, getter })
+    }
+}
+
+#[proc_macro_attribute]
+pub fn delegate(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let DelegateArgs { target_ty, getter } = parse_macro_input!(attr as DelegateArgs);
+    let input = parse_macro_input!(item as ItemImpl);
+
+    let mut forwarded = Vec::new();
+
+    for member in &input.items {
+        let ImplItem::Fn(method) = member else {
+            continue;
+        };
+
+        let skip = method
+            .attrs
+            .iter()
+            .any(|a| a.path().is_ident("no_delegate"));
+        if skip {
+            continue;
+        }
+
+        let sig = &method.sig;
+
+        let is_ref_self = sig.inputs.iter().any(|a| match a {
+            FnArg::Receiver(r) => r.reference.is_some() && r.mutability.is_none(),
+            _ => false,
+        });
+        if !is_ref_self {
+            continue;
+        }
+
+        let name = &sig.ident;
+        let inputs = &sig.inputs;
+        let output = &sig.output;
+        let generics = &sig.generics;
+
+        let arg_names: Vec<_> = inputs
+            .iter()
+            .filter_map(|arg| match arg {
+                FnArg::Typed(pat_ty) => match &*pat_ty.pat {
+                    Pat::Ident(p) => Some(p.ident.clone()),
+                    _ => None,
+                },
+                FnArg::Receiver(_) => None,
+            })
+            .collect();
+
+        forwarded.push(quote! {
+            pub fn #name #generics (#inputs) #output {
+                self.#getter().#name(#(#arg_names),*)
+            }
+        });
+    }
+
+    let mut cleaned = input.clone();
+    for item in &mut cleaned.items {
+        if let ImplItem::Fn(method) = item {
+            method.attrs.retain(|a| !a.path().is_ident("no_delegate"));
+        }
+    }
+
+    let expanded = quote! {
+        #cleaned
+
+        impl #target_ty {
+            #(#forwarded)*
+        }
+    };
+
+    expanded.into()
 }

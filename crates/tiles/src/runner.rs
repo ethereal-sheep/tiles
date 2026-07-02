@@ -14,8 +14,7 @@ use crate::config::Config;
 use crate::drawable::Drawable;
 use crate::element::{self, HitState};
 use crate::input::{
-    self, ButtonState, InputState, KeyCode, KeyEvent, KeyState, MouseAction, MouseButton,
-    MouseEvent,
+    self, ButtonState, InputState, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent,
 };
 use crate::renderer::Renderer;
 use crate::shape::Shape;
@@ -198,88 +197,6 @@ impl State {
 
     pub fn set_ambient_illumination(&mut self, ambient: f32) {
         self.ambient_illumination = ambient.clamp(0.0, 1.0);
-    }
-
-    // --- Input (polled) ---
-
-    pub fn is_key_down(&self, key: KeyCode) -> bool {
-        self.input.is_key_down(key)
-    }
-
-    pub fn is_key_pressed(&self, key: KeyCode) -> bool {
-        self.input.is_key_pressed(key)
-    }
-
-    pub fn is_key_released(&self, key: KeyCode) -> bool {
-        self.input.is_key_released(key)
-    }
-
-    pub fn is_key_clicked(&self, key: KeyCode) -> bool {
-        self.input.is_key_clicked(key)
-    }
-
-    pub fn is_key_double_clicked(&self, key: KeyCode) -> bool {
-        self.input.is_key_double_clicked(key)
-    }
-
-    pub fn is_key_held(&self, key: KeyCode) -> bool {
-        self.input.is_key_held(key)
-    }
-
-    pub fn is_key_released_after_hold(&self, key: KeyCode) -> bool {
-        self.input.is_key_released_after_hold(key)
-    }
-
-    pub fn is_mouse_down(&self, mouse: MouseButton) -> bool {
-        self.input.is_mouse_down(mouse)
-    }
-
-    pub fn is_mouse_pressed(&self, mouse: MouseButton) -> bool {
-        self.input.is_mouse_pressed(mouse)
-    }
-
-    pub fn is_mouse_released(&self, mouse: MouseButton) -> bool {
-        self.input.is_mouse_released(mouse)
-    }
-
-    pub fn is_mouse_clicked(&self, mouse: MouseButton) -> bool {
-        self.input.is_mouse_clicked(mouse)
-    }
-
-    pub fn is_mouse_double_clicked(&self, mouse: MouseButton) -> bool {
-        self.input.is_mouse_double_clicked(mouse)
-    }
-
-    pub fn is_mouse_held(&self, mouse: MouseButton) -> bool {
-        self.input.is_mouse_held(mouse)
-    }
-
-    pub fn is_mouse_released_after_hold(&self, mouse: MouseButton) -> bool {
-        self.input.is_mouse_released_after_hold(mouse)
-    }
-
-    pub fn mouse_position(&self) -> Vec2 {
-        self.input.mouse_world_pos
-    }
-
-    pub fn mouse_screen_position(&self) -> Vec2 {
-        self.input.mouse_screen_pos
-    }
-
-    pub fn click_consumed_by_ui(&self) -> bool {
-        self.input.click_consumed_by_ui()
-    }
-
-    pub fn middle_click_consumed_by_ui(&self) -> bool {
-        self.input.middle_click_consumed_by_ui()
-    }
-
-    pub fn right_click_consumed_by_ui(&self) -> bool {
-        self.input.right_click_consumed_by_ui()
-    }
-
-    pub fn scroll_consumed_by_ui(&self) -> bool {
-        self.input.scroll_consumed_by_ui()
     }
 
     pub fn test_shape_world(&self, shape: &impl Shape) -> HitState {

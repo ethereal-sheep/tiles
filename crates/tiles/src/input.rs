@@ -1,5 +1,6 @@
 use glam::Vec2;
 use std::collections::HashMap;
+use tiles_macros::delegate;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum KeyCode {
@@ -143,6 +144,7 @@ pub(crate) struct DragCapture {
     pub rect: crate::rect::Rect,
 }
 
+#[delegate(crate::State, "get_input_ref")]
 impl InputState {
     pub fn new() -> Self {
         Self {
@@ -160,10 +162,12 @@ impl InputState {
         }
     }
 
+    #[no_delegate]
     pub fn begin_state_update(&mut self) {
         self.scroll_delta = 0.0;
     }
 
+    #[no_delegate]
     pub fn update(&mut self, dt: f32, elapsed: f32) {
         for (_, state) in self.keys_states.iter_mut() {
             state.update(dt, elapsed);
@@ -173,6 +177,7 @@ impl InputState {
         }
     }
 
+    #[no_delegate]
     pub fn reset(&mut self) {
         for (_, state) in self.keys_states.iter_mut() {
             state.reset();
@@ -183,6 +188,14 @@ impl InputState {
         self.prev_mouse_screen_pos = self.mouse_screen_pos;
         self.prev_mouse_world_pos = self.mouse_world_pos;
         self.consumed_state = ConsumedState::new();
+    }
+
+    pub fn mouse_position(&self) -> Vec2 {
+        self.mouse_world_pos
+    }
+
+    pub fn mouse_screen_position(&self) -> Vec2 {
+        self.mouse_screen_pos
     }
 
     pub fn is_key_down(&self, key: KeyCode) -> bool {
@@ -269,19 +282,19 @@ impl InputState {
             .is_some_and(|state| state.is_released_after_hold())
     }
 
-    pub fn click_consumed_by_ui(&self) -> bool {
+    pub fn is_left_mouse_click_consumed_by_ui(&self) -> bool {
         self.consumed_state.left
     }
 
-    pub fn right_click_consumed_by_ui(&self) -> bool {
+    pub fn is_right_mouse_click_consumed_by_ui(&self) -> bool {
         self.consumed_state.right
     }
 
-    pub fn middle_click_consumed_by_ui(&self) -> bool {
+    pub fn is_middle_mouse_click_consumed_by_ui(&self) -> bool {
         self.consumed_state.middle
     }
 
-    pub fn scroll_consumed_by_ui(&self) -> bool {
+    pub fn is_scroll_consumed_by_ui(&self) -> bool {
         self.consumed_state.scroll
     }
 }
