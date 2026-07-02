@@ -190,7 +190,7 @@ impl InputState {
         self.consumed_state = ConsumedState::new();
     }
 
-    pub fn mouse_position(&self) -> Vec2 {
+    pub fn mouse_world_position(&self) -> Vec2 {
         self.mouse_world_pos
     }
 

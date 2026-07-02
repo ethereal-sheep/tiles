@@ -73,7 +73,7 @@ impl App for LightingDemo {
 
         // Mouse light (follows cursor)
         if state.is_mouse_down(MouseButton::Left) {
-            let pos = state.mouse_position();
+            let pos = state.mouse_world_position();
             state.draw_world(
                 Cell::new(pos.x, pos.y)
                     .color(Color::linear(1.0, 0.95, 0.8, 1.0))

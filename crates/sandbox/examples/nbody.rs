@@ -231,7 +231,7 @@ impl App for NBodySim {
 
         // Draw drag line preview
         if let Some(start) = self.drag_start {
-            let end = state.mouse_position();
+            let end = state.mouse_world_position();
             let dir = end - start;
             let len = dir.length();
             if len > 1.0 {

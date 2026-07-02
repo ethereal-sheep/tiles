@@ -115,7 +115,7 @@ impl App for FireDemo {
         self.time += dt;
 
         if state.is_mouse_down(MouseButton::Left) {
-            self.fire_pos = state.mouse_position();
+            self.fire_pos = state.mouse_world_position();
         }
 
         let rate = (self.spawn_rate as f32 * self.intensity) as u32;

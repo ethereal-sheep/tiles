@@ -140,13 +140,13 @@ impl App for Boids {
 
             // Mouse attraction
             if state.is_mouse_down(MouseButton::Left) {
-                let target = state.mouse_position();
+                let target = state.mouse_world_position();
                 let to_target = target - self.flock[i].pos;
                 accel += to_target * 3.0;
             }
             // Mouse repulsion
             if state.is_mouse_down(MouseButton::Right) {
-                let target = state.mouse_position();
+                let target = state.mouse_world_position();
                 let away = self.flock[i].pos - target;
                 let dist = away.length().max(1.0);
                 accel += away / dist * 80.0;

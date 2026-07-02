@@ -69,7 +69,7 @@ impl App for Sandbox {
 
         // Spawn particles
         if state.is_mouse_down(MouseButton::Left) {
-            let origin = state.mouse_position();
+            let origin = state.mouse_world_position();
             for i in 0..self.spawn_rate {
                 let p = self.spawn(origin, t, i);
                 self.particles.push(p);
