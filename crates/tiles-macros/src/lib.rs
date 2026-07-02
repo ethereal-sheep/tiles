@@ -2,35 +2,37 @@ use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::quote;
 use syn::parse::{Parse, ParseStream};
+use syn::spanned::Spanned;
 use syn::token::Brace;
 use syn::{braced, Expr, Ident, Pat, Token, Type};
 
 // =============================================================================
-// view! macro
+// widget! macro
 // =============================================================================
 
-struct ViewInput {
+struct WidgetInput {
     app_type: Option<Type>,
     block: UiBlock,
 }
 
-impl Parse for ViewInput {
+impl Parse for WidgetInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         // Try to parse `Type;` prefix
-        let app_type = if input.peek(Token![self]) || input.peek(syn::Ident) || input.peek(Token![Self]) {
-            let fork = input.fork();
-            if fork.parse::<Type>().is_ok() && fork.peek(Token![;]) {
-                let ty: Type = input.parse()?;
-                input.parse::<Token![;]>()?;
-                Some(ty)
+        let app_type =
+            if input.peek(Token![self]) || input.peek(syn::Ident) || input.peek(Token![Self]) {
+                let fork = input.fork();
+                if fork.parse::<Type>().is_ok() && fork.peek(Token![;]) {
+                    let ty: Type = input.parse()?;
+                    input.parse::<Token![;]>()?;
+                    Some(ty)
+                } else {
+                    None
+                }
             } else {
                 None
-            }
-        } else {
-            None
-        };
+            };
         let block: UiBlock = input.parse()?;
-        Ok(ViewInput { app_type, block })
+        Ok(WidgetInput { app_type, block })
     }
 }
 
@@ -60,6 +62,9 @@ enum UiStmt {
         pat: Pat,
         widget_expr: Expr,
         children: Option<UiBlock>,
+    },
+    Splice {
+        expr: Expr,
     },
 }
 
@@ -95,7 +100,11 @@ impl Parse for UiStmt {
                 let body: UiBlock = content.parse()?;
                 return Ok(UiStmt::For { pat, iter, body });
             } else {
-                return Err(input.error("expected `if` or `for` after `@`"));
+                let expr: Expr = input.parse()?;
+                if input.peek(Token![;]) {
+                    input.parse::<Token![;]>()?;
+                }
+                return Ok(UiStmt::Splice { expr });
             }
         }
 
@@ -160,10 +169,10 @@ impl Parse for UiStmt {
     }
 }
 
-fn expand_block(block: &UiBlock, app_type: Option<&Type>) -> TokenStream2 {
+fn expand_block(block: &UiBlock, app_type: Option<&Type>, in_loop: bool) -> TokenStream2 {
     let mut pushes = Vec::new();
     for stmt in &block.stmts {
-        pushes.push(expand_stmt(stmt, app_type));
+        pushes.push(expand_stmt(stmt, app_type, in_loop));
     }
     let vec_decl = if let Some(ty) = app_type {
         quote! { let mut __children: Vec<::tiles::__private::Node<#ty>> = Vec::new(); }
@@ -179,9 +188,57 @@ fn expand_block(block: &UiBlock, app_type: Option<&Type>) -> TokenStream2 {
     }
 }
 
+fn has_explicit_id(expr: &Expr) -> bool {
+    match expr {
+        Expr::MethodCall(mc) => {
+            if mc.method == "id" {
+                return true;
+            }
+            has_explicit_id(&mc.receiver)
+        }
+        _ => false,
+    }
+}
+
+fn should_inject_id(expr: &Expr) -> bool {
+    if has_explicit_id(expr) {
+        return false;
+    }
+    // Only inject on method chains (e.g. pane().size(10, 10)).
+    // For bare function calls like my_widget(), the root is a Call with
+    // no method chain — these may set their own ID internally, and
+    // resolve_id provides a fallback if they don't.
+    match expr {
+        Expr::MethodCall(_) => true,
+        Expr::Call(_) => false,
+        _ => false,
+    }
+}
+
+fn auto_id_for_expr(expr: &Expr, in_loop: bool) -> TokenStream2 {
+    if !should_inject_id(expr) {
+        return quote! {};
+    }
+    let span = match expr {
+        Expr::MethodCall(mc) => mc.receiver.span(),
+        Expr::Call(call) => call.func.span(),
+        _ => expr.span(),
+    };
+    let line = span.start().line;
+    let col = span.start().column;
+    if in_loop {
+        let base = format!("{}:{}/", line, col);
+        quote! { .id(&format!(concat!(#base, "{}"), __widget_idx)) }
+    } else {
+        let id_str = format!("{}:{}", line, col);
+        quote! { .id(#id_str) }
+    }
+}
+
 fn turbofish_root_call(expr: &Expr, ty: &Type) -> TokenStream2 {
     // Walk the method chain to find the root function call and add a turbofish.
-    // e.g. pane().color(X).on_click(f) → pane::<Ty>().color(X).on_click(f)
+    // Only turbofish method chains (needed for closure type inference).
+    // Bare function calls (user-defined widgets) are emitted as-is.
     match expr {
         Expr::MethodCall(mc) => {
             let receiver = turbofish_root_call(&mc.receiver, ty);
@@ -199,36 +256,88 @@ fn turbofish_root_call(expr: &Expr, ty: &Type) -> TokenStream2 {
     }
 }
 
-fn expand_stmt(stmt: &UiStmt, app_type: Option<&Type>) -> TokenStream2 {
+fn maybe_turbofish(expr: &Expr, ty: &Type) -> TokenStream2 {
+    match expr {
+        Expr::MethodCall(_) => turbofish_root_call(expr, ty),
+        _ => quote! { #expr },
+    }
+}
+
+fn is_bare_call_with_args(expr: &Expr) -> bool {
+    match expr {
+        Expr::Call(call) => !call.args.is_empty(),
+        _ => false,
+    }
+}
+
+fn append_children_arg(expr: &Expr, children_expr: TokenStream2) -> TokenStream2 {
+    match expr {
+        Expr::Call(call) => {
+            let func = &call.func;
+            let args = &call.args;
+            if args.is_empty() {
+                quote! { #func(#children_expr) }
+            } else {
+                quote! { #func(#args, #children_expr) }
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn append_children_arg_turbofish(
+    expr: &Expr,
+    _ty: &Type,
+    children_expr: TokenStream2,
+) -> TokenStream2 {
+    append_children_arg(expr, children_expr)
+}
+
+fn expand_stmt(stmt: &UiStmt, app_type: Option<&Type>, in_loop: bool) -> TokenStream2 {
     match stmt {
         UiStmt::Widget { expr, children } => {
-            if let Some(ty) = app_type {
-                let typed_expr = turbofish_root_call(expr, ty);
+            let auto_id = auto_id_for_expr(expr, in_loop);
+            if is_bare_call_with_args(expr) && children.is_some() {
+                let children_expr = expand_block(children.as_ref().unwrap(), app_type, in_loop);
+                let call_expr = if let Some(ty) = app_type {
+                    append_children_arg_turbofish(expr, ty, children_expr)
+                } else {
+                    append_children_arg(expr, children_expr)
+                };
+                quote! {
+                    __children.push(#call_expr #auto_id);
+                }
+            } else if let Some(ty) = app_type {
+                let typed_expr = maybe_turbofish(expr, ty);
                 if let Some(block) = children {
-                    let children_expr = expand_block(block, app_type);
+                    let children_expr = expand_block(block, app_type, in_loop);
                     quote! {
-                        __children.push(#typed_expr.children(#children_expr));
+                        __children.push(#typed_expr #auto_id.children(#children_expr));
                     }
                 } else {
                     quote! {
-                        __children.push(#typed_expr);
+                        __children.push(#typed_expr #auto_id);
                     }
                 }
             } else {
                 if let Some(block) = children {
-                    let children_expr = expand_block(block, app_type);
+                    let children_expr = expand_block(block, app_type, in_loop);
                     quote! {
-                        __children.push(#expr.children(#children_expr));
+                        __children.push(#expr #auto_id.children(#children_expr));
                     }
                 } else {
                     quote! {
-                        __children.push(#expr);
+                        __children.push(#expr #auto_id);
                     }
                 }
             }
         }
         UiStmt::If { cond, body } => {
-            let stmts: Vec<_> = body.stmts.iter().map(|s| expand_stmt(s, app_type)).collect();
+            let stmts: Vec<_> = body
+                .stmts
+                .iter()
+                .map(|s| expand_stmt(s, app_type, in_loop))
+                .collect();
             quote! {
                 if #cond {
                     #(#stmts)*
@@ -236,9 +345,13 @@ fn expand_stmt(stmt: &UiStmt, app_type: Option<&Type>) -> TokenStream2 {
             }
         }
         UiStmt::For { pat, iter, body } => {
-            let stmts: Vec<_> = body.stmts.iter().map(|s| expand_stmt(s, app_type)).collect();
+            let stmts: Vec<_> = body
+                .stmts
+                .iter()
+                .map(|s| expand_stmt(s, app_type, true))
+                .collect();
             quote! {
-                for #pat in #iter {
+                for (__widget_idx, #pat) in (#iter).into_iter().enumerate() {
                     #(#stmts)*
                 }
             }
@@ -256,49 +369,388 @@ fn expand_stmt(stmt: &UiStmt, app_type: Option<&Type>) -> TokenStream2 {
             widget_expr,
             children,
         } => {
-            if let Some(block) = children {
-                let children_expr = expand_block(block, app_type);
+            let auto_id = auto_id_for_expr(widget_expr, in_loop);
+            if is_bare_call_with_args(widget_expr) && children.is_some() {
+                let children_expr = expand_block(children.as_ref().unwrap(), app_type, in_loop);
+                let call_expr = if let Some(ty) = app_type {
+                    append_children_arg_turbofish(widget_expr, ty, children_expr)
+                } else {
+                    append_children_arg(widget_expr, children_expr)
+                };
                 quote! {
-                    let #pat = #widget_expr.children(#children_expr);
+                    let #pat = #call_expr #auto_id;
                     __children.push(#pat);
                 }
             } else {
-                quote! {
-                    let #pat = #widget_expr;
-                    __children.push(#pat);
+                if let Some(block) = children {
+                    let children_expr = expand_block(block, app_type, in_loop);
+                    quote! {
+                        let #pat = #widget_expr #auto_id.children(#children_expr);
+                        __children.push(#pat);
+                    }
+                } else {
+                    quote! {
+                        let #pat = #widget_expr #auto_id;
+                        __children.push(#pat);
+                    }
                 }
+            }
+        }
+        UiStmt::Splice { expr } => {
+            quote! {
+                __children.extend(#expr);
             }
         }
     }
 }
 
-/// Builds a UI node tree.
+fn expand_widget_block(block: &UiBlock, app_type: Option<&Type>, in_loop: bool) -> TokenStream2 {
+    let mut pushes = Vec::new();
+    for stmt in &block.stmts {
+        pushes.push(expand_widget_stmt(stmt, app_type, in_loop));
+    }
+    let vec_decl = if let Some(ty) = app_type {
+        quote! { let mut __children: Vec<::tiles::__private::Node<#ty>> = Vec::new(); }
+    } else {
+        quote! { let mut __children = Vec::new(); }
+    };
+    quote! {
+        {
+            #vec_decl
+            #(#pushes)*
+            __children
+        }
+    }
+}
+
+fn expand_widget_stmt(stmt: &UiStmt, app_type: Option<&Type>, in_loop: bool) -> TokenStream2 {
+    match stmt {
+        UiStmt::Widget { expr, children } => {
+            let auto_id = auto_id_for_expr(expr, in_loop);
+            let children_expr = if let Some(block) = children {
+                expand_widget_block(block, app_type, in_loop)
+            } else {
+                quote! { vec![] }
+            };
+            if let Some(ty) = app_type {
+                let typed_expr = maybe_turbofish(expr, ty);
+                quote! {
+                    __children.push(
+                        ::tiles::__private::Widget::render(#typed_expr #auto_id, #children_expr)
+                    );
+                }
+            } else {
+                quote! {
+                    __children.push(
+                        ::tiles::__private::Widget::render(#expr #auto_id, #children_expr)
+                    );
+                }
+            }
+        }
+        UiStmt::If { cond, body } => {
+            let stmts: Vec<_> = body
+                .stmts
+                .iter()
+                .map(|s| expand_widget_stmt(s, app_type, in_loop))
+                .collect();
+            quote! {
+                if #cond {
+                    #(#stmts)*
+                }
+            }
+        }
+        UiStmt::For { pat, iter, body } => {
+            let stmts: Vec<_> = body
+                .stmts
+                .iter()
+                .map(|s| expand_widget_stmt(s, app_type, true))
+                .collect();
+            quote! {
+                for (__widget_idx, #pat) in (#iter).into_iter().enumerate() {
+                    #(#stmts)*
+                }
+            }
+        }
+        UiStmt::Raw { ident, body } => {
+            quote! {
+                {
+                    let #ident = &mut __children;
+                    #body
+                }
+            }
+        }
+        UiStmt::Let {
+            pat,
+            widget_expr,
+            children,
+        } => {
+            let auto_id = auto_id_for_expr(widget_expr, in_loop);
+            let children_expr = if let Some(block) = children {
+                expand_widget_block(block, app_type, in_loop)
+            } else {
+                quote! { vec![] }
+            };
+            quote! {
+                let #pat = ::tiles::__private::Widget::render(#widget_expr #auto_id, #children_expr);
+                __children.push(#pat);
+            }
+        }
+        UiStmt::Splice { expr } => {
+            quote! {
+                __children.extend(#expr);
+            }
+        }
+    }
+}
+
+/// Builds a UI widget tree using the Widget trait.
 ///
-/// Optionally accepts a leading type annotation `Type;` to enable closure
-/// parameter inference: `view! { Self; col() { pane().on_click(|app, _| ...) } }`
-///
-/// If there is exactly one top-level widget, returns `Node<A>` directly.
-/// Otherwise returns `Vec<Node<A>>`.
+/// Supports `@children` to splice a `Vec<Node<A>>` variable into the children list.
 #[proc_macro]
-pub fn view(input: TokenStream) -> TokenStream {
-    let ViewInput { app_type, block } = syn::parse_macro_input!(input as ViewInput);
-    let ty_ref = app_type.as_ref();
+pub fn widget(input: TokenStream) -> TokenStream {
+    let WidgetInput { app_type, block } = syn::parse_macro_input!(input as WidgetInput);
+    let ty_ref = match app_type.as_ref() {
+        Some(ty) => ty,
+        None => {
+            return TokenStream::from(
+                syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    "widget! requires a type context — use it inside #[widget_fn] or #[app_widget_impl]",
+                )
+                .to_compile_error(),
+            );
+        }
+    };
+
+    let ty_opt = Some(ty_ref);
 
     // Single top-level widget → return Node<A> directly
     if block.stmts.len() == 1 {
         if let UiStmt::Widget { expr, children } = &block.stmts[0] {
-            let expanded = if let Some(child_block) = children {
-                let children_expr = expand_block(child_block, ty_ref);
-                quote! { #expr.children(#children_expr) }
+            let typed_expr = maybe_turbofish(expr, ty_ref);
+            let children_expr = if let Some(child_block) = children {
+                expand_widget_block(child_block, ty_opt, false)
             } else {
-                quote! { #expr }
+                quote! { vec![] }
+            };
+            let expanded = quote! {
+                ::tiles::__private::Widget::render(#typed_expr, #children_expr)
             };
             return TokenStream::from(expanded);
         }
     }
 
-    let expanded = expand_block(&block, ty_ref);
+    let expanded = expand_widget_block(&block, ty_opt, false);
     TokenStream::from(expanded)
+}
+
+// =============================================================================
+// #[widget_fn] attribute macro
+// =============================================================================
+
+/// Attribute macro for declaring widget functions.
+///
+/// Strips `children: Vec<Node<A>>` from the function signature and wraps the body
+/// so children arrive via `Widget::render()`. The function body is regular Rust —
+/// use `widget!` inside it.
+///
+/// ```ignore
+/// #[widget_fn(Demo)]
+/// fn button(word: &str, f: impl Fn(&mut Demo, &mut State) + 'static, children: Vec<Node<Demo>>) -> Node<Demo> {
+///     widget! { Demo;
+///         col().on_press(f) {
+///             text(word).padding(1)
+///             @children
+///         }
+///     }
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn widget_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let app_ty: Type = syn::parse_macro_input!(attr as Type);
+    let func: syn::ItemFn = syn::parse_macro_input!(item as syn::ItemFn);
+
+    match impl_widget_fn(&app_ty, &func) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2> {
+    let vis = &func.vis;
+    let name = &func.sig.ident;
+    let generics = &func.sig.generics;
+    let (impl_generics, _ty_generics, where_clause) = generics.split_for_impl();
+    let body = &func.block;
+
+    let mut params: Vec<&syn::FnArg> = func.sig.inputs.iter().collect();
+
+    // The last param must be `children: Vec<Node<A>>`
+    let last_param = params.pop().ok_or_else(|| {
+        syn::Error::new_spanned(
+            func,
+            "#[widget_fn] function must have at least a `children` parameter",
+        )
+    })?;
+
+    // Validate it's named `children`
+    let children_ident = match last_param {
+        syn::FnArg::Typed(pat_type) => match pat_type.pat.as_ref() {
+            syn::Pat::Ident(ident) => {
+                if ident.ident != "children" {
+                    return Err(syn::Error::new_spanned(
+                        &ident.ident,
+                        "#[widget_fn] last parameter must be named `children`",
+                    ));
+                }
+                &ident.ident
+            }
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    pat_type,
+                    "#[widget_fn] last parameter must be a simple `children: Vec<Node<A>>` binding",
+                ));
+            }
+        },
+        syn::FnArg::Receiver(_) => {
+            return Err(syn::Error::new_spanned(
+                last_param,
+                "#[widget_fn] cannot be used on methods with self",
+            ));
+        }
+    };
+
+    // Get the type of the children param for use in the closure
+    let children_ty = match last_param {
+        syn::FnArg::Typed(pat_type) => &pat_type.ty,
+        _ => unreachable!(),
+    };
+
+    // Build the reduced parameter list (without children)
+    let outer_params: Vec<TokenStream2> = params.iter().map(|p| quote! { #p }).collect();
+
+    // Check if we need lifetime annotation (if any param borrows)
+    let has_borrows = params.iter().any(|p| match p {
+        syn::FnArg::Typed(pat_type) => {
+            let ty_str = quote! { #pat_type }.to_string();
+            ty_str.contains('&')
+        }
+        _ => false,
+    });
+
+    let return_ty = if has_borrows {
+        quote! { impl ::tiles::__private::Widget<#app_ty> + '_ }
+    } else {
+        quote! { impl ::tiles::__private::Widget<#app_ty> }
+    };
+
+    // Rewrite body: inject app type into widget! calls that lack it
+    let rewritten_body = inject_widget_type(&quote! { #body }, app_ty);
+
+    Ok(quote! {
+        #vis fn #name #impl_generics(#(#outer_params),*) -> #return_ty #where_clause {
+            ::tiles::__private::WidgetFn(move |#children_ident: #children_ty| #rewritten_body, ::std::marker::PhantomData)
+        }
+    })
+}
+
+fn inject_widget_type(tokens: &TokenStream2, app_ty: &Type) -> TokenStream2 {
+    use proc_macro2::TokenTree;
+
+    let mut output = Vec::new();
+    let mut iter = tokens.clone().into_iter().peekable();
+
+    while let Some(tt) = iter.next() {
+        match &tt {
+            TokenTree::Ident(ident) if ident == "widget" => {
+                // Check if next token is `!`
+                if let Some(TokenTree::Punct(p)) = iter.peek() {
+                    if p.as_char() == '!' {
+                        let bang = iter.next().unwrap();
+                        // Next should be a group (the macro body)
+                        if let Some(TokenTree::Group(group)) = iter.peek() {
+                            let delimiter = group.delimiter();
+                            let inner = group.stream();
+                            iter.next(); // consume the group
+
+                            // Check if it already has a type prefix (Type;)
+                            let has_prefix = has_type_prefix(&inner);
+                            let new_inner = if has_prefix {
+                                inject_widget_type(&inner, app_ty)
+                            } else {
+                                let rewritten = inject_widget_type(&inner, app_ty);
+                                quote! { #app_ty; #rewritten }
+                            };
+
+                            let new_group = proc_macro2::Group::new(delimiter, new_inner);
+                            output.push(TokenTree::Ident(ident.clone()));
+                            output.push(bang);
+                            output.push(TokenTree::Group(new_group));
+                            continue;
+                        } else {
+                            output.push(tt);
+                            output.push(bang);
+                            continue;
+                        }
+                    }
+                }
+                output.push(tt);
+            }
+            TokenTree::Group(group) => {
+                let new_inner = inject_widget_type(&group.stream(), app_ty);
+                let mut new_group = proc_macro2::Group::new(group.delimiter(), new_inner);
+                new_group.set_span(group.span());
+                output.push(TokenTree::Group(new_group));
+            }
+            _ => output.push(tt),
+        }
+    }
+
+    output.into_iter().collect()
+}
+
+fn has_type_prefix(tokens: &TokenStream2) -> bool {
+    use proc_macro2::TokenTree;
+    let mut iter = tokens.clone().into_iter();
+    // A type prefix looks like: Ident ; ... or Self ;
+    // We check if the second meaningful token is `;`
+    let first = iter.next();
+    match first {
+        Some(TokenTree::Ident(_)) => {
+            if let Some(TokenTree::Punct(p)) = iter.next() {
+                p.as_char() == ';'
+            } else {
+                false
+            }
+        }
+        _ => false,
+    }
+}
+
+// =============================================================================
+// #[widget_impl] attribute macro
+// =============================================================================
+
+/// Attribute macro for impl blocks that injects the Self type into `widget!` calls.
+///
+/// ```ignore
+/// #[widget_impl]
+/// impl App for Demo {
+///     fn ui(&self, _state: &State) -> Node<Self> {
+///         widget! {
+///             col().fill_w() { ... }
+///         }
+///     }
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn app_widget_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let impl_block: syn::ItemImpl = syn::parse_macro_input!(item as syn::ItemImpl);
+
+    let self_ty = &impl_block.self_ty;
+    let tokens: TokenStream2 = quote! { #impl_block };
+    let rewritten = inject_widget_type(&tokens, self_ty);
+    TokenStream::from(rewritten)
 }
 
 // =============================================================================

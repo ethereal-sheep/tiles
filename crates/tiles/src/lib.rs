@@ -16,7 +16,7 @@ mod renderer;
 mod runner;
 mod shape;
 mod text;
-pub mod ui;
+mod ui;
 
 pub use camera::Camera;
 pub use cell::{Cell, Rotation};
@@ -31,13 +31,15 @@ pub use rect::{Rect, RoundedRect};
 pub use runner::{App, State};
 pub use shape::{Fill, Shape, Stroke, StrokePosition};
 pub use text::Text;
-pub use tiles_macros::view;
+pub use tiles_macros::app_widget_impl;
+pub use tiles_macros::widget;
+pub use tiles_macros::widget_fn;
 
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::ui::Node;
+    pub use crate::ui::{Node, Widget, WidgetFn};
 }
-pub use ui::{text, Node};
+pub use ui::{col, pane, row, text, Node};
 
 #[cfg(feature = "runtime")]
 pub fn run(

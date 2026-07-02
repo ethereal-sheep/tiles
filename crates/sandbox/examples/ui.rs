@@ -3,9 +3,8 @@ use std::f32::consts::PI;
 
 use glam::Vec2;
 use tiles::{
-    font::TINY5_4X5,
-    ui::{col, pane, row, text, Node},
-    view, App, Cell, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, State, Text,
+    app_widget_impl, col, font::TINY5_4X5, pane, row, text, widget, widget_fn, App, Cell, Color,
+    Config, KeyCode, KeyEvent, KeyState, MouseEvent, Node, State, Text,
 };
 
 const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
@@ -24,6 +23,37 @@ struct Demo {
     pos: glam::Vec2,
 }
 
+#[widget_fn(Demo)]
+fn button(
+    word: &str,
+    f: impl Fn(&mut Demo, &mut State) + 'static,
+    children: Vec<Node<Demo>>,
+) -> Node<Demo> {
+    widget! {
+        col()
+        .align_center()
+        .fill_w()
+        .color(BTN_COLOR)
+        .hover_color(BTN_HOVER)
+        .pressed_color(BTN_PRESS)
+        .text_color(INDICATOR)
+        .on_press(f) {
+            text(word).font(&TINY5_4X5).padding(1)
+            @children
+        }
+    }
+}
+
+#[widget_fn(Demo)]
+fn border(c: Color, children: Vec<Node<Demo>>) -> Node<Demo> {
+    widget! {
+        row().gap(1).padding(5).color(c) {
+            @children
+        }
+    }
+}
+
+#[app_widget_impl]
 impl App for Demo {
     fn init(&mut self, state: &mut State) {
         state.set_viewport_background(0.05, 0.05, 0.08, 1.0);
@@ -34,43 +64,29 @@ impl App for Demo {
     fn ui(&self, _state: &State) -> Node<Self> {
         let row_count = 20;
         let pos = self.pos;
-        let elapsed = _state.elapsed();
-        view! { Self;
+        let _elapsed = _state.elapsed();
+        widget! {
             col().fill_w().fill_h() {
                 col().padding(16).gap(4).fill_w().fill_h() {
                     // Title bar
-                    row().fill_w().padding(1).gap(1).color(PANEL_BG) {
+                    border(PANEL_BG) {
+                        button("+", |app, _state| { app.count += 1; })
+                        button("-", |app, _state| { app.count -= 1; })
+                        button("clear", |app, _state| app.count = 0)
                         pane()
+                            // .id("check")
+                            .relative(pos.x, pos.y)
                             .align_center()
-                            .fill_w()
+                            .size(60, 40)
                             .color(BTN_COLOR)
                             .hover_color(BTN_HOVER)
                             .pressed_color(BTN_PRESS)
-                            .text_color(INDICATOR)
-                            .on_press(|app, _state| { app.count += 1; })
-                            .on_hold(|app, _state| { app.count += 1; }) {
-                                text("+").font(&TINY5_4X5).padding(1)
-                        }
-                        pane()
-                            .align_center()
-                            .fill_w()
-                            .color(BTN_COLOR)
-                            .hover_color(BTN_HOVER)
-                            .pressed_color(BTN_PRESS)
-                            .text_color(RED)
-                            .on_press(|app, _state| { app.count -= 1; })
-                            .on_hold(|app, _state| { app.count -= 1; }) {
-                                text("-").font(&TINY5_4X5).padding(1)
-                        }
-                        pane()
-                            .align_center()
-                            .fill_w()
-                            .color(BTN_COLOR)
-                            .hover_color(BTN_HOVER)
-                            .pressed_color(BTN_PRESS)
-                            .on_click(|app, _state| { app.count = 0; }) {
-                                text("clear").font(&TINY5_4X5).padding(1)
-                        }
+                            .on_drag(|app, _state, drag| {
+                                app.pos += drag.delta_screen;
+                                eprintln!("{}", drag.delta_screen.x);
+                            }) {
+                                text("drag").font(&TINY5_4X5).padding(2)
+                            }
                     }
 
                     // Counter indicator
@@ -135,7 +151,7 @@ impl App for Demo {
                     .id("yo")
                     .absolute(pos.x, pos.y)
                     .size(60, 40)
-                    .color(PANEL_BG)
+                    .color(BG)
                     .hover_color(BTN_HOVER)
                     .pressed_color(BTN_PRESS)
                     .on_drag(|app, _state, drag| {
@@ -143,7 +159,7 @@ impl App for Demo {
                         eprintln!("{}", drag.delta_screen.x);
                     }) {
                         text("drag me").font(&TINY5_4X5).padding(2)
-                }
+                    }
             }
         }
     }
@@ -184,7 +200,7 @@ fn main() {
         count: 0,
         items: vec![RED, BLUE, INDICATOR],
         show_panel: true,
-        pos: Vec2::new(100.0, 100.0),
+        pos: Vec2::new(0.0, 0.0),
     };
 
     tiles::run(demo, config).unwrap();

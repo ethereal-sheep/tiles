@@ -941,12 +941,32 @@ impl EvaluateResult {
     }
 }
 
+pub trait Widget<A: App> {
+    fn render(self, children: Vec<Node<A>>) -> Node<A>;
+}
+
+impl<A: App> Widget<A> for Node<A> {
+    fn render(self, children: Vec<Node<A>>) -> Node<A> {
+        self.children(children)
+    }
+}
+
+pub struct WidgetFn<A: App, F: FnOnce(Vec<Node<A>>) -> Node<A>>(
+    pub F,
+    pub std::marker::PhantomData<A>,
+);
+
+impl<A: App, F: FnOnce(Vec<Node<A>>) -> Node<A>> Widget<A> for WidgetFn<A, F> {
+    fn render(self, children: Vec<Node<A>>) -> Node<A> {
+        (self.0)(children)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::color::Color;
     use crate::input::{ButtonState, InputState, MouseButton};
-    use crate::view;
     use glam::Vec2;
 
     const RED: Color = Color::linear(1.0, 0.0, 0.0, 1.0);
@@ -1450,8 +1470,8 @@ mod tests {
 
     #[test]
     fn macro_simple_nodes() {
-        use crate::view;
-        let children: Vec<Node<TestApp>> = view! {
+        use crate::widget;
+        let children: Vec<Node<TestApp>> = widget! { TestApp;
             row().size(5, 5).color(RED);
             row().size(3, 3).color(BLUE);
         };
@@ -1460,8 +1480,8 @@ mod tests {
 
     #[test]
     fn macro_nested_children() {
-        use crate::view;
-        let node: Node<TestApp> = view! {
+        use crate::widget;
+        let node: Node<TestApp> = widget! { TestApp;
             row().gap(4) {
                 row().size(5, 5).color(RED);
                 row().size(5, 5).color(BLUE);
@@ -1474,9 +1494,9 @@ mod tests {
 
     #[test]
     fn macro_if_control_flow() {
-        use crate::view;
+        use crate::widget;
         let show = true;
-        let children: Vec<Node<TestApp>> = view! {
+        let children: Vec<Node<TestApp>> = widget! { TestApp;
             row().size(5, 5).color(RED);
             @ if show {
                 row().size(3, 3).color(BLUE);
@@ -1485,7 +1505,7 @@ mod tests {
         assert_eq!(children.len(), 2);
 
         let show = false;
-        let children: Vec<Node<TestApp>> = view! {
+        let children: Vec<Node<TestApp>> = widget! { TestApp;
             row().size(5, 5).color(RED);
             @ if show {
                 row().size(3, 3).color(BLUE);
@@ -1496,9 +1516,9 @@ mod tests {
 
     #[test]
     fn macro_for_loop() {
-        use crate::view;
+        use crate::widget;
         let colors = [RED, BLUE, GREEN];
-        let children: Vec<Node<TestApp>> = view! {
+        let children: Vec<Node<TestApp>> = widget! { TestApp;
             @ for c in colors {
                 row().size(5, 5).color(c);
             }
@@ -1508,8 +1528,8 @@ mod tests {
 
     #[test]
     fn macro_raw_escape() {
-        use crate::view;
-        let children: Vec<Node<TestApp>> = view! {
+        use crate::widget;
+        let children: Vec<Node<TestApp>> = widget! { TestApp;
             row().size(5, 5).color(RED);
             |c| {
                 c.push(row().size(3, 3).color(BLUE).into());
@@ -1521,8 +1541,8 @@ mod tests {
 
     #[test]
     fn macro_with_handlers() {
-        use crate::view;
-        let child: Node<TestApp> = view! {
+        use crate::widget;
+        let child: Node<TestApp> = widget! { TestApp;
             pane()
                 .size(5, 3)
                 .color(RED)
@@ -1543,8 +1563,8 @@ mod tests {
 
     #[test]
     fn macro_deeply_nested() {
-        use crate::view;
-        let node: Node<TestApp> = view! {
+        use crate::widget;
+        let node: Node<TestApp> = widget! { TestApp;
             col().padding(2) {
                 row().gap(2) {
                     row().size(5, 5).color(RED);
@@ -1562,9 +1582,9 @@ mod tests {
 
     #[test]
     fn macro_for_with_expr_iter() {
-        use crate::view;
+        use crate::widget;
         let items = vec![(5, RED), (3, BLUE), (7, GREEN)];
-        let children: Vec<Node<TestApp>> = view! {
+        let children: Vec<Node<TestApp>> = widget! { TestApp;
             @ for (size, color) in items.iter().copied() {
                 row().size(size, size).color(color)
             }
@@ -1645,8 +1665,8 @@ mod tests {
 
     #[test]
     fn text_in_macro() {
-        use crate::view;
-        let _node: Node<TestApp> = view! {
+        use crate::widget;
+        let _node: Node<TestApp> = widget! { TestApp;
             col().text_color(RED) {
                 text("hello");
             }
@@ -2345,11 +2365,12 @@ mod tests {
         assert_eq!(id1, id2);
     }
 
-    // --- ID generation tests (view! macro injection) ---
+    // --- ID generation tests (widget! macro injection) ---
 
     #[test]
     fn id_macro_injects_line_based_ids() {
-        let node: Node<TestApp> = view! { TestApp;
+        use crate::widget;
+        let node: Node<TestApp> = widget! { TestApp;
             col() {
                 pane().size(10, 10)
                 pane().size(20, 20)
@@ -2367,9 +2388,10 @@ mod tests {
 
     #[test]
     fn id_macro_stable_across_frames() {
-        // Simulates two "frames" — same view! produces same IDs
+        use crate::widget;
+        // Simulates two "frames" — same widget! produces same IDs
         let build = || -> Node<TestApp> {
-            view! { TestApp;
+            widget! { TestApp;
                 col() {
                     pane().size(10, 10)
                     pane().size(20, 20)
@@ -2385,7 +2407,8 @@ mod tests {
 
     #[test]
     fn id_macro_explicit_id_overrides_injection() {
-        let node: Node<TestApp> = view! { TestApp;
+        use crate::widget;
+        let node: Node<TestApp> = widget! { TestApp;
             col() {
                 pane().id("custom").size(10, 10)
             }
@@ -2397,8 +2420,9 @@ mod tests {
 
     #[test]
     fn id_macro_for_loop_unique_per_iteration() {
+        use crate::widget;
         let items = vec![1, 2, 3];
-        let node: Node<TestApp> = view! { TestApp;
+        let node: Node<TestApp> = widget! { TestApp;
             col() {
                 @ for _item in items.iter() {
                     pane().size(10, 10)
@@ -2417,9 +2441,10 @@ mod tests {
 
     #[test]
     fn id_macro_for_loop_stable_across_frames() {
+        use crate::widget;
         let build = || -> Node<TestApp> {
             let items = vec![1, 2, 3];
-            view! { TestApp;
+            widget! { TestApp;
                 col() {
                     @ for _item in items.iter() {
                         pane().size(10, 10)
@@ -2438,12 +2463,13 @@ mod tests {
 
     #[test]
     fn id_macro_nested_widget_fn_unique_per_site() {
+        use crate::widget;
         fn my_widget() -> Node<TestApp> {
-            view! { TestApp;
+            widget! { TestApp;
                 pane().id("w").size(5, 5)
             }
         }
-        let node: Node<TestApp> = view! { TestApp;
+        let node: Node<TestApp> = widget! { TestApp;
             col() {
                 row().id("a") { my_widget() }
                 row().id("b") { my_widget() }
