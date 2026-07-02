@@ -440,8 +440,8 @@ struct Palette {
 
 impl App for Palette {
     fn init(&mut self, state: &mut State) {
-        state.set_viewport_background(0.0, 0.0, 0.0, 1.0);
-        state.set_window_background(0.12, 0.12, 0.15, 1.0);
+        state.set_viewport_background(Color::linear(0.0, 0.0, 0.0, 1.0));
+        state.set_window_background(Color::linear(0.12, 0.12, 0.15, 1.0));
         state.set_ambient_illumination(1.0);
     }
 

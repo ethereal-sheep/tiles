@@ -57,8 +57,8 @@ fn border(c: Color, children: Vec<Node<Demo>>) -> Node<Demo> {
 #[app_widget_impl]
 impl App for Demo {
     fn init(&mut self, state: &mut State) {
-        state.set_viewport_background(0.05, 0.05, 0.08, 1.0);
-        state.set_window_background(0.0, 0.0, 0.0, 1.0);
+        state.set_viewport_background(Color::linear(0.05, 0.05, 0.08, 1.0));
+        state.set_window_background(Color::linear(0.0, 0.0, 0.0, 1.0));
         state.set_ambient_illumination(1.0);
     }
 

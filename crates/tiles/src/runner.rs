@@ -10,6 +10,7 @@ use winit::{
 
 use crate::camera::Camera;
 use crate::cell::{Cell, CellInstance, LightData};
+use crate::color::Color;
 use crate::config::Config;
 use crate::drawable::Drawable;
 use crate::element::{self, HitState};
@@ -45,8 +46,8 @@ pub struct State {
     config: Config,
     camera: Camera,
     input: InputState,
-    window_bg: [f32; 4],
-    viewport_bg: [f32; 4],
+    window_bg: Color,
+    viewport_bg: Color,
     ambient_illumination: f32,
     fixed_dt: Duration,
     accumulator: Duration,
@@ -72,8 +73,8 @@ impl State {
             config,
             camera,
             input: InputState::new(),
-            window_bg: [0.0, 0.0, 0.0, 1.0],
-            viewport_bg: [0.08, 0.08, 0.10, 1.0],
+            window_bg: Color::hex(0x000000),
+            viewport_bg: Color::hex(0x030304),
             ambient_illumination: 1.0,
             fixed_dt,
             accumulator: Duration::from_secs(0),
@@ -187,12 +188,12 @@ impl State {
         self.config.save();
     }
 
-    pub fn set_window_background(&mut self, r: f32, g: f32, b: f32, a: f32) {
-        self.window_bg = [r, g, b, a];
+    pub fn set_window_background(&mut self, color: Color) {
+        self.window_bg = color;
     }
 
-    pub fn set_viewport_background(&mut self, r: f32, g: f32, b: f32, a: f32) {
-        self.viewport_bg = [r, g, b, a];
+    pub fn set_viewport_background(&mut self, color: Color) {
+        self.viewport_bg = color;
     }
 
     pub fn set_ambient_illumination(&mut self, ambient: f32) {
@@ -653,8 +654,8 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                         offset,
                         size,
                         vp_cells,
-                        self.state.window_bg,
-                        self.state.viewport_bg,
+                        self.state.window_bg.to_array(),
+                        self.state.viewport_bg.to_array(),
                     ) {
                         Ok(()) => {}
                         Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {

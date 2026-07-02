@@ -148,8 +148,8 @@ fn hue_to_rgb(h: f32) -> (f32, f32, f32) {
 
 impl App for RotationDemo {
     fn init(&mut self, state: &mut State) {
-        state.set_viewport_background(0.02, 0.02, 0.03, 1.0);
-        state.set_window_background(0.0, 0.0, 0.0, 1.0);
+        state.set_viewport_background(Color::linear(0.02, 0.02, 0.03, 1.0));
+        state.set_window_background(Color::linear(0.0, 0.0, 0.0, 1.0));
         self.pause_timer = 0.5;
     }
 

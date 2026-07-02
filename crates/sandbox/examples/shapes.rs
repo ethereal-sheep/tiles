@@ -7,8 +7,8 @@ struct Shapes;
 
 impl App for Shapes {
     fn init(&mut self, state: &mut State) {
-        state.set_viewport_background(0.05, 0.05, 0.08, 1.0);
-        state.set_window_background(0.0, 0.0, 0.0, 1.0);
+        state.set_viewport_background(Color::linear(0.05, 0.05, 0.08, 1.0));
+        state.set_window_background(Color::linear(0.0, 0.0, 0.0, 1.0));
         state.set_ambient_illumination(1.0);
     }
 
