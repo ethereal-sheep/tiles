@@ -9,14 +9,14 @@ use crate::{Drawable, Shape, Text};
 use tiles_macros::Builders;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
-pub enum Axis {
+enum Axis {
     #[default]
     Column,
     Row,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Justify {
+enum Justify {
     #[default]
     Start,
     Center,
@@ -25,7 +25,7 @@ pub enum Justify {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Align {
+enum Align {
     #[default]
     Start,
     Center,
@@ -34,7 +34,7 @@ pub enum Align {
 
 /// How a single axis resolves its size
 #[derive(Clone, Copy, Debug, Default)]
-pub enum Sizing {
+enum Sizing {
     /// Exactly this many pixels
     Fixed(u32),
     /// Shrink-wrap children (or 0 if no children)
@@ -45,7 +45,7 @@ pub enum Sizing {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
-pub enum Position {
+enum Position {
     #[default]
     Flow,
     Relative(f32, f32),
@@ -60,7 +60,7 @@ pub enum Position {
 
 #[derive(Clone, Debug, Default, Builders)]
 #[builders(forward(to = "Node<A: App>", via = "style"))]
-pub struct Style {
+struct Style {
     #[builder(dual_variant(name = "size", variant = "Fixed", args = "w: u32, h: u32",))]
     #[builder(variant(name = "fill_w", variant = "Fill"))]
     #[builder(variant(name = "shrink_w", variant = "Shrink"))]
@@ -99,7 +99,7 @@ pub struct Style {
 
 #[derive(Builders)]
 #[builders(forward(to = "Node<A: App>", via = "handlers"))]
-pub struct Handlers<A: App> {
+struct Handlers<A: App> {
     pub on_hover: Option<Box<dyn Fn(&mut A, &mut State)>>,
     pub on_enter: Option<Box<dyn Fn(&mut A, &mut State)>>,
     pub on_leave: Option<Box<dyn Fn(&mut A, &mut State)>>,
@@ -134,7 +134,7 @@ impl<A: App> Default for Handlers<A> {
 }
 
 // --- Node types ---
-pub enum NodeContent<N, T> {
+enum NodeContent<N, T> {
     Children(Vec<N>),
     Text(T),
 }
@@ -160,7 +160,7 @@ impl<N> From<String> for NodeContent<N, String> {
 
 /// Resolved dimensions after the size pass
 #[derive(Debug, Clone, Copy)]
-pub struct Size {
+struct Size {
     pub width: u32,
     pub height: u32,
 }
@@ -176,7 +176,7 @@ struct ProcessedNode<A: App> {
 }
 
 /// Intermediate tree produced by the size pass, consumed by the position pass
-pub struct SizedNode<A: App> {
+struct SizedNode<A: App> {
     id: String,
     style: Style,
     handlers: Handlers<A>,

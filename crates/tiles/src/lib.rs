@@ -16,7 +16,7 @@ mod renderer;
 mod runner;
 mod shape;
 mod text;
-mod ui;
+pub mod ui;
 
 pub use camera::Camera;
 pub use cell::{Cell, Rotation};
@@ -39,7 +39,7 @@ pub use tiles_macros::widget_fn;
 pub mod __private {
     pub use crate::ui::{Node, Widget, WidgetFn};
 }
-pub use ui::{col, pane, row, text, Node};
+pub use ui::Node;
 
 #[cfg(feature = "runtime")]
 pub fn run(
