@@ -106,6 +106,24 @@ pub struct MouseEvent {
     pub world_pos: Vec2,
 }
 
+pub(crate) struct ConsumedState {
+    pub left: bool,
+    pub right: bool,
+    pub middle: bool,
+    pub scroll: bool,
+}
+
+impl ConsumedState {
+    pub(crate) fn new() -> Self {
+        Self {
+            left: false,
+            right: false,
+            middle: false,
+            scroll: false,
+        }
+    }
+}
+
 pub(crate) struct InputState {
     pub mouse_screen_pos: Vec2,
     pub mouse_world_pos: Vec2,
@@ -117,6 +135,7 @@ pub(crate) struct InputState {
     pub keys_states: HashMap<KeyCode, ButtonState>,
     pub mouse_buttons_states: HashMap<MouseButton, ButtonState>,
     pub drag_capture: Option<DragCapture>,
+    pub consumed_state: ConsumedState,
 }
 
 pub(crate) struct DragCapture {
@@ -137,6 +156,7 @@ impl InputState {
             keys_states: HashMap::new(),
             mouse_buttons_states: HashMap::new(),
             drag_capture: None,
+            consumed_state: ConsumedState::new(),
         }
     }
 
@@ -162,6 +182,7 @@ impl InputState {
         }
         self.prev_mouse_screen_pos = self.mouse_screen_pos;
         self.prev_mouse_world_pos = self.mouse_world_pos;
+        self.consumed_state = ConsumedState::new();
     }
 
     pub fn is_key_down(&self, key: KeyCode) -> bool {
@@ -246,6 +267,22 @@ impl InputState {
         self.mouse_buttons_states
             .get(&mouse)
             .is_some_and(|state| state.is_released_after_hold())
+    }
+
+    pub fn click_consumed_by_ui(&self) -> bool {
+        self.consumed_state.left
+    }
+
+    pub fn right_click_consumed_by_ui(&self) -> bool {
+        self.consumed_state.right
+    }
+
+    pub fn middle_click_consumed_by_ui(&self) -> bool {
+        self.consumed_state.middle
+    }
+
+    pub fn scroll_consumed_by_ui(&self) -> bool {
+        self.consumed_state.scroll
     }
 }
 

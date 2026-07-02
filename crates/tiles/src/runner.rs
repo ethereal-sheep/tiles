@@ -28,7 +28,7 @@ pub trait App {
     fn on_key(&mut self, _state: &mut State, _event: KeyEvent) {}
     fn on_mouse(&mut self, _state: &mut State, _event: MouseEvent) {}
 
-    fn ui(&self, _state: &State) -> crate::ui::Node<Self>
+    fn ui(&self, _state: &State) -> crate::node::Node<Self>
     where
         Self: Sized,
     {
@@ -45,7 +45,7 @@ pub struct State {
     screen_overlay_cells: Vec<Cell>,
     config: Config,
     camera: Camera,
-    pub(crate) input: InputState,
+    input: InputState,
     window_bg: [f32; 4],
     viewport_bg: [f32; 4],
     ambient_illumination: f32,
@@ -99,6 +99,25 @@ impl State {
     #[cfg(test)]
     pub(crate) fn set_input(&mut self, input: InputState) {
         self.input = input;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn get_cells(&self) -> Vec<Cell> {
+        [
+            self.cells.as_slice(),
+            self.world_overlay_cells.as_slice(),
+            self.screen_cells.as_slice(),
+            self.screen_overlay_cells.as_slice(),
+        ]
+        .concat()
+    }
+
+    pub(crate) fn get_input_ref(&self) -> &InputState {
+        &self.input
+    }
+
+    pub(crate) fn get_input_mut_ref(&mut self) -> &mut InputState {
+        &mut self.input
     }
 
     // --- Camera ---
@@ -245,6 +264,22 @@ impl State {
 
     pub fn mouse_screen_position(&self) -> Vec2 {
         self.input.mouse_screen_pos
+    }
+
+    pub fn click_consumed_by_ui(&self) -> bool {
+        self.input.click_consumed_by_ui()
+    }
+
+    pub fn middle_click_consumed_by_ui(&self) -> bool {
+        self.input.middle_click_consumed_by_ui()
+    }
+
+    pub fn right_click_consumed_by_ui(&self) -> bool {
+        self.input.right_click_consumed_by_ui()
+    }
+
+    pub fn scroll_consumed_by_ui(&self) -> bool {
+        self.input.scroll_consumed_by_ui()
     }
 
     pub fn test_shape_world(&self, shape: &impl Shape) -> HitState {
@@ -606,8 +641,8 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                     self.state.camera.viewport_width as u32,
                     self.state.camera.viewport_height as u32,
                 );
-                let (cells, _result) = resolved.evaluate(self.app, &mut self.state);
-                self.state.draw_screen_overlay(cells);
+
+                resolved.evaluate(self.app, &mut self.state);
 
                 self.state.dt = self.state.fixed_dt;
                 for i in 1..=update_count {

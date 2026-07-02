@@ -2,7 +2,7 @@ use crate::cell::Cell;
 use crate::color::Color;
 use crate::element::DragInfo;
 use crate::font::Font;
-use crate::input::MouseButton;
+use crate::input::ConsumedState;
 use crate::rect::Rect;
 use crate::runner::{App, State};
 use crate::{Drawable, Shape, Text};
@@ -682,10 +682,10 @@ pub(crate) struct ResolvedNode<A: App> {
     handlers: Handlers<A>,
 }
 
-// --- Evaluate ---
+// --- Evaluate (hit-test + handlers + draw) ---
 
 impl<A: App> ResolvedNode<A> {
-    pub(crate) fn evaluate(self, app: &mut A, state: &mut State) -> (Vec<Cell>, EvaluateResult) {
+    pub(crate) fn evaluate(self, app: &mut A, state: &mut State) {
         let mut cells = Vec::new();
         let mut consumed = ConsumedState::new();
         self.evaluate_recursive(
@@ -697,7 +697,8 @@ impl<A: App> ResolvedNode<A> {
             0.0,
         );
         cells.reverse();
-        (cells, EvaluateResult { consumed })
+        state.draw_screen_overlay(cells);
+        state.get_input_mut_ref().consumed_state = consumed;
     }
 
     fn evaluate_recursive(
@@ -710,12 +711,12 @@ impl<A: App> ResolvedNode<A> {
         depth: f32,
     ) {
         let is_captured = state
-            .input
+            .get_input_ref()
             .drag_capture
             .as_ref()
             .is_some_and(|c| c.id == self.id);
         let hit = if is_captured {
-            state.test_shape_screen(&state.input.drag_capture.as_ref().unwrap().rect)
+            state.test_shape_screen(&state.get_input_ref().drag_capture.as_ref().unwrap().rect)
         } else {
             state.test_shape_screen(&self.rect)
         };
@@ -784,7 +785,7 @@ impl<A: App> ResolvedNode<A> {
             }
             if hit.is_pressed() {
                 if self.handlers.on_drag.is_some() {
-                    state.input.drag_capture = Some(crate::input::DragCapture {
+                    state.get_input_mut_ref().drag_capture = Some(crate::input::DragCapture {
                         id: self.id.clone(),
                         rect: self.rect,
                     });
@@ -820,7 +821,7 @@ impl<A: App> ResolvedNode<A> {
             }
         }
         if is_captured && hit.is_drag_end().is_some() {
-            state.input.drag_capture = None;
+            state.get_input_mut_ref().drag_capture = None;
         }
         if !consumed.right {
             if hit.is_right_clicked() {
@@ -889,58 +890,7 @@ impl<A: App> ResolvedNode<A> {
     }
 }
 
-// --- Evaluate (hit-test + handlers + draw) ---
-
-struct ConsumedState {
-    left: bool,
-    right: bool,
-    middle: bool,
-    scroll: bool,
-}
-
-impl ConsumedState {
-    fn new() -> Self {
-        Self {
-            left: false,
-            right: false,
-            middle: false,
-            scroll: false,
-        }
-    }
-}
-
 // --- Public API ---
-
-pub struct EvaluateResult {
-    consumed: ConsumedState,
-}
-
-impl EvaluateResult {
-    pub fn consumed_by_ui(&self, button: MouseButton) -> bool {
-        match button {
-            MouseButton::Left => self.consumed.left,
-            MouseButton::Right => self.consumed.right,
-            MouseButton::Middle => self.consumed.middle,
-        }
-    }
-
-    pub fn click_consumed_by_ui(&self) -> bool {
-        self.consumed.left
-    }
-
-    pub fn right_click_consumed_by_ui(&self) -> bool {
-        self.consumed.right
-    }
-
-    pub fn scroll_consumed_by_ui(&self) -> bool {
-        self.consumed.scroll
-    }
-
-    pub fn any_consumed_by_ui(&self) -> bool {
-        self.consumed.left || self.consumed.right || self.consumed.middle || self.consumed.scroll
-    }
-}
-
 pub trait Widget<A: App> {
     fn render(self, children: Vec<Node<A>>) -> Node<A>;
 }
@@ -998,11 +948,7 @@ mod tests {
         State::new_for_test(256, 256)
     }
 
-    fn eval(
-        node: Node<TestApp>,
-        app: &mut TestApp,
-        state: &mut State,
-    ) -> (Vec<Cell>, EvaluateResult) {
+    fn eval(node: Node<TestApp>, app: &mut TestApp, state: &mut State) {
         node.layout(256, 256).evaluate(app, state)
     }
 
@@ -1150,12 +1096,10 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
-        let (cells, _) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
-        assert_eq!(cells.len(), 6);
-        assert_eq!(cells[0].color, RED.to_array());
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
+        assert_eq!(state.get_cells().len(), 6);
+        assert_eq!(state.get_cells()[0].color, RED.to_array());
     }
 
     #[test]
@@ -1164,11 +1108,9 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
-        let (cells, _) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
-        assert_eq!(cells.len(), 0);
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
+        assert_eq!(state.get_cells().len(), 0);
     }
 
     #[test]
@@ -1177,11 +1119,10 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(5.0, 5.0); // inside
-        let (cells, _) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
-        assert_eq!(cells[0].color, BLUE.to_array());
+
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
+        assert_eq!(state.get_cells()[0].color, BLUE.to_array());
     }
 
     #[test]
@@ -1190,11 +1131,10 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(50.0, 50.0); // outside
-        let (cells, _) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
-        assert_eq!(cells[0].color, RED.to_array());
+
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
+        assert_eq!(state.get_cells()[0].color, RED.to_array());
     }
 
     // --- Handler tests ---
@@ -1210,12 +1150,11 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(5.0, 5.0);
-        let (_, result) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
+
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
         assert!(app.clicked);
-        assert!(result.click_consumed_by_ui());
+        assert!(state.click_consumed_by_ui());
     }
 
     #[test]
@@ -1229,12 +1168,11 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(50.0, 50.0);
-        let (_, result) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
+
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
         assert!(!app.clicked);
-        assert!(!result.click_consumed_by_ui());
+        assert!(!state.click_consumed_by_ui());
     }
 
     #[test]
@@ -1312,13 +1250,12 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
-        let (cells, _) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
+
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
         // Child should draw with inherited RED
-        assert!(!cells.is_empty());
-        assert_eq!(cells[0].color, RED.to_array());
+        assert!(!state.get_cells().is_empty());
+        assert_eq!(state.get_cells()[0].color, RED.to_array());
     }
 
     #[test]
@@ -1329,11 +1266,10 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
-        let (cells, _) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
-        assert_eq!(cells.last().unwrap().color, BLUE.to_array());
+
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
+        assert_eq!(state.get_cells().last().unwrap().color, BLUE.to_array());
     }
 
     #[test]
@@ -1356,13 +1292,20 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
-        let (cells, _) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
+
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
         // Find parent cell (GREY) and child cell (RED)
-        let child_cell = cells.iter().find(|c| c.color == RED.to_array()).unwrap();
-        let parent_cell = cells.iter().find(|c| c.color == GREY.to_array()).unwrap();
+        let child_cell = state
+            .get_cells()
+            .into_iter()
+            .find(|c| c.color == RED.to_array())
+            .unwrap();
+        let parent_cell = state
+            .get_cells()
+            .into_iter()
+            .find(|c| c.color == GREY.to_array())
+            .unwrap();
         assert!(child_cell.position.z > parent_cell.position.z);
     }
 
@@ -1377,13 +1320,11 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(5.0, 5.0);
-        let (_, result) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
-        assert!(result.consumed_by_ui(MouseButton::Left));
-        assert!(!result.consumed_by_ui(MouseButton::Right));
-        assert!(result.any_consumed_by_ui());
+
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
+        assert!(state.click_consumed_by_ui());
+        assert!(!state.right_click_consumed_by_ui());
     }
 
     #[test]
@@ -1423,12 +1364,11 @@ mod tests {
         let mut state = make_state();
         let mut input = input_at(5.0, 5.0);
         input.scroll_delta = 3.0;
-        let (_, result) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
+
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
         assert_eq!(app.scroll_amount, 3.0);
-        assert!(result.scroll_consumed_by_ui());
+        assert!(state.scroll_consumed_by_ui());
     }
 
     #[test]
@@ -1444,14 +1384,12 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(4.0, 2.0);
-        let (cells, result) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
         assert!(app.clicked);
-        assert!(result.click_consumed_by_ui());
+        assert!(state.click_consumed_by_ui());
         // Hovered at click point, should use hover_color
-        assert_eq!(cells[0].color, BLUE.to_array());
+        assert_eq!(state.get_cells()[0].color, BLUE.to_array());
     }
 
     #[test]
@@ -1470,7 +1408,7 @@ mod tests {
 
     #[test]
     fn macro_simple_nodes() {
-        use crate::widget;
+        use crate::ui::widget;
         let children: Vec<Node<TestApp>> = widget! { TestApp;
             row().size(5, 5).color(RED);
             row().size(3, 3).color(BLUE);
@@ -1480,7 +1418,7 @@ mod tests {
 
     #[test]
     fn macro_nested_children() {
-        use crate::widget;
+        use crate::ui::widget;
         let node: Node<TestApp> = widget! { TestApp;
             row().gap(4) {
                 row().size(5, 5).color(RED);
@@ -1494,7 +1432,7 @@ mod tests {
 
     #[test]
     fn macro_if_control_flow() {
-        use crate::widget;
+        use crate::ui::widget;
         let show = true;
         let children: Vec<Node<TestApp>> = widget! { TestApp;
             row().size(5, 5).color(RED);
@@ -1516,7 +1454,7 @@ mod tests {
 
     #[test]
     fn macro_for_loop() {
-        use crate::widget;
+        use crate::ui::widget;
         let colors = [RED, BLUE, GREEN];
         let children: Vec<Node<TestApp>> = widget! { TestApp;
             @ for c in colors {
@@ -1528,7 +1466,7 @@ mod tests {
 
     #[test]
     fn macro_raw_escape() {
-        use crate::widget;
+        use crate::ui::widget;
         let children: Vec<Node<TestApp>> = widget! { TestApp;
             row().size(5, 5).color(RED);
             |c| {
@@ -1541,7 +1479,7 @@ mod tests {
 
     #[test]
     fn macro_with_handlers() {
-        use crate::widget;
+        use crate::ui::widget;
         let child: Node<TestApp> = widget! { TestApp;
             pane()
                 .size(5, 3)
@@ -1553,17 +1491,16 @@ mod tests {
         let mut state = make_state();
         let input = input_with_click_at(2.0, 1.0);
         let node = col::<TestApp>().children(vec![child]);
-        let (_, result) = {
-            state.set_input(input);
-            eval(node, &mut app, &mut state)
-        };
+
+        state.set_input(input);
+        eval(node, &mut app, &mut state);
         assert!(app.clicked);
-        assert!(result.click_consumed_by_ui());
+        assert!(state.click_consumed_by_ui());
     }
 
     #[test]
     fn macro_deeply_nested() {
-        use crate::widget;
+        use crate::ui::widget;
         let node: Node<TestApp> = widget! { TestApp;
             col().padding(2) {
                 row().gap(2) {
@@ -1582,7 +1519,7 @@ mod tests {
 
     #[test]
     fn macro_for_with_expr_iter() {
-        use crate::widget;
+        use crate::ui::widget;
         let items = vec![(5, RED), (3, BLUE), (7, GREEN)];
         let children: Vec<Node<TestApp>> = widget! { TestApp;
             @ for (size, color) in items.iter().copied() {
@@ -1631,9 +1568,9 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         state.set_input(input_at(100.0, 100.0));
-        let (cells, _) = node.layout(256, 256).evaluate(&mut app, &mut state);
-        assert!(!cells.is_empty());
-        assert_eq!(cells[0].color, RED.to_array());
+        node.layout(256, 256).evaluate(&mut app, &mut state);
+        assert!(!state.get_cells().is_empty());
+        assert_eq!(state.get_cells()[0].color, RED.to_array());
     }
 
     #[test]
@@ -1644,9 +1581,9 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         state.set_input(input_at(100.0, 100.0));
-        let (cells, _) = node.layout(256, 256).evaluate(&mut app, &mut state);
-        assert!(!cells.is_empty());
-        assert_eq!(cells[0].color, BLUE.to_array());
+        node.layout(256, 256).evaluate(&mut app, &mut state);
+        assert!(!state.get_cells().is_empty());
+        assert_eq!(state.get_cells()[0].color, BLUE.to_array());
     }
 
     #[test]
@@ -1665,7 +1602,7 @@ mod tests {
 
     #[test]
     fn text_in_macro() {
-        use crate::widget;
+        use crate::ui::widget;
         let _node: Node<TestApp> = widget! { TestApp;
             col().text_color(RED) {
                 text("hello");
@@ -2369,7 +2306,7 @@ mod tests {
 
     #[test]
     fn id_macro_injects_line_based_ids() {
-        use crate::widget;
+        use crate::ui::widget;
         let node: Node<TestApp> = widget! { TestApp;
             col() {
                 pane().size(10, 10)
@@ -2388,7 +2325,7 @@ mod tests {
 
     #[test]
     fn id_macro_stable_across_frames() {
-        use crate::widget;
+        use crate::ui::widget;
         // Simulates two "frames" — same widget! produces same IDs
         let build = || -> Node<TestApp> {
             widget! { TestApp;
@@ -2407,7 +2344,7 @@ mod tests {
 
     #[test]
     fn id_macro_explicit_id_overrides_injection() {
-        use crate::widget;
+        use crate::ui::widget;
         let node: Node<TestApp> = widget! { TestApp;
             col() {
                 pane().id("custom").size(10, 10)
@@ -2420,7 +2357,7 @@ mod tests {
 
     #[test]
     fn id_macro_for_loop_unique_per_iteration() {
-        use crate::widget;
+        use crate::ui::widget;
         let items = vec![1, 2, 3];
         let node: Node<TestApp> = widget! { TestApp;
             col() {
@@ -2441,7 +2378,7 @@ mod tests {
 
     #[test]
     fn id_macro_for_loop_stable_across_frames() {
-        use crate::widget;
+        use crate::ui::widget;
         let build = || -> Node<TestApp> {
             let items = vec![1, 2, 3];
             widget! { TestApp;
@@ -2463,7 +2400,7 @@ mod tests {
 
     #[test]
     fn id_macro_nested_widget_fn_unique_per_site() {
-        use crate::widget;
+        use crate::ui::widget;
         fn my_widget() -> Node<TestApp> {
             widget! { TestApp;
                 pane().id("w").size(5, 5)

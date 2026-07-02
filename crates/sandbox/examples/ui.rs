@@ -3,11 +3,9 @@ use std::f32::consts::PI;
 
 use glam::Vec2;
 use tiles::{
-    app_widget_impl,
     font::TINY5_4X5,
-    ui::{col, pane, row, text},
-    widget, widget_fn, App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, Node,
-    State, Text,
+    ui::{app_widget_impl, col, pane, row, text, widget, widget_fn},
+    App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, Node, State, Text,
 };
 
 const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
