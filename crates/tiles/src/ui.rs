@@ -210,11 +210,11 @@ impl<A: App> Node<A> {
 
     fn resolve_id(&self, parent_path: &str, index: usize) -> String {
         if !self.id.is_empty() {
-            return self.id.clone();
+            return format!("{parent_path}/{}", self.id);
         }
         match self.style.position {
-            Position::Absolute(x, y) => format!("{parent_path}/abs({x},{y})"),
-            Position::Relative(x, y) => format!("{parent_path}/rel({x},{y})"),
+            Position::Absolute(_x, _y) => format!("{parent_path}/abs_{index}"),
+            Position::Relative(_x, _y) => format!("{parent_path}/rel_{index}"),
             Position::Flow => format!("{parent_path}/{index}"),
         }
     }
@@ -857,6 +857,11 @@ impl<A: App> ResolvedNode<A> {
     }
 
     #[cfg(test)]
+    pub(crate) fn id(&self) -> &str {
+        &self.id
+    }
+
+    #[cfg(test)]
     pub(crate) fn find_child_by_index(&self, index: usize) -> Option<&Self> {
         match &self.content {
             NodeContent::Children(children) => children.get(index),
@@ -866,10 +871,11 @@ impl<A: App> ResolvedNode<A> {
 
     #[cfg(test)]
     pub(crate) fn find_child_by_id(&self, id: &str) -> Option<&Self> {
+        let suffix = format!("/{id}");
         match &self.content {
-            NodeContent::Children(children) => {
-                children.iter().find_map(|c| (c.id == id).then_some(c))
-            }
+            NodeContent::Children(children) => children
+                .iter()
+                .find(|c| c.id.ends_with(&suffix) || c.id == id),
             NodeContent::Text(_) => None,
         }
     }
@@ -940,6 +946,7 @@ mod tests {
     use super::*;
     use crate::color::Color;
     use crate::input::{ButtonState, InputState, MouseButton};
+    use crate::view;
     use glam::Vec2;
 
     const RED: Color = Color::linear(1.0, 0.0, 0.0, 1.0);
@@ -2227,5 +2234,228 @@ mod tests {
         let text_w = tr.width();
         let expected_x = 30 + (40 - text_w) / 2;
         assert_eq!(tr.x(), expected_x as f32);
+    }
+
+    // --- ID generation tests (direct construction / resolve_id fallback) ---
+
+    #[test]
+    fn id_positional_by_index() {
+        let node: Node<TestApp> = col().children(vec![
+            pane().size(10, 10),
+            pane().size(10, 10),
+            pane().size(10, 10),
+        ]);
+        let resolved = node.layout(256, 256);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().id(), "0/0");
+        assert_eq!(resolved.find_child_by_index(1).unwrap().id(), "0/1");
+        assert_eq!(resolved.find_child_by_index(2).unwrap().id(), "0/2");
+    }
+
+    #[test]
+    fn id_explicit_scoped_under_parent() {
+        let node: Node<TestApp> = col().children(vec![
+            pane().id("foo").size(10, 10),
+            pane().id("bar").size(10, 10),
+        ]);
+        let resolved = node.layout(256, 256);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().id(), "0/foo");
+        assert_eq!(resolved.find_child_by_index(1).unwrap().id(), "0/bar");
+    }
+
+    #[test]
+    fn id_nested_hierarchy() {
+        let node: Node<TestApp> = col().id("root").children(vec![row()
+            .id("row1")
+            .children(vec![pane().id("a").size(5, 5), pane().size(5, 5)])]);
+        let resolved = node.layout(256, 256);
+        assert_eq!(resolved.id(), "0");
+        let row1 = resolved.find_child_by_id("row1").unwrap();
+        assert_eq!(row1.id(), "0/row1");
+        let a = row1.find_child_by_id("a").unwrap();
+        assert_eq!(a.id(), "0/row1/a");
+        let positional = row1.find_child_by_index(1).unwrap();
+        assert_eq!(positional.id(), "0/row1/1");
+    }
+
+    #[test]
+    fn id_absolute_uses_abs_prefix() {
+        let node: Node<TestApp> = col().children(vec![
+            pane().size(10, 10),
+            pane().size(5, 5).absolute(50.0, 50.0),
+        ]);
+        let resolved = node.layout(256, 256);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().id(), "0/abs_1");
+    }
+
+    #[test]
+    fn id_relative_uses_rel_prefix() {
+        let node: Node<TestApp> = col().children(vec![pane().size(10, 10).relative(3.0, 3.0)]);
+        let resolved = node.layout(256, 256);
+        assert_eq!(resolved.find_child_by_index(0).unwrap().id(), "0/rel_0");
+    }
+
+    #[test]
+    fn id_explicit_on_absolute_still_scoped() {
+        let node: Node<TestApp> =
+            col().children(vec![pane().id("drag").size(5, 5).absolute(10.0, 10.0)]);
+        let resolved = node.layout(256, 256);
+        assert_eq!(resolved.find_child_by_id("drag").unwrap().id(), "0/drag");
+    }
+
+    #[test]
+    fn id_find_child_by_id_matches_suffix() {
+        let node: Node<TestApp> = col()
+            .id("root")
+            .children(vec![pane().id("target").size(5, 5), pane().size(5, 5)]);
+        let resolved = node.layout(256, 256);
+        let found = resolved.find_child_by_id("target");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().id(), "0/target");
+    }
+
+    #[test]
+    fn id_reusable_widget_unique_per_call_site() {
+        fn widget() -> Node<TestApp> {
+            pane().id("inner").size(5, 5)
+        }
+        let node: Node<TestApp> = col().children(vec![
+            row().id("site_a").children(vec![widget()]),
+            row().id("site_b").children(vec![widget()]),
+        ]);
+        let resolved = node.layout(256, 256);
+        let site_a = resolved.find_child_by_id("site_a").unwrap();
+        let site_b = resolved.find_child_by_id("site_b").unwrap();
+        let inner_a = site_a.find_child_by_id("inner").unwrap();
+        let inner_b = site_b.find_child_by_id("inner").unwrap();
+        assert_eq!(inner_a.id(), "0/site_a/inner");
+        assert_eq!(inner_b.id(), "0/site_b/inner");
+        assert_ne!(inner_a.id(), inner_b.id());
+    }
+
+    #[test]
+    fn id_stable_across_position_changes() {
+        let node1: Node<TestApp> =
+            col().children(vec![pane().id("drag").size(5, 5).absolute(10.0, 10.0)]);
+        let node2: Node<TestApp> =
+            col().children(vec![pane().id("drag").size(5, 5).absolute(99.0, 99.0)]);
+        let r1 = node1.layout(256, 256);
+        let r2 = node2.layout(256, 256);
+        let id1 = r1.find_child_by_id("drag").unwrap().id().to_string();
+        let id2 = r2.find_child_by_id("drag").unwrap().id().to_string();
+        assert_eq!(id1, id2);
+    }
+
+    // --- ID generation tests (view! macro injection) ---
+
+    #[test]
+    fn id_macro_injects_line_based_ids() {
+        let node: Node<TestApp> = view! { TestApp;
+            col() {
+                pane().size(10, 10)
+                pane().size(20, 20)
+            }
+        };
+        let resolved = node.layout(256, 256);
+        let c0 = resolved.find_child_by_index(0).unwrap();
+        let c1 = resolved.find_child_by_index(1).unwrap();
+        // Macro injects line:col IDs — they should be different from each other
+        assert_ne!(c0.id(), c1.id());
+        // Both should be scoped under the parent
+        assert!(c0.id().starts_with("0/"));
+        assert!(c1.id().starts_with("0/"));
+    }
+
+    #[test]
+    fn id_macro_stable_across_frames() {
+        // Simulates two "frames" — same view! produces same IDs
+        let build = || -> Node<TestApp> {
+            view! { TestApp;
+                col() {
+                    pane().size(10, 10)
+                    pane().size(20, 20)
+                }
+            }
+        };
+        let r1 = build().layout(256, 256);
+        let r2 = build().layout(256, 256);
+        let id1 = r1.find_child_by_index(0).unwrap().id().to_string();
+        let id2 = r2.find_child_by_index(0).unwrap().id().to_string();
+        assert_eq!(id1, id2);
+    }
+
+    #[test]
+    fn id_macro_explicit_id_overrides_injection() {
+        let node: Node<TestApp> = view! { TestApp;
+            col() {
+                pane().id("custom").size(10, 10)
+            }
+        };
+        let resolved = node.layout(256, 256);
+        let child = resolved.find_child_by_index(0).unwrap();
+        assert_eq!(child.id(), "0/custom");
+    }
+
+    #[test]
+    fn id_macro_for_loop_unique_per_iteration() {
+        let items = vec![1, 2, 3];
+        let node: Node<TestApp> = view! { TestApp;
+            col() {
+                @ for _item in items.iter() {
+                    pane().size(10, 10)
+                }
+            }
+        };
+        let resolved = node.layout(256, 256);
+        let c0 = resolved.find_child_by_index(0).unwrap();
+        let c1 = resolved.find_child_by_index(1).unwrap();
+        let c2 = resolved.find_child_by_index(2).unwrap();
+        // Each iteration gets a unique ID
+        assert_ne!(c0.id(), c1.id());
+        assert_ne!(c1.id(), c2.id());
+        assert_ne!(c0.id(), c2.id());
+    }
+
+    #[test]
+    fn id_macro_for_loop_stable_across_frames() {
+        let build = || -> Node<TestApp> {
+            let items = vec![1, 2, 3];
+            view! { TestApp;
+                col() {
+                    @ for _item in items.iter() {
+                        pane().size(10, 10)
+                    }
+                }
+            }
+        };
+        let r1 = build().layout(256, 256);
+        let r2 = build().layout(256, 256);
+        for i in 0..3 {
+            let id1 = r1.find_child_by_index(i).unwrap().id().to_string();
+            let id2 = r2.find_child_by_index(i).unwrap().id().to_string();
+            assert_eq!(id1, id2);
+        }
+    }
+
+    #[test]
+    fn id_macro_nested_widget_fn_unique_per_site() {
+        fn my_widget() -> Node<TestApp> {
+            view! { TestApp;
+                pane().id("w").size(5, 5)
+            }
+        }
+        let node: Node<TestApp> = view! { TestApp;
+            col() {
+                row().id("a") { my_widget() }
+                row().id("b") { my_widget() }
+            }
+        };
+        let resolved = node.layout(256, 256);
+        let a = resolved.find_child_by_id("a").unwrap();
+        let b = resolved.find_child_by_id("b").unwrap();
+        let wa = a.find_child_by_id("w").unwrap();
+        let wb = b.find_child_by_id("w").unwrap();
+        assert_ne!(wa.id(), wb.id());
+        assert!(wa.id().contains("/a/"));
+        assert!(wb.id().contains("/b/"));
     }
 }
