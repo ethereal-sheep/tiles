@@ -87,6 +87,21 @@ impl Camera {
         (vx, vy)
     }
 
+    pub fn screen_to_pixel(
+        &self,
+        window_width: u32,
+        window_height: u32,
+        screen_x: f32,
+        screen_y: f32,
+    ) -> (f32, f32) {
+        let scale = self.fit_scale(window_width, window_height);
+        let viewport_screen_w = self.w as f32 * scale;
+        let viewport_screen_h = self.h as f32 * scale;
+        let offset_x = (window_width as f32 - viewport_screen_w) / 2.0;
+        let offset_y = (window_height as f32 - viewport_screen_h) / 2.0;
+        (screen_x * scale + offset_x, screen_y * scale + offset_y)
+    }
+
     pub fn world_to_screen(&self, world_x: f32, world_y: f32) -> (f32, f32) {
         let half_w = self.w as f32 / 2.0;
         let half_h = self.h as f32 / 2.0;

@@ -682,6 +682,7 @@ impl<A: App> ResolvedNode<A> {
     pub(crate) fn evaluate(self, app: &mut A, state: &mut State) {
         let mut cells = Vec::new();
         let mut consumed = ConsumedState::new();
+        let mut debug_color_index = 0;
         self.evaluate_recursive(
             app,
             state,
@@ -689,6 +690,7 @@ impl<A: App> ResolvedNode<A> {
             &mut consumed,
             Some(Color::hex(0xFFFFFF)),
             0.0,
+            &mut debug_color_index,
         );
         cells.reverse();
         state.draw_screen_overlay(cells);
@@ -703,6 +705,7 @@ impl<A: App> ResolvedNode<A> {
         consumed: &mut ConsumedState,
         text_color: Option<Color>,
         depth: f32,
+        debug_color_index: &mut usize,
     ) {
         let is_captured = state
             .get_input_ref()
@@ -741,7 +744,7 @@ impl<A: App> ResolvedNode<A> {
         let text = match self.content {
             NodeContent::Children(children) => {
                 for node in children.into_iter().rev() {
-                    node.evaluate_recursive(app, state, cells, consumed, text_color, depth + 1.0);
+                    node.evaluate_recursive(app, state, cells, consumed, text_color, depth + 1.0, debug_color_index);
                 }
                 None
             }
@@ -848,6 +851,27 @@ impl<A: App> ResolvedNode<A> {
                 c.position.z = depth + 0.5;
                 cells.push(c);
             });
+        }
+
+        // Debug UI overlay
+        if state.debug_ui_enabled() {
+            const DEBUG_COLORS: [Color; 6] = [
+                Color::linear(1.0, 0.2, 0.2, 1.0),
+                Color::linear(0.2, 1.0, 0.2, 1.0),
+                Color::linear(0.3, 0.3, 1.0, 1.0),
+                Color::linear(1.0, 1.0, 0.2, 1.0),
+                Color::linear(1.0, 0.2, 1.0, 1.0),
+                Color::linear(0.2, 1.0, 1.0, 1.0),
+            ];
+            let c = DEBUG_COLORS[*debug_color_index % DEBUG_COLORS.len()];
+            *debug_color_index += 1;
+            state.debug_ui_rect(
+                self.rect.x(),
+                self.rect.y(),
+                self.rect.width() as f32,
+                self.rect.height() as f32,
+                c,
+            );
         }
     }
 

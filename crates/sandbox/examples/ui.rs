@@ -1,7 +1,7 @@
 use core::f32;
 use std::f32::consts::PI;
 
-use glam::Vec2;
+use glam::{vec2, Vec2};
 use tiles::{
     font::TINY5_4X5,
     ui::{app_widget_impl, col, pane, row, text, widget, widget_fn},
@@ -60,6 +60,7 @@ impl App for Demo {
         state.set_viewport_background(Color::linear(0.05, 0.05, 0.08, 1.0));
         state.set_window_background(Color::linear(0.0, 0.0, 0.0, 1.0));
         state.set_ambient_illumination(1.0);
+        state.set_debug(true);
     }
 
     fn ui(&self, _state: &State) -> Node<Self> {
@@ -168,6 +169,14 @@ impl App for Demo {
     }
 
     fn draw(&mut self, state: &mut State) {
+        state.debug_line(
+            Vec2::ZERO,
+            Vec2::new(
+                state.viewport_width() as f32 / 2.0,
+                state.viewport_height() as f32 / 2.0,
+            ),
+            Color::hex(0xFFFFFF),
+        );
         let elapsed = state.elapsed();
         let text_pos = glam::Vec2::from_angle(elapsed * PI / 2.0) * 30.0;
         state.draw_world(
@@ -190,6 +199,7 @@ fn main() {
         .width(1024)
         .height(768)
         .viewport(256, 256)
+        .debug_ui()
         .no_file()
         .build();
 

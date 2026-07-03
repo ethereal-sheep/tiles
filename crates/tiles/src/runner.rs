@@ -18,7 +18,7 @@ use crate::input::{
     self, ButtonState, InputState, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent,
 };
 use crate::rect::Rect;
-use crate::renderer::Renderer;
+use crate::renderer::{DebugVertex, Renderer};
 use crate::shape::Shape;
 
 pub trait App {
@@ -44,6 +44,7 @@ pub struct State {
     screen_cells: Vec<Cell>,
     world_overlay_cells: Vec<Cell>,
     screen_overlay_cells: Vec<Cell>,
+    debug_vertices: Vec<DebugVertex>,
     config: Config,
     camera: Camera,
     input: InputState,
@@ -71,6 +72,7 @@ impl State {
             screen_cells: Vec::new(),
             world_overlay_cells: Vec::new(),
             screen_overlay_cells: Vec::new(),
+            debug_vertices: Vec::new(),
             config,
             camera,
             input: InputState::new(),
@@ -119,14 +121,6 @@ impl State {
 
     pub(crate) fn get_input_mut_ref(&mut self) -> &mut InputState {
         &mut self.input
-    }
-
-    pub(crate) fn get_camera_ref(&self) -> &Camera {
-        &self.camera
-    }
-
-    pub(crate) fn get_camera_mut_ref(&mut self) -> &mut Camera {
-        &mut self.camera
     }
 
     pub fn set_viewport_size(&mut self, width: u32, height: u32) {
@@ -202,6 +196,15 @@ impl State {
                 .pixel_to_screen(renderer.width(), renderer.height(), pixel_x, pixel_y)
         } else {
             (pixel_x, pixel_y)
+        }
+    }
+
+    pub fn screen_to_pixel(&self, screen_x: f32, screen_y: f32) -> (f32, f32) {
+        if let Some(renderer) = &self.renderer {
+            self.camera
+                .screen_to_pixel(renderer.width(), renderer.height(), screen_x, screen_y)
+        } else {
+            (screen_x, screen_y)
         }
     }
 
@@ -284,16 +287,134 @@ impl State {
         self.debug = enabled;
     }
 
-    pub fn debug_line(&mut self, _from: Vec2, _to: Vec2, _color: [f32; 4]) {
+    pub fn debug_line(&mut self, from: Vec2, to: Vec2, color: Color) {
         if !self.debug {
             return;
         }
+        let color = color.to_array();
+        let dx = to.x - from.x;
+        let dy = to.y - from.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len < 1e-6 {
+            return;
+        }
+        let px = -dy / len * 0.5;
+        let py = dx / len * 0.5;
+
+        let v0 = [from.x + px, from.y + py];
+        let v1 = [from.x - px, from.y - py];
+        let v2 = [to.x + px, to.y + py];
+        let v3 = [to.x - px, to.y - py];
+
+        self.debug_vertices.push(DebugVertex {
+            position: v0,
+            color,
+        });
+        self.debug_vertices.push(DebugVertex {
+            position: v1,
+            color,
+        });
+        self.debug_vertices.push(DebugVertex {
+            position: v2,
+            color,
+        });
+        self.debug_vertices.push(DebugVertex {
+            position: v2,
+            color,
+        });
+        self.debug_vertices.push(DebugVertex {
+            position: v1,
+            color,
+        });
+        self.debug_vertices.push(DebugVertex {
+            position: v3,
+            color,
+        });
+    }
+
+    pub fn debug_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
+        if !self.debug {
+            return;
+        }
+        let tl = Vec2::new(x, y);
+        let tr = Vec2::new(x + w, y);
+        let br = Vec2::new(x + w, y + h);
+        let bl = Vec2::new(x, y + h);
+        self.debug_line(tl, tr, color);
+        self.debug_line(tr, br, color);
+        self.debug_line(br, bl, color);
+        self.debug_line(bl, tl, color);
     }
 
     pub fn debug_text(&mut self, _text: &str, _x: f32, _y: f32) {
         if !self.debug {
             return;
         }
+    }
+
+    pub(crate) fn debug_ui_enabled(&self) -> bool {
+        self.config.debug_ui
+    }
+
+    pub(crate) fn debug_ui_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
+        if w < 1.0 || h < 1.0 {
+            return;
+        }
+
+        let (px, py) = self.screen_to_pixel(x - 0.5, y - 0.5);
+        let (px2, py2) = self.screen_to_pixel(x + w - 0.5, y + h - 0.5);
+        let pw = px2 - px;
+        let ph = py2 - py;
+
+        let c = color.to_array();
+        let tl = Vec2::new(px, py);
+        let tr = Vec2::new(px + pw, py);
+        let br = Vec2::new(px + pw, py + ph);
+        let bl = Vec2::new(px, py + ph);
+
+        let push_line = |verts: &mut Vec<DebugVertex>, from: Vec2, to: Vec2| {
+            let dx = to.x - from.x;
+            let dy = to.y - from.y;
+            let len = (dx * dx + dy * dy).sqrt();
+            if len < 1e-6 {
+                return;
+            }
+            let nx = -dy / len * 0.5;
+            let ny = dx / len * 0.5;
+            let v0 = [from.x + nx, from.y + ny];
+            let v1 = [from.x - nx, from.y - ny];
+            let v2 = [to.x + nx, to.y + ny];
+            let v3 = [to.x - nx, to.y - ny];
+            verts.push(DebugVertex {
+                position: v0,
+                color: c,
+            });
+            verts.push(DebugVertex {
+                position: v1,
+                color: c,
+            });
+            verts.push(DebugVertex {
+                position: v2,
+                color: c,
+            });
+            verts.push(DebugVertex {
+                position: v2,
+                color: c,
+            });
+            verts.push(DebugVertex {
+                position: v1,
+                color: c,
+            });
+            verts.push(DebugVertex {
+                position: v3,
+                color: c,
+            });
+        };
+
+        push_line(&mut self.debug_vertices, tl, tr);
+        push_line(&mut self.debug_vertices, tr, br);
+        push_line(&mut self.debug_vertices, br, bl);
+        push_line(&mut self.debug_vertices, bl, tl);
     }
 
     // --- Config ---
@@ -555,6 +676,8 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                 self.state.elapsed = elapsed_last + expanded_dt;
                 self.app.pre_update(&mut self.state);
 
+                self.state.debug_vertices.clear();
+
                 let tree = self.app.ui(&self.state);
                 let resolved =
                     tree.layout(self.state.viewport_width(), self.state.viewport_height());
@@ -645,6 +768,7 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                         &opaque,
                         &transparent,
                         &screen_instances,
+                        &self.state.debug_vertices,
                         &lights,
                         &bloom_sources,
                         self.state.ambient_illumination,

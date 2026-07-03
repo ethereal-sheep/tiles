@@ -6,6 +6,14 @@ use crate::cell::{CellInstance, LightData};
 
 const MAX_INSTANCES: usize = 131072;
 const MAX_LIGHTS: usize = 64;
+const MAX_DEBUG_VERTICES: usize = 65536;
+
+#[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct DebugVertex {
+    pub position: [f32; 2],
+    pub color: [f32; 4],
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
@@ -226,6 +234,33 @@ fn vs_fullscreen(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4<f32>
 fn fs_viewport_clear() -> @location(0) vec4<f32> {
     return uniforms.viewport_bg;
 }
+
+// Debug overlay: pixel-space lines and rects
+struct DebugVertexIn {
+    @location(0) position: vec2<f32>,
+    @location(1) color: vec4<f32>,
+}
+
+struct DebugVertexOut {
+    @builtin(position) clip_position: vec4<f32>,
+    @location(0) color: vec4<f32>,
+}
+
+@vertex
+fn vs_debug(in: DebugVertexIn) -> DebugVertexOut {
+    // pixel coords to NDC: x: [0, window_w] -> [-1, 1], y: [0, window_h] -> [1, -1]
+    let ndc_x = in.position.x / uniforms.viewport_size.x * 2.0 - 1.0;
+    let ndc_y = 1.0 - in.position.y / uniforms.viewport_size.y * 2.0;
+    var out: DebugVertexOut;
+    out.clip_position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
+    out.color = in.color;
+    return out;
+}
+
+@fragment
+fn fs_debug(in: DebugVertexOut) -> @location(0) vec4<f32> {
+    return in.color;
+}
 "#;
 
 pub struct Renderer {
@@ -238,7 +273,9 @@ pub struct Renderer {
     bloom_pipeline: wgpu::RenderPipeline,
     screen_pipeline: wgpu::RenderPipeline,
     viewport_clear_pipeline: wgpu::RenderPipeline,
+    debug_pipeline: wgpu::RenderPipeline,
     instance_buffer: wgpu::Buffer,
+    debug_buffer: wgpu::Buffer,
     uniform_buffer: wgpu::Buffer,
     light_uniform_buffer: wgpu::Buffer,
     bind_group: wgpu::BindGroup,
@@ -588,9 +625,64 @@ impl Renderer {
                 cache: None,
             });
 
+        let debug_vertex_layout = wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<DebugVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x4,
+                    offset: 8,
+                    shader_location: 1,
+                },
+            ],
+        };
+
+        let debug_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("debug_pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: "vs_debug",
+                buffers: &[debug_vertex_layout],
+                compilation_options: Default::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: "fs_debug",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: Default::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            multiview: None,
+            cache: None,
+        });
+
         let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("instance_buffer"),
             size: (MAX_INSTANCES * std::mem::size_of::<CellInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+
+        let debug_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("debug_buffer"),
+            size: (MAX_DEBUG_VERTICES * std::mem::size_of::<DebugVertex>()) as u64,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -607,7 +699,9 @@ impl Renderer {
             bloom_pipeline,
             screen_pipeline,
             viewport_clear_pipeline,
+            debug_pipeline,
             instance_buffer,
+            debug_buffer,
             uniform_buffer,
             light_uniform_buffer,
             bind_group,
@@ -657,6 +751,7 @@ impl Renderer {
         opaque: &[CellInstance],
         transparent: &[CellInstance],
         screen: &[CellInstance],
+        debug: &[DebugVertex],
         lights: &[LightData],
         bloom_sources: &[LightData],
         ambient: f32,
@@ -667,11 +762,12 @@ impl Renderer {
         window_bg: [f32; 4],
         viewport_bg: [f32; 4],
     ) -> Result<(), wgpu::SurfaceError> {
+        let window_size = [self.config.width as f32, self.config.height as f32];
         let uniforms = Uniforms {
             projection: projection.to_cols_array_2d(),
             viewport_bg,
             viewport_offset: viewport_offset.to_array(),
-            viewport_size: viewport_size.to_array(),
+            viewport_size: window_size,
             viewport_cells: viewport_cells.to_array(),
             _pad: [0.0; 2],
         };
@@ -852,6 +948,36 @@ impl Renderer {
             pass.set_bind_group(0, &self.bind_group, &[]);
             pass.set_pipeline(&self.screen_pipeline);
             Self::draw_range(&mut pass, &self.instance_buffer, world_count, screen.len());
+        }
+
+        // Debug overlay pass: pixel-space, no depth, on top of everything
+        if !debug.is_empty() {
+            let debug_count = debug.len().min(MAX_DEBUG_VERTICES);
+            self.queue.write_buffer(
+                &self.debug_buffer,
+                0,
+                bytemuck::cast_slice(&debug[..debug_count]),
+            );
+
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("debug_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            pass.set_bind_group(0, &self.bind_group, &[]);
+            pass.set_pipeline(&self.debug_pipeline);
+            pass.set_vertex_buffer(0, self.debug_buffer.slice(..));
+            pass.draw(0..debug_count as u32, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
