@@ -23,7 +23,6 @@ pub mod ui {
     pub use tiles_macros::{app_widget_impl, widget, widget_fn};
 }
 
-pub use camera::Camera;
 pub use cell::{Cell, Rotation};
 pub use color::Color;
 pub use config::{Config, ConfigBuilder};

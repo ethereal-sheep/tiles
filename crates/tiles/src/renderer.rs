@@ -663,7 +663,7 @@ impl Renderer {
         projection: Mat4,
         viewport_offset: Vec2,
         viewport_size: Vec2,
-        viewport_cells: Vec2,
+        viewport_cells: Vec2, // can be deprecated
         window_bg: [f32; 4],
         viewport_bg: [f32; 4],
     ) -> Result<(), wgpu::SurfaceError> {
@@ -882,11 +882,11 @@ impl Renderer {
         pass.draw(0..6, 0..count as u32);
     }
 
-    pub fn width(&self) -> f32 {
-        self.config.width as f32
+    pub fn width(&self) -> u32 {
+        self.config.width
     }
 
-    pub fn height(&self) -> f32 {
-        self.config.height as f32
+    pub fn height(&self) -> u32 {
+        self.config.height
     }
 }

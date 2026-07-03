@@ -2,6 +2,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Quat, Vec3};
 
 use crate::color::Color;
+use crate::rect::Rect;
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
@@ -173,6 +174,10 @@ impl Cell {
             color: [self.color[0], self.color[1], self.color[2]],
             _pad: 0.0,
         }
+    }
+
+    pub(crate) fn to_rect(&self) -> Rect {
+        Rect::from_top_left(self.position.x, self.position.y, 1, 1)
     }
 
     pub(crate) fn is_opaque(&self) -> bool {

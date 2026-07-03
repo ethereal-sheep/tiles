@@ -84,7 +84,6 @@ impl App for Demo {
                             .pressed_color(BTN_PRESS)
                             .on_drag(|app, _state, drag| {
                                 app.pos += drag.delta_screen;
-                                eprintln!("{}", drag.delta_screen.x);
                             }) {
                                 text("drag").font(&TINY5_4X5).padding(2)
                             }
@@ -155,10 +154,7 @@ impl App for Demo {
                     .color(BG)
                     .hover_color(BTN_HOVER)
                     .pressed_color(BTN_PRESS)
-                    .on_drag(|app, _state, drag| {
-                        app.pos += drag.delta_screen;
-                        eprintln!("{}", drag.delta_screen.x);
-                    }) {
+                    .on_drag(|app, _state, drag| app.pos += drag.delta_screen) {
                         text("drag me").font(&TINY5_4X5).padding(2)
                     }
             }

@@ -17,6 +17,7 @@ use crate::element::{self, HitState};
 use crate::input::{
     self, ButtonState, InputState, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent,
 };
+use crate::rect::Rect;
 use crate::renderer::Renderer;
 use crate::shape::Shape;
 
@@ -62,7 +63,7 @@ pub struct State {
 impl State {
     fn new(config: Config) -> Self {
         let fixed_dt = Duration::from_secs_f32(1.0 / config.steps_per_second as f32);
-        let camera = Camera::new(config.viewport_width as f32, config.viewport_height as f32);
+        let camera = Camera::new(config.viewport_width, config.viewport_height);
         Self {
             window: None,
             renderer: None,
@@ -120,53 +121,40 @@ impl State {
         &mut self.input
     }
 
-    // --- Camera ---
-
-    pub fn set_camera_position(&mut self, x: f32, y: f32) {
-        self.camera.position = Vec2::new(x, y);
+    pub(crate) fn get_camera_ref(&self) -> &Camera {
+        &self.camera
     }
 
-    pub fn camera_position(&self) -> Vec2 {
-        self.camera.position
+    pub(crate) fn get_camera_mut_ref(&mut self) -> &mut Camera {
+        &mut self.camera
     }
 
-    pub fn set_viewport(&mut self, width: u32, height: u32) {
-        self.camera.viewport_width = width as f32;
-        self.camera.viewport_height = height as f32;
+    pub fn set_viewport_size(&mut self, width: u32, height: u32) {
+        self.camera.set_viewport_size(width, height);
         self.config.viewport_width = width;
         self.config.viewport_height = height;
         self.config.save();
     }
 
-    pub fn viewport_size(&self) -> Vec2 {
-        Vec2::new(self.camera.viewport_width, self.camera.viewport_height)
+    pub fn viewport_width(&self) -> u32 {
+        self.camera.viewport_width()
     }
 
-    // --- Coordinate conversion ---
-
-    pub fn world_to_screen(&self, world_pos: Vec2) -> Vec2 {
-        let half_w = self.camera.viewport_width / 2.0;
-        let half_h = self.camera.viewport_height / 2.0;
-        let x = world_pos.x - self.camera.position.x + half_w;
-        let y = half_h - (world_pos.y - self.camera.position.y);
-        Vec2::new(x, y)
+    pub fn viewport_height(&self) -> u32 {
+        self.camera.viewport_height()
     }
 
-    pub fn pixel_to_screen(&self, pixel_pos: Vec2) -> Vec2 {
-        if let Some(renderer) = &self.renderer {
-            let w = renderer.width();
-            let h = renderer.height();
-            let scale = self.camera.fit_scale(w, h);
-            let viewport_screen_w = self.camera.viewport_width * scale;
-            let viewport_screen_h = self.camera.viewport_height * scale;
-            let offset_x = (w - viewport_screen_w) / 2.0;
-            let offset_y = (h - viewport_screen_h) / 2.0;
-            let vx = (pixel_pos.x - offset_x) / scale;
-            let vy = (pixel_pos.y - offset_y) / scale;
-            Vec2::new(vx, vy)
-        } else {
-            pixel_pos
-        }
+    pub fn camera_position(&self) -> (f32, f32) {
+        self.camera.position()
+    }
+
+    pub fn set_camera_position(&mut self, x: f32, y: f32) {
+        self.camera.set_position(x, y);
+    }
+
+    pub fn move_camera(&mut self, dx: f32, dy: f32) {
+        let (x, y) = self.camera.position();
+        self.camera.set_position(x + dx, y + dy);
     }
 
     // --- Window ---
@@ -208,68 +196,86 @@ impl State {
         element::test_shape(&self.input, shape, true)
     }
 
+    pub fn pixel_to_screen(&self, pixel_x: f32, pixel_y: f32) -> (f32, f32) {
+        if let Some(renderer) = &self.renderer {
+            self.camera
+                .pixel_to_screen(renderer.width(), renderer.height(), pixel_x, pixel_y)
+        } else {
+            (pixel_x, pixel_y)
+        }
+    }
+
+    pub fn pixel_to_world(&self, pixel_x: f32, pixel_y: f32) -> (f32, f32) {
+        if let Some(renderer) = &self.renderer {
+            self.camera
+                .pixel_to_world(renderer.width(), renderer.height(), pixel_x, pixel_y)
+        } else {
+            (pixel_x, pixel_y)
+        }
+    }
+
+    pub fn world_to_screen(&self, world_x: f32, world_y: f32) -> (f32, f32) {
+        self.camera.world_to_screen(world_x, world_y)
+    }
+
+    pub fn screen_to_world(&self, world_x: f32, world_y: f32) -> (f32, f32) {
+        self.camera.screen_to_world(world_x, world_y)
+    }
+
+    fn is_rect_in_view(&self, rect: Rect, is_screen_space: bool) -> bool {
+        if is_screen_space {
+            self.camera.screen_space_manifold()
+        } else {
+            self.camera.world_space_manifold()
+        }
+        .expand_bottom(rect.height() as i32)
+        .expand_top(rect.height() as i32)
+        .expand_left(rect.width() as i32)
+        .expand_right(rect.width() as i32)
+        .contains_point(rect.x(), rect.y())
+    }
+
     // --- Drawing ---
+    fn draw(&mut self, drawable: impl Drawable, is_screen_space: bool, is_overlay: bool) {
+        if is_screen_space {
+            drawable.emit_cells(&mut |cell| {
+                if self.is_rect_in_view(cell.to_rect(), is_screen_space) {
+                    if is_overlay {
+                        &mut self.screen_overlay_cells
+                    } else {
+                        &mut self.screen_cells
+                    }
+                    .push(cell);
+                }
+            });
+        } else {
+            drawable.flip_y().emit_cells(&mut |cell| {
+                if self.is_rect_in_view(cell.to_rect(), is_screen_space) {
+                    if is_overlay {
+                        &mut self.world_overlay_cells
+                    } else {
+                        &mut self.cells
+                    }
+                    .push(cell);
+                }
+            });
+        }
+    }
 
     pub fn draw_world(&mut self, drawable: impl Drawable) {
-        let half_w = self.camera.viewport_width / 2.0;
-        let half_h = self.camera.viewport_height / 2.0;
-        let min_x = self.camera.position.x - half_w - 1.0;
-        let max_x = self.camera.position.x + half_w + 1.0;
-        let min_y = self.camera.position.y - half_h - 1.0;
-        let max_y = self.camera.position.y + half_h + 1.0;
-        drawable.flip_y().emit_cells(&mut |cell| {
-            if cell.position.x >= min_x
-                && cell.position.x <= max_x
-                && cell.position.y >= min_y
-                && cell.position.y <= max_y
-            {
-                self.cells.push(cell);
-            }
-        });
+        self.draw(drawable, false, false);
     }
 
     pub fn draw_screen(&mut self, drawable: impl Drawable) {
-        let vw = self.camera.viewport_width;
-        let vh = self.camera.viewport_height;
-        drawable.emit_cells(&mut |cell| {
-            if cell.position.x >= -1.0
-                && cell.position.x <= vw
-                && cell.position.y >= -1.0
-                && cell.position.y <= vh
-            {
-                self.screen_cells.push(cell);
-            }
-        });
+        self.draw(drawable, true, false);
     }
 
     pub(crate) fn draw_world_overlay(&mut self, drawable: impl Drawable) {
-        let min_x = self.camera.position.x - self.camera.viewport_width / 2.0 - 1.0;
-        let max_x = self.camera.position.x + self.camera.viewport_width / 2.0 + 1.0;
-        let min_y = self.camera.position.y - self.camera.viewport_height / 2.0 - 1.0;
-        let max_y = self.camera.position.y + self.camera.viewport_height / 2.0 + 1.0;
-        drawable.flip_y().emit_cells(&mut |cell| {
-            if cell.position.x >= min_x
-                && cell.position.x <= max_x
-                && cell.position.y >= min_y
-                && cell.position.y <= max_y
-            {
-                self.world_overlay_cells.push(cell);
-            }
-        });
+        self.draw(drawable, false, true);
     }
 
     pub(crate) fn draw_screen_overlay(&mut self, drawable: impl Drawable) {
-        let vw = self.camera.viewport_width;
-        let vh = self.camera.viewport_height;
-        drawable.emit_cells(&mut |cell| {
-            if cell.position.x >= -1.0
-                && cell.position.x <= vw
-                && cell.position.y >= -1.0
-                && cell.position.y <= vh
-            {
-                self.screen_overlay_cells.push(cell);
-            }
-        });
+        self.draw(drawable, true, true);
     }
 
     // --- Debug ---
@@ -461,34 +467,29 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
             }
 
             WindowEvent::CursorMoved { position, .. } => {
-                let pixel_pos = Vec2::new(position.x as f32, position.y as f32);
-                let screen_pos = self.state.pixel_to_screen(pixel_pos);
-
                 let prev_screen = self.state.input.mouse_screen_pos;
                 let prev_world = self.state.input.mouse_world_pos;
 
-                self.state.input.prev_mouse_screen_pos = prev_screen;
-                self.state.input.prev_mouse_world_pos = prev_world;
-                self.state.input.mouse_screen_pos = screen_pos;
+                self.state.input.mouse_screen_pos = Vec2::from(
+                    self.state
+                        .pixel_to_screen(position.x as f32, position.y as f32),
+                );
 
-                if let Some(renderer) = &self.state.renderer {
-                    let w = renderer.width();
-                    let h = renderer.height();
-                    self.state.input.mouse_world_pos =
-                        self.state.camera.screen_to_world(pixel_pos, w, h);
-                }
+                self.state.input.mouse_world_pos = self
+                    .state
+                    .pixel_to_world(position.x as f32, position.y as f32)
+                    .into();
 
-                let world_pos = self.state.input.mouse_world_pos;
-                let screen_delta = screen_pos - prev_screen;
-                let world_delta = world_pos - prev_world;
+                let screen_delta = self.state.input.mouse_screen_pos - prev_screen;
+                let world_delta = self.state.input.mouse_world_pos - prev_world;
 
                 let mouse_event = MouseEvent {
                     action: MouseAction::Moved {
                         screen_delta,
                         world_delta,
                     },
-                    screen_pos,
-                    world_pos,
+                    screen_pos: self.state.input.mouse_screen_pos,
+                    world_pos: self.state.input.mouse_world_pos,
                 };
 
                 self.app.on_mouse(&mut self.state, mouse_event);
@@ -555,10 +556,8 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                 self.app.pre_update(&mut self.state);
 
                 let tree = self.app.ui(&self.state);
-                let resolved = tree.layout(
-                    self.state.camera.viewport_width as u32,
-                    self.state.camera.viewport_height as u32,
-                );
+                let resolved =
+                    tree.layout(self.state.viewport_width(), self.state.viewport_height());
 
                 resolved.evaluate(self.app, &mut self.state);
 
@@ -633,15 +632,14 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                 for cell in &self.state.screen_overlay_cells {
                     screen_instances.push(cell.to_screen_instance());
                 }
-
+                let viewport_cells = Vec2::new(
+                    self.state.viewport_width() as f32,
+                    self.state.viewport_height() as f32,
+                );
                 if let Some(renderer) = &mut self.state.renderer {
                     let w = renderer.width();
                     let h = renderer.height();
-                    let (proj, offset, size) = self.state.camera.projection(w, h);
-                    let vp_cells = Vec2::new(
-                        self.state.camera.viewport_width,
-                        self.state.camera.viewport_height,
-                    );
+                    let (projection, offset, size) = self.state.camera.projection(w, h);
 
                     match renderer.render(
                         &opaque,
@@ -650,10 +648,10 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                         &lights,
                         &bloom_sources,
                         self.state.ambient_illumination,
-                        proj,
+                        projection,
                         offset,
                         size,
-                        vp_cells,
+                        viewport_cells,
                         self.state.window_bg.to_array(),
                         self.state.viewport_bg.to_array(),
                     ) {

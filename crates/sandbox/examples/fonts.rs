@@ -104,7 +104,7 @@ impl App for FontDemo {
 
         let vp_w = (text_width + 20).max(128);
         let vp_h = (text_height + 20).max(128);
-        state.set_viewport(vp_w as u32, vp_h as u32);
+        state.set_viewport_size(vp_w as u32, vp_h as u32);
 
         let pixels_per_cell = 4u32;
         let win_w = vp_w as u32 * pixels_per_cell;
