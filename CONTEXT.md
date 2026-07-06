@@ -24,17 +24,6 @@ _Avoid_: Margin color, border color
 The color used to clear the area inside the **Viewport** each frame — the visible "empty world."
 _Avoid_: Clear color, background (ambiguous)
 
-**Palette**:
-An ordered, mutable list of colors that a **Tilesheet** uses. Every **Cell** in a **Tile** references a Palette index rather than a raw color. Modifying a Palette entry recolors all Cells using that index.
-_Avoid_: Color set, swatch, theme
-
-**Tile**:
-A square grid of **Cells** that forms a reusable visual unit. Defined by a uniform size (e.g. 8x8, 16x16). One Tile contains NxN Cells, each referencing a **Palette** index.
-_Avoid_: Sprite, stamp, block
-
-**Tilesheet**:
-An ordered collection of **Tiles**, all sharing the same dimensions and **Palette**. The export artifact of the editor and the import artifact of the engine.
-_Avoid_: Spritesheet, atlas, tilemap
 
 **Fixed Timestep**:
 The simulation update rate. The engine calls the user's update function at a constant interval regardless of frame rate, accumulating leftover time between frames. The user always sees a constant `dt`.
@@ -64,33 +53,18 @@ _Avoid_: Plugin, insert, processor
 A control signal generator attached to a **Voice**. Produces per-sample values that modify a target parameter (amplitude, pitch, or pan). Types: ADSR envelope, LFO.
 _Avoid_: Envelope (when referring to the concept generically), controller
 
-**Pattern**:
-A fixed-length grid of rows × channels containing note events. Each cell holds: note, instrument, volume, and two effect commands. The atomic unit of composition in the tracker.
-_Avoid_: Block, sequence, clip
 
-**Order List**:
-A sequence of **Pattern** indices defining song playback order. Allows reusing Patterns. The song-level structure.
-_Avoid_: Playlist, arrangement, song list
-
-**Instrument**:
-A creative preset in the tracker combining one **Source** with **Modulators** and default parameters (volume, pan). One Instrument maps to one Source type. Layering is achieved by using multiple tracker channels.
-_Avoid_: Patch, program, preset
-
-**Pane**:
-A rectangular screen-space region that contains UI elements. Positioned in viewport coordinates (origin top-left, Y-down). Owns layout state: cursor position, computed size, draw-order rank. A Pane may be movable (via title bar drag) or resizable. Identified by a user-provided string ID.
-_Avoid_: Window (ambiguous with OS window), panel, dialog
-
-**PaneContext**:
-The user-owned object that orchestrates all Panes. Manages focus, draw order, input routing, and stores persistent pane state (position, size) across frames. Receives input via `feed_mouse`/`feed_key`, evaluates layout and interaction in `pre_update`, and emits Cells in draw-order via `render_all`.
-_Avoid_: UI manager, GUI system, UI state
+**Node**:
+The fundamental unit of the declarative UI tree. Has a style (sizing, axis, gap, padding, justify, align, colors), optional event handlers, and content (either child Nodes or text). Built via `pane()`, `row()`, `col()`, `text()` constructors or the `widget!` macro. Resolved through a three-pass layout (pre-process → size → position) then evaluated for hit-testing and rendering. Rebuilt each frame; stable IDs (auto-generated or user-provided) maintain interaction continuity.
+_Avoid_: Pane (legacy term), component, element (ambiguous with the world-space Element concept)
 
 **Widget**:
-A UI element placed inside a **Pane** via the layout cursor. Defined by a trait (`size` + `render`) and eagerly consumed into a positioned rectangle of **Cells**. Built-in Widgets: button, text, slider, checkbox, separator, spacer. User-extensible by implementing the Widget trait.
-_Avoid_: Component, control, node
+A composable **Node** constructor. Defined by a trait (`render(self, children) -> Node<A>`). Built-in constructors: `pane()`, `row()`, `col()`, `text()`. User-extensible via `#[widget_fn]` macro which generates a function returning a Node with custom parameters and children.
+_Avoid_: Component, control, element
 
 **Element**:
 A user-implemented interactive visual with a **Shape** and an appearance that varies by **ElementState**. Defined by a trait (`shape` + `draw`) with default methods (`handle_screen`, `handle_world`) that hit-test, compute visual state, draw to the overlay buffer, and return **HitState**. Lives in the tiles crate.
-_Avoid_: Widget (panes concept), component, control
+_Avoid_: Widget (different concept), Node, component, control
 
 **ElementState**:
 The visual state of an **Element**: Default, Hovered, Pressed, or Captured. Derived from **HitState** by the Element trait's default methods. Captured means the press originated inside but the cursor has since left the **Shape**.
@@ -105,7 +79,7 @@ Data returned by `HitState::is_dragging()` when a drag is active. Contains delta
 _Avoid_: DragState, drag data
 
 **Drawable**:
-A trait that produces **Cells** via a visitor callback. The unified interface for submitting visual content to the renderer. **Cell**, **Text**, **Line**, **Fill**, and **Stroke** implement Drawable. The `.colored()` combinator wraps any Drawable to override cell color.
+A trait that produces **Cells** via a visitor callback. The unified interface for submitting visual content to the renderer. **Cell**, **Text**, **Line**, **Fill**, and **Stroke** implement Drawable. Combinators (`.color()`, `.map_cell()`, `.flip_x()`, `.translate()`, etc.) wrap any Drawable in a `Mapped<T>` adapter.
 _Avoid_: Renderable, primitive
 
 **Shape**:
@@ -143,6 +117,32 @@ _Avoid_: RoundRect, pill, capsule
 **Line**:
 A segment between two endpoints with a configurable width. Implements **Drawable** directly (not **Shape**). Width expansion is centered; even widths bias one side. Rasterized via DDA walk with perpendicular thickening.
 _Avoid_: Segment, stroke (ambiguous with Shape stroke)
+
+**Rotation**:
+A per-**Cell** transform applied by the vertex shader. Parameterized by a float t: Z(t) rotates in the screen plane (0→1 = 0→90°), FlipX/FlipY rotate around the X/Y axis (0→1 = 0→180°), DiagonalTL/DiagonalTR rotate around diagonal axes. Stored internally as a quaternion.
+_Avoid_: Transform, orientation
+
+**Emissive**:
+A **Cell** property meaning it is unaffected by **Ambient Illumination** — always rendered at full brightness. A Cell with a positive light radius is automatically emissive. Calling `.emissive()` sets light radius to zero (self-lit but no area illumination).
+_Avoid_: Lit, fullbright, unlit (opposite meaning)
+
+**Ambient Illumination**:
+A global scalar (0.0–1.0) that dims non-**Emissive** Cells. At 1.0, all Cells render at full color. At 0.0, only Emissive Cells are visible. Set per-frame by the user.
+_Avoid_: Global light, brightness, exposure
+
+## KIV (planned, not yet implemented)
+
+**Palette** — An ordered, mutable list of colors that a Tilesheet uses. Every Cell in a Tile references a Palette index rather than a raw color. Modifying a Palette entry recolors all Cells using that index.
+
+**Tile** — A square grid of Cells that forms a reusable visual unit (e.g. 8x8, 16x16). Each Cell references a Palette index.
+
+**Tilesheet** — An ordered collection of Tiles, all sharing the same dimensions and Palette. The export artifact of the editor and the import artifact of the engine.
+
+**Pattern** — A fixed-length grid of rows × channels containing note events (note, instrument, volume, effect commands). The atomic unit of composition in a tracker.
+
+**Order List** — A sequence of Pattern indices defining song playback order. The song-level structure.
+
+**Instrument** — A creative preset combining one Source with Modulators and default parameters (volume, pan). One Instrument maps to one Source type.
 
 ## Example dialogue
 
