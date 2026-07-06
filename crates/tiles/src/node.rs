@@ -744,7 +744,15 @@ impl<A: App> ResolvedNode<A> {
         let text = match self.content {
             NodeContent::Children(children) => {
                 for node in children.into_iter().rev() {
-                    node.evaluate_recursive(app, state, cells, consumed, text_color, depth + 1.0, debug_color_index);
+                    node.evaluate_recursive(
+                        app,
+                        state,
+                        cells,
+                        consumed,
+                        text_color,
+                        depth + 1.0,
+                        debug_color_index,
+                    );
                 }
                 None
             }
@@ -854,7 +862,7 @@ impl<A: App> ResolvedNode<A> {
         }
 
         // Debug UI overlay
-        if state.debug_ui_enabled() {
+        if state.is_debug() {
             const DEBUG_COLORS: [Color; 6] = [
                 Color::linear(1.0, 0.2, 0.2, 1.0),
                 Color::linear(0.2, 1.0, 0.2, 1.0),

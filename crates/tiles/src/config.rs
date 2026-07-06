@@ -11,7 +11,6 @@ pub struct Config {
     pub viewport_width: u32,
     pub viewport_height: u32,
     pub steps_per_second: u32,
-    pub debug_ui: bool,
     #[serde(skip)]
     pub(crate) file_path: Option<PathBuf>,
     #[serde(skip)]
@@ -29,7 +28,6 @@ impl Default for Config {
             viewport_width: 128,
             viewport_height: 128,
             steps_per_second: 120,
-            debug_ui: false,
             file_path: None,
             no_file: false,
         }
@@ -100,11 +98,6 @@ impl ConfigBuilder {
         self
     }
 
-    pub fn debug_ui(mut self) -> Self {
-        self.config.debug_ui = true;
-        self
-    }
-
     pub fn file(mut self, path: impl Into<PathBuf>) -> Self {
         self.config.file_path = Some(path.into());
         self
@@ -162,9 +155,6 @@ fn merge_with_file(defaults: Config) -> Config {
         }
         if let Some(v) = table.get("steps_per_second").and_then(|v| v.as_integer()) {
             config.steps_per_second = v as u32;
-        }
-        if let Some(v) = table.get("debug_ui").and_then(|v| v.as_bool()) {
-            config.debug_ui = v;
         }
     }
     config.file_path = Some(path);

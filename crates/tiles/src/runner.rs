@@ -287,6 +287,10 @@ impl State {
         self.debug = enabled;
     }
 
+    pub fn is_debug(&self) -> bool {
+        self.debug
+    }
+
     pub fn debug_line(&mut self, from: Vec2, to: Vec2, color: Color) {
         if !self.debug {
             return;
@@ -352,17 +356,13 @@ impl State {
         }
     }
 
-    pub(crate) fn debug_ui_enabled(&self) -> bool {
-        self.config.debug_ui
-    }
-
     pub(crate) fn debug_ui_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
         if w < 1.0 || h < 1.0 {
             return;
         }
 
-        let (px, py) = self.screen_to_pixel(x - 0.5, y - 0.5);
-        let (px2, py2) = self.screen_to_pixel(x + w - 0.5, y + h - 0.5);
+        let (px, py) = self.screen_to_pixel(x, y);
+        let (px2, py2) = self.screen_to_pixel(x + w, y + h);
         let pw = px2 - px;
         let ph = py2 - py;
 

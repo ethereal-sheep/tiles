@@ -1,7 +1,7 @@
 use core::f32;
 use std::f32::consts::PI;
 
-use glam::{vec2, Vec2};
+use glam::Vec2;
 use tiles::{
     font::TINY5_4X5,
     ui::{app_widget_impl, col, pane, row, text, widget, widget_fn},
@@ -75,19 +75,7 @@ impl App for Demo {
                         button("+", |app, _state| { app.count += 1; })
                         button("-", |app, _state| { app.count -= 1; })
                         button("clear", |app, _state| app.count = 0)
-                        pane()
-                            // .id("check")
-                            .relative(pos.x, pos.y)
-                            .align_center()
-                            .size(60, 40)
-                            .color(BTN_COLOR)
-                            .hover_color(BTN_HOVER)
-                            .pressed_color(BTN_PRESS)
-                            .on_drag(|app, _state, drag| {
-                                app.pos += drag.delta_screen;
-                            }) {
-                                text("drag").font(&TINY5_4X5).padding(2)
-                            }
+                        button("debug", |app, state| state.set_debug(!state.is_debug()))
                     }
 
                     // Counter indicator
@@ -199,7 +187,6 @@ fn main() {
         .width(1024)
         .height(768)
         .viewport(256, 256)
-        .debug_ui()
         .no_file()
         .build();
 
