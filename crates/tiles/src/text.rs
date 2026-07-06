@@ -193,7 +193,7 @@ impl Text {
         let (box_w, box_h, box_offset_x, box_offset_y) = match self.anchor_box {
             AnchorBox::Highlight => (
                 self.highlight_size.width as f32,
-                self.highlight_size.width as f32,
+                self.highlight_size.height as f32,
                 0.0,
                 0.0,
             ),

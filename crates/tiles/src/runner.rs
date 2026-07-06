@@ -295,45 +295,12 @@ impl State {
         if !self.debug {
             return;
         }
-        let color = color.to_array();
-        let dx = to.x - from.x;
-        let dy = to.y - from.y;
-        let len = (dx * dx + dy * dy).sqrt();
-        if len < 1e-6 {
-            return;
-        }
-        let px = -dy / len * 0.5;
-        let py = dx / len * 0.5;
+        let (sx, sy) = self.world_to_screen(from.x, from.y);
+        let from_px = self.screen_to_pixel(sx, sy);
+        let (sx, sy) = self.world_to_screen(to.x, to.y);
+        let to_px = self.screen_to_pixel(sx, sy);
 
-        let v0 = [from.x + px, from.y + py];
-        let v1 = [from.x - px, from.y - py];
-        let v2 = [to.x + px, to.y + py];
-        let v3 = [to.x - px, to.y - py];
-
-        self.debug_vertices.push(DebugVertex {
-            position: v0,
-            color,
-        });
-        self.debug_vertices.push(DebugVertex {
-            position: v1,
-            color,
-        });
-        self.debug_vertices.push(DebugVertex {
-            position: v2,
-            color,
-        });
-        self.debug_vertices.push(DebugVertex {
-            position: v2,
-            color,
-        });
-        self.debug_vertices.push(DebugVertex {
-            position: v1,
-            color,
-        });
-        self.debug_vertices.push(DebugVertex {
-            position: v3,
-            color,
-        });
+        self.push_debug_line(from_px.0, from_px.1, to_px.0, to_px.1, color);
     }
 
     pub fn debug_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
@@ -356,6 +323,28 @@ impl State {
         }
     }
 
+    fn push_debug_line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, color: Color) {
+        let c = color.to_array();
+        let dx = x1 - x0;
+        let dy = y1 - y0;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len < 1e-6 {
+            return;
+        }
+        let nx = -dy / len * 0.5;
+        let ny = dx / len * 0.5;
+        let v0 = [x0 + nx, y0 + ny];
+        let v1 = [x0 - nx, y0 - ny];
+        let v2 = [x1 + nx, y1 + ny];
+        let v3 = [x1 - nx, y1 - ny];
+        self.debug_vertices.push(DebugVertex { position: v0, color: c });
+        self.debug_vertices.push(DebugVertex { position: v1, color: c });
+        self.debug_vertices.push(DebugVertex { position: v2, color: c });
+        self.debug_vertices.push(DebugVertex { position: v2, color: c });
+        self.debug_vertices.push(DebugVertex { position: v1, color: c });
+        self.debug_vertices.push(DebugVertex { position: v3, color: c });
+    }
+
     pub(crate) fn debug_ui_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
         if w < 1.0 || h < 1.0 {
             return;
@@ -363,58 +352,11 @@ impl State {
 
         let (px, py) = self.screen_to_pixel(x, y);
         let (px2, py2) = self.screen_to_pixel(x + w, y + h);
-        let pw = px2 - px;
-        let ph = py2 - py;
 
-        let c = color.to_array();
-        let tl = Vec2::new(px, py);
-        let tr = Vec2::new(px + pw, py);
-        let br = Vec2::new(px + pw, py + ph);
-        let bl = Vec2::new(px, py + ph);
-
-        let push_line = |verts: &mut Vec<DebugVertex>, from: Vec2, to: Vec2| {
-            let dx = to.x - from.x;
-            let dy = to.y - from.y;
-            let len = (dx * dx + dy * dy).sqrt();
-            if len < 1e-6 {
-                return;
-            }
-            let nx = -dy / len * 0.5;
-            let ny = dx / len * 0.5;
-            let v0 = [from.x + nx, from.y + ny];
-            let v1 = [from.x - nx, from.y - ny];
-            let v2 = [to.x + nx, to.y + ny];
-            let v3 = [to.x - nx, to.y - ny];
-            verts.push(DebugVertex {
-                position: v0,
-                color: c,
-            });
-            verts.push(DebugVertex {
-                position: v1,
-                color: c,
-            });
-            verts.push(DebugVertex {
-                position: v2,
-                color: c,
-            });
-            verts.push(DebugVertex {
-                position: v2,
-                color: c,
-            });
-            verts.push(DebugVertex {
-                position: v1,
-                color: c,
-            });
-            verts.push(DebugVertex {
-                position: v3,
-                color: c,
-            });
-        };
-
-        push_line(&mut self.debug_vertices, tl, tr);
-        push_line(&mut self.debug_vertices, tr, br);
-        push_line(&mut self.debug_vertices, br, bl);
-        push_line(&mut self.debug_vertices, bl, tl);
+        self.push_debug_line(px, py, px2, py, color);
+        self.push_debug_line(px2, py, px2, py2, color);
+        self.push_debug_line(px2, py2, px, py2, color);
+        self.push_debug_line(px, py2, px, py, color);
     }
 
     // --- Config ---

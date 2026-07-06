@@ -95,10 +95,11 @@ fn vs_main(@builtin(vertex_index) vi: u32, instance: InstanceIn) -> VertexOut {
     unit_quad[4] = vec2<f32>(1.0, 1.0);
     unit_quad[5] = vec2<f32>(0.0, 1.0);
 
-    let local_pos = vec3<f32>(unit_quad[vi] - vec2<f32>(0.5, 0.5), 0.0);
+    let offset = unit_quad[vi] - vec2<f32>(0.5, 0.5);
+    let local_pos = vec3<f32>(offset.x, offset.y, 0.0);
     let rotated = quat_rotate(instance.rotation, local_pos);
     let world_pos = vec4<f32>(
-        instance.position + rotated + vec3<f32>(0.5, 0.5, 0.0),
+        instance.position + rotated,
         1.0
     );
 
@@ -193,11 +194,10 @@ fn vs_bloom(@builtin(vertex_index) vi: u32, instance: BloomInstanceIn) -> BloomV
     let bloom_radius = instance.emissive;
     let scale = bloom_radius * 2.0 + 1.0;
     let offset = (unit_quad[vi] - vec2<f32>(0.5, 0.5)) * scale;
-    let center = instance.position + vec3<f32>(0.5, 0.5, 0.0);
     let world_pos = vec4<f32>(
-        center.x + offset.x,
-        center.y + offset.y,
-        center.z - 0.01,
+        instance.position.x + offset.x,
+        instance.position.y + offset.y,
+        instance.position.z - 0.01,
         1.0
     );
 

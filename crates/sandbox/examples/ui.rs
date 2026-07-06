@@ -33,11 +33,10 @@ fn button(
     widget! {
         col()
         .align_center()
-        .fill_w()
+        .width(25)
         .color(BTN_COLOR)
         .hover_color(BTN_HOVER)
         .pressed_color(BTN_PRESS)
-        .text_color(INDICATOR)
         .on_press(f) {
             text(word).font(&TINY5_4X5).padding(1)
             @children
@@ -60,7 +59,7 @@ impl App for Demo {
         state.set_viewport_background(Color::linear(0.05, 0.05, 0.08, 1.0));
         state.set_window_background(Color::linear(0.0, 0.0, 0.0, 1.0));
         state.set_ambient_illumination(1.0);
-        state.set_debug(true);
+        state.set_debug(false);
     }
 
     fn ui(&self, _state: &State) -> Node<Self> {
@@ -69,83 +68,83 @@ impl App for Demo {
         let _elapsed = _state.elapsed();
         widget! {
             col().fill_w().fill_h() {
-                col().padding(16).gap(4).fill_w().fill_h() {
-                    // Title bar
-                    border(PANEL_BG) {
-                        button("+", |app, _state| { app.count += 1; })
-                        button("-", |app, _state| { app.count -= 1; })
-                        button("clear", |app, _state| app.count = 0)
-                        button("debug", |app, state| state.set_debug(!state.is_debug()))
-                    }
+                // title bar
+                row().padding(2).gap(2).fill_w() {
+                    button("file", |app, _state| { app.count += 1; })
+                    button("edit", |app, _state| { app.count -= 1; })
+                    button("clear", |app, _state| app.count = 0)
+                    button("debug", |app, state| state.set_debug(!state.is_debug()))
 
+                }
+                col().fill_w().fill_h() {
                     // Counter indicator
-                    col().gap(1) {
-                        @ for j in 0..=(self.count.unsigned_abs().saturating_sub(1) / row_count) {
-                            row().gap(1) {
-                                @ for i in 0..row_count {
-                                    @ if j * row_count + i < self.count.unsigned_abs() {
-                                        pane().size(4, 8).color(
-                                            if self.count > 0 {
-                                                INDICATOR
-                                            } else {
-                                                RED
-                                            }
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    // col().gap(1) {
+                    //     @ for j in 0..=(self.count.unsigned_abs().saturating_sub(1) / row_count) {
+                    //         row().gap(1) {
+                    //             @ for i in 0..row_count {
+                    //                 @ if j * row_count + i < self.count.unsigned_abs() {
+                    //                     pane().size(4, 8).color(
+                    //                         if self.count > 0 {
+                    //                             INDICATOR
+                    //                         } else {
+                    //                             RED
+                    //                         }
+                    //                     );
+                    //                 }
+                    //             }
+                    //         }
+                    //     }
+                    // }
 
                     // Toggle pane
-                    pane()
-                        .size(30, 10)
-                        .color(if self.show_panel { BLUE } else { BTN_COLOR })
-                        .hover_color(BTN_HOVER)
-                        .pressed_color(BTN_PRESS)
-                        .on_click(|app, _state| { app.show_panel = !app.show_panel; });
+                    // pane()
+                    //     .size(30, 10)
+                    //     .color(if self.show_panel { BLUE } else { BTN_COLOR })
+                    //     .hover_color(BTN_HOVER)
+                    //     .pressed_color(BTN_PRESS)
+                    //     .on_click(|app, _state| { app.show_panel = !app.show_panel; });
 
                     // Conditional panel
-                    @ if self.show_panel {
-                        col().padding(3).gap(2).color(PANEL_BG) {
-                            @ for (i, color) in self.items.iter().enumerate() {
-                                pane()
-                                    .size(40, 8)
-                                    .color(*color)
-                                    .hover_color(BTN_HOVER)
-                                    .pressed_color(BTN_PRESS)
-                                    .on_click(move |app, _state| {
-                                        app.items.remove(i);
-                                    });
-                            }
-                            pane()
-                                .size(40, 8)
-                                .color(BTN_COLOR)
-                                .hover_color(BTN_HOVER)
-                                .pressed_color(BTN_PRESS)
-                                .on_click(|app, _state| {
-                                    let c = match app.items.len() % 3 {
-                                        0 => RED,
-                                        1 => BLUE,
-                                        _ => INDICATOR,
-                                    };
-                                    app.items.push(c);
-                                });
-                        }
-                    }
+                    // @ if self.show_panel {
+                    //     col().padding(3).gap(2).color(PANEL_BG) {
+                    //         @ for (i, color) in self.items.iter().enumerate() {
+                    //             pane()
+                    //                 .size(40, 8)
+                    //                 .color(*color)
+                    //                 .hover_color(BTN_HOVER)
+                    //                 .pressed_color(BTN_PRESS)
+                    //                 .on_click(move |app, _state| {
+                    //                     app.items.remove(i);
+                    //                 });
+                    //         }
+                    //         pane()
+                    //             .size(40, 8)
+                    //             .color(BTN_COLOR)
+                    //             .hover_color(BTN_HOVER)
+                    //             .pressed_color(BTN_PRESS)
+                    //             .on_click(|app, _state| {
+                    //                 let c = match app.items.len() % 3 {
+                    //                     0 => RED,
+                    //                     1 => BLUE,
+                    //                     _ => INDICATOR,
+                    //                 };
+                    //                 app.items.push(c);
+                    //             });
+                    //     }
+                    // }
                 }
 
                 // Draggable pane
-                pane()
-                    .id("yo")
-                    .absolute(pos.x, pos.y)
-                    .size(60, 40)
-                    .color(BG)
-                    .hover_color(BTN_HOVER)
-                    .pressed_color(BTN_PRESS)
-                    .on_drag(|app, _state, drag| app.pos += drag.delta_screen) {
-                        text("drag me").font(&TINY5_4X5).padding(2)
-                    }
+                // pane()
+                //     .id("yo")
+                //     .absolute(pos.x, pos.y)
+                //     .size(60, 40)
+                //     .color(BG)
+                //     .hover_color(BTN_HOVER)
+                //     .pressed_color(BTN_PRESS)
+                //     .on_drag(|app, _state, drag| app.pos += drag.delta_screen) {
+                //         text("drag me").font(&TINY5_4X5).padding(2)
+                //     }
             }
         }
     }
@@ -157,16 +156,9 @@ impl App for Demo {
     }
 
     fn draw(&mut self, state: &mut State) {
-        state.debug_line(
-            Vec2::ZERO,
-            Vec2::new(
-                state.viewport_width() as f32 / 2.0,
-                state.viewport_height() as f32 / 2.0,
-            ),
-            Color::hex(0xFFFFFF),
-        );
         let elapsed = state.elapsed();
         let text_pos = glam::Vec2::from_angle(elapsed * PI / 2.0) * 30.0;
+        state.debug_line(Vec2::ZERO, text_pos, Color::hex(0xFFFFFF));
         state.draw_world(
             Text::new(&TINY5_4X5, "Hello World")
                 .center()
