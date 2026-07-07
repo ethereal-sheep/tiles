@@ -600,11 +600,11 @@ fn has_type_prefix(tokens: &TokenStream2) -> bool {
     let first = iter.next();
     match first {
         Some(TokenTree::Ident(_)) => {
-            if let Some(TokenTree::Punct(p)) = iter.next() {
+            match iter.next() { Some(TokenTree::Punct(p)) => {
                 p.as_char() == ';'
-            } else {
+            } _ => {
                 false
-            }
+            }}
         }
         _ => false,
     }
@@ -677,14 +677,14 @@ fn gen_default_method_for_field(
                 self
             }
         });
-    } else if let Some(fn_args) = extract_option_box_fn(field_ty) {
+    } else { match extract_option_box_fn(field_ty) { Some(fn_args) => {
         out.push(quote! {
             pub fn #field_name(mut self, f: impl Fn(#fn_args) + 'static) -> Self {
                 self.#prefix #field_name = Some(Box::new(f));
                 self
             }
         });
-    } else if let Ok(inner_ty) = extract_option_inner(field_ty) {
+    } _ => if let Ok(inner_ty) = extract_option_inner(field_ty) {
         out.push(quote! {
             pub fn #field_name(mut self, v: #inner_ty) -> Self {
                 self.#prefix #field_name = Some(v);
@@ -698,7 +698,7 @@ fn gen_default_method_for_field(
                 self
             }
         });
-    }
+    }}}
     out
 }
 
@@ -719,14 +719,14 @@ fn gen_method_for_field(
                     self
                 }
             });
-        } else if let Some(fn_args) = extract_option_box_fn(field_ty) {
+        } else { match extract_option_box_fn(field_ty) { Some(fn_args) => {
             out.push(quote! {
                 pub fn #field_name(mut self, f: impl Fn(#fn_args) + 'static) -> Self {
                     self.#prefix #field_name = Some(Box::new(f));
                     self
                 }
             });
-        } else if let Ok(inner_ty) = extract_option_inner(field_ty) {
+        } _ => if let Ok(inner_ty) = extract_option_inner(field_ty) {
             out.push(quote! {
                 pub fn #field_name(mut self, v: #inner_ty) -> Self {
                     self.#prefix #field_name = Some(v);
@@ -740,7 +740,7 @@ fn gen_method_for_field(
                     self
                 }
             });
-        }
+        }}}
         return Ok(out);
     }
 

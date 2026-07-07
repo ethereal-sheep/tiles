@@ -3,9 +3,9 @@ use std::f32::consts::PI;
 
 use glam::Vec2;
 use tiles::{
+    App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, Node, State, Text,
     font::TINY5_4X5,
     ui::{app_widget, col, row, text, widget, widget_fn},
-    App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, Node, State, Text,
 };
 
 const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
@@ -22,7 +22,7 @@ struct Demo {
     items: Vec<Color>,
     show_panel: bool,
     pos: glam::Vec2,
-    active_index: Option<usize>,
+    // active_index: Option<usize>,
 }
 
 #[widget_fn(Demo)]
