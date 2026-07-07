@@ -74,9 +74,9 @@ fn action_bar(
                     set_active_index(app, state, i)
                 }) {
                     text(&actions[i]).font(&TINY5_4X5).padding(1)
-                    // @ if let Some(index) = active_index && index == i {
+                    @ if let Some(index) = active_index && index == i {
 
-                    // }
+                    }
                     col().relative(0.0, 0.0) {
                         child
                     }
