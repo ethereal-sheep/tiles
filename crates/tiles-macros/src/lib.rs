@@ -469,20 +469,48 @@ fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2
         _ => unreachable!(),
     };
 
-    // Build the reduced parameter list (without children)
-    let outer_params: Vec<TokenStream2> = params.iter().map(|p| quote! { #p }).collect();
-
-    // Check if we need lifetime annotation (if any param borrows)
     let has_borrows = params.iter().any(|p| match p {
-        syn::FnArg::Typed(pat_type) => {
-            let ty_str = quote! { #pat_type }.to_string();
-            ty_str.contains('&')
-        }
+        syn::FnArg::Typed(pat_type) => matches!(*pat_type.ty, syn::Type::Reference(_)),
         _ => false,
     });
 
+    let outer_params: Vec<TokenStream2> = params
+        .iter()
+        .map(|p| match p {
+            syn::FnArg::Typed(pat_type) => {
+                let pat = &pat_type.pat;
+                let ty = &pat_type.ty;
+                match &**ty {
+                    syn::Type::Reference(r) if has_borrows => {
+                        if r.lifetime.is_none() {
+                            let mutability = &r.mutability;
+                            let elem = &r.elem;
+                            quote! { #pat: &'a #mutability #elem }
+                        } else {
+                            quote! { #p }
+                        }
+                    }
+                    syn::Type::ImplTrait(impl_trait) => {
+                        let has_lifetime_bound = impl_trait
+                            .bounds
+                            .iter()
+                            .any(|b| matches!(b, syn::TypeParamBound::Lifetime(_)));
+                        if has_lifetime_bound {
+                            quote! { #p }
+                        } else {
+                            let bounds = &impl_trait.bounds;
+                            quote! { #pat: impl #bounds + 'static }
+                        }
+                    }
+                    _ => quote! { #p },
+                }
+            }
+            _ => quote! { #p },
+        })
+        .collect();
+
     let return_ty = if has_borrows {
-        quote! { impl ::tiles::__private::Widget<#app_ty> + '_ }
+        quote! { impl ::tiles::__private::Widget<#app_ty> + 'a }
     } else {
         quote! { impl ::tiles::__private::Widget<#app_ty> }
     };
@@ -490,8 +518,20 @@ fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2
     // Rewrite body: inject app type into widget! calls that lack it
     let rewritten_body = inject_widget_type(&quote! { #body }, app_ty);
 
+    // Merge user generics with the lifetime param
+    let combined_generics = if has_borrows {
+        let user_params = &generics.params;
+        if user_params.is_empty() {
+            quote! { <'a> }
+        } else {
+            quote! { <'a, #user_params> }
+        }
+    } else {
+        quote! { #impl_generics }
+    };
+
     Ok(quote! {
-        #vis fn #name #impl_generics(#(#outer_params),*) -> #return_ty #where_clause {
+        #vis fn #name #combined_generics(#(#outer_params),*) -> #return_ty #where_clause {
             ::tiles::__private::WidgetFn(move |#children_ident: #children_ty| #rewritten_body, ::std::marker::PhantomData)
         }
     })
@@ -587,7 +627,7 @@ fn has_type_prefix(tokens: &TokenStream2) -> bool {
 /// }
 /// ```
 #[proc_macro_attribute]
-pub fn app_widget_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn app_widget(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let impl_block: syn::ItemImpl = syn::parse_macro_input!(item as syn::ItemImpl);
 
     let self_ty = &impl_block.self_ty;

@@ -4,7 +4,7 @@ use std::f32::consts::PI;
 use glam::Vec2;
 use tiles::{
     font::TINY5_4X5,
-    ui::{app_widget_impl, col, pane, row, text, widget, widget_fn},
+    ui::{app_widget, col, row, text, widget, widget_fn},
     App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, Node, State, Text,
 };
 
@@ -26,8 +26,8 @@ struct Demo {
 
 #[widget_fn(Demo)]
 fn button(
-    word: &str,
-    f: impl Fn(&mut Demo, &mut State) + 'static,
+    word: impl Into<String>,
+    f: impl Fn(&mut Demo, &mut State),
     children: Vec<Node<Demo>>,
 ) -> Node<Demo> {
     widget! {
@@ -53,7 +53,44 @@ fn border(c: Color, children: Vec<Node<Demo>>) -> Node<Demo> {
     }
 }
 
-#[app_widget_impl]
+#[widget_fn(Demo)]
+fn action_bar(
+    active_index: Option<usize>,
+    set_active_index: impl Fn(&mut Demo, &mut State, usize) + Copy,
+    actions: Vec<String>,
+    children: Vec<Node<Demo>>,
+) -> Node<Demo> {
+    widget! {
+        row().gap(1).padding(5) {
+            @ for (i, child) in children.into_iter().take(actions.len()).enumerate() {
+                col()
+                .align_center()
+                .width(25)
+                .color(BTN_COLOR)
+                .hover_color(BTN_HOVER)
+                .pressed_color(BTN_PRESS)
+                .on_press(move |app, state| {
+                    set_active_index(app, state, i)
+                }) {
+                    text(&actions[i]).font(&TINY5_4X5).padding(1)
+                    // @ if let Some(index) = active_index && index == i {
+
+                    // }
+                    col().relative(0.0, 0.0) {
+                        child
+                    }
+                }
+            }
+            // @ for (i, child) in children.into_iter().enumerate() {
+            //     if let Some(i) = &hovered_item_index {
+            //         child
+            //     }
+            // }
+        }
+    }
+}
+
+#[app_widget]
 impl App for Demo {
     fn init(&mut self, state: &mut State) {
         state.set_viewport_background(Color::linear(0.05, 0.05, 0.08, 1.0));
@@ -63,17 +100,18 @@ impl App for Demo {
     }
 
     fn ui(&self, _state: &State) -> Node<Self> {
-        let row_count = 20;
-        let pos = self.pos;
+        let _row_count = 20;
+        let _pos = self.pos;
         let _elapsed = _state.elapsed();
         widget! {
             col().fill_w().fill_h() {
                 // title bar
+                action_bar(Some(0), |app, state, i| {}, vec![])
                 row().padding(2).gap(2).fill_w() {
                     button("file", |app, _state| { app.count += 1; })
                     button("edit", |app, _state| { app.count -= 1; })
                     button("clear", |app, _state| app.count = 0)
-                    button("debug", |app, state| state.set_debug(!state.is_debug()))
+                    button("debug", |_app, state| state.set_debug(!state.is_debug()))
 
                 }
                 col().fill_w().fill_h() {

@@ -20,7 +20,7 @@ mod size;
 mod text;
 pub mod ui {
     pub use crate::node::{col, pane, row, text};
-    pub use tiles_macros::{app_widget_impl, widget, widget_fn};
+    pub use tiles_macros::{app_widget, widget, widget_fn};
 }
 
 pub use cell::{Cell, Rotation};
