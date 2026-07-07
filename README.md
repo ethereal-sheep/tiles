@@ -75,6 +75,16 @@ cargo run -p sandbox --example ui
 cargo run -p sandbox --example palette
 ```
 
+## ToDo
+- [ ] Resource Loader
+    - [ ] Runtime Fonts - Loaded at runtime 
+    - [ ] Images - loaded into memory, can be drawn to world, screen, or in UI
+    - [ ] Sounds - ''
+- [ ] CLI commands to interact with engine
+- [ ] Animation tool
+- [ ] Optimize drawing rect of cells since most cells in a rect are one color
+
+
 ## Dependencies
 
 | Crate | Version |
