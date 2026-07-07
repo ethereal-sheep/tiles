@@ -22,6 +22,7 @@ struct Demo {
     items: Vec<Color>,
     show_panel: bool,
     pos: glam::Vec2,
+    active_index: Option<usize>,
 }
 
 #[widget_fn(Demo)]
