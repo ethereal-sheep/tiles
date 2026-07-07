@@ -22,7 +22,7 @@ struct Demo {
     items: Vec<Color>,
     show_panel: bool,
     pos: glam::Vec2,
-    // active_index: Option<usize>,
+    active_index: Option<usize>,
 }
 
 #[widget_fn(Demo)]
@@ -58,7 +58,7 @@ fn border(c: Color, children: Vec<Node<Demo>>) -> Node<Demo> {
 fn action_bar(
     active_index: Option<usize>,
     set_active_index: impl Fn(&mut Demo, &mut State, usize) + Copy,
-    actions: Vec<String>,
+    actions: Vec<&str>,
     children: Vec<Node<Demo>>,
 ) -> Node<Demo> {
     widget! {
@@ -73,12 +73,12 @@ fn action_bar(
                 .on_press(move |app, state| {
                     set_active_index(app, state, i)
                 }) {
-                    text(&actions[i]).font(&TINY5_4X5).padding(1)
+                    text(actions[i]).font(&TINY5_4X5).padding(1)
                     @ if let Some(index) = active_index && index == i {
-
-                    }
-                    col().relative(0.0, 0.0) {
-                        child
+                        col().relative(5.0, 0.0) {
+                            @[child]
+                            text("testing hide")
+                        }
                     }
                 }
             }
@@ -107,7 +107,9 @@ impl App for Demo {
         widget! {
             col().fill_w().fill_h() {
                 // title bar
-                action_bar(Some(0), |app, state, i| {}, vec![])
+                action_bar(self.active_index, |app, state, i| { app.active_index = Some(i); eprintln!("{}", i); }, vec!["test1"]) {
+                    button("file", |app, _state| { app.count += 1; })
+                }
                 row().padding(2).gap(2).fill_w() {
                     button("file", |app, _state| { app.count += 1; })
                     button("edit", |app, _state| { app.count -= 1; })
@@ -226,6 +228,7 @@ fn main() {
         items: vec![RED, BLUE, INDICATOR],
         show_panel: true,
         pos: Vec2::new(0.0, 0.0),
+        active_index: None,
     };
 
     tiles::run(demo, config).unwrap();

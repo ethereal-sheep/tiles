@@ -337,12 +337,30 @@ impl State {
         let v1 = [x0 - nx, y0 - ny];
         let v2 = [x1 + nx, y1 + ny];
         let v3 = [x1 - nx, y1 - ny];
-        self.debug_vertices.push(DebugVertex { position: v0, color: c });
-        self.debug_vertices.push(DebugVertex { position: v1, color: c });
-        self.debug_vertices.push(DebugVertex { position: v2, color: c });
-        self.debug_vertices.push(DebugVertex { position: v2, color: c });
-        self.debug_vertices.push(DebugVertex { position: v1, color: c });
-        self.debug_vertices.push(DebugVertex { position: v3, color: c });
+        self.debug_vertices.push(DebugVertex {
+            position: v0,
+            color: c,
+        });
+        self.debug_vertices.push(DebugVertex {
+            position: v1,
+            color: c,
+        });
+        self.debug_vertices.push(DebugVertex {
+            position: v2,
+            color: c,
+        });
+        self.debug_vertices.push(DebugVertex {
+            position: v2,
+            color: c,
+        });
+        self.debug_vertices.push(DebugVertex {
+            position: v1,
+            color: c,
+        });
+        self.debug_vertices.push(DebugVertex {
+            position: v3,
+            color: c,
+        });
     }
 
     pub(crate) fn debug_ui_rect(&mut self, x: f32, y: f32, w: f32, h: f32, color: Color) {
@@ -624,6 +642,9 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                 let resolved =
                     tree.layout(self.state.viewport_width(), self.state.viewport_height());
 
+                if self.state.is_debug() {
+                    dbg!(&resolved);
+                }
                 resolved.evaluate(self.app, &mut self.state);
 
                 self.state.dt = self.state.fixed_dt;

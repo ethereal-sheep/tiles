@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::cell::Cell;
 use crate::color::Color;
 use crate::drawable::Drawable;
@@ -42,6 +44,13 @@ pub struct Text {
     tight_size: Size,
 }
 
+impl fmt::Debug for Text {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Text")
+            .field("content", &self.content)
+            .finish()
+    }
+}
 impl Text {
     pub fn new(font: &'static Font, content: impl Into<String>) -> Self {
         let content = content.into();

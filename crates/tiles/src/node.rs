@@ -1,3 +1,5 @@
+use core::fmt;
+
 use crate::cell::Cell;
 use crate::color::Color;
 use crate::element::DragInfo;
@@ -135,6 +137,7 @@ impl<A: App> Default for Handlers<A> {
 }
 
 // --- Node types ---
+#[derive(Debug)]
 enum NodeContent<N, T> {
     Children(Vec<N>),
     Text(T),
@@ -667,13 +670,22 @@ pub fn text<A: App>(content: impl Into<String>) -> Node<A> {
 }
 
 // --- Layout ---
-
 pub(crate) struct ResolvedNode<A: App> {
     id: String,
     rect: Rect,
     style: Style,
     content: NodeContent<Self, Text>,
     handlers: Handlers<A>,
+}
+
+impl<A: App> fmt::Debug for ResolvedNode<A> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ResolvedNode")
+            .field("id", &self.id)
+            .field("rect", &self.rect)
+            .field("content", &self.content)
+            .finish()
+    }
 }
 
 // --- Evaluate (hit-test + handlers + draw) ---
@@ -1074,9 +1086,11 @@ mod tests {
 
     #[test]
     fn nested_layout() {
-        let node: Node<TestApp> = col().padding(2).children(vec![row()
-            .gap(2)
-            .children(vec![row().size(5, 5), row().size(5, 5)])]);
+        let node: Node<TestApp> = col().padding(2).children(vec![
+            row()
+                .gap(2)
+                .children(vec![row().size(5, 5), row().size(5, 5)]),
+        ]);
         let resolved = node.layout(256, 256);
         // Inner row: 5+2+5=12 wide, 5 tall
         // Outer: 12+4=16 wide, 5+4=9 tall
@@ -1094,7 +1108,7 @@ mod tests {
         let resolved = node.layout(256, 256);
         // Absolute node doesn't affect parent size
         assert_eq!(resolved.rect.height(), 20); // only 2 flow children
-                                                // Absolute node at (50, 50)
+        // Absolute node at (50, 50)
         let abs_child = resolved.find_child_by_id("abs").unwrap();
         assert_eq!(abs_child.rect.x(), 50.0);
         assert_eq!(abs_child.rect.y(), 50.0);
@@ -2247,9 +2261,11 @@ mod tests {
 
     #[test]
     fn id_nested_hierarchy() {
-        let node: Node<TestApp> = col().id("root").children(vec![row()
-            .id("row1")
-            .children(vec![pane().id("a").size(5, 5), pane().size(5, 5)])]);
+        let node: Node<TestApp> = col().id("root").children(vec![
+            row()
+                .id("row1")
+                .children(vec![pane().id("a").size(5, 5), pane().size(5, 5)]),
+        ]);
         let resolved = node.layout(256, 256);
         assert_eq!(resolved.id(), "0");
         let row1 = resolved.find_child_by_id("row1").unwrap();
