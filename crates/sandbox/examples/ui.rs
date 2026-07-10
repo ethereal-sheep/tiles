@@ -70,13 +70,12 @@ fn signal_counter(children: Vec<Node<Demo>>) -> Node<Demo> {
                 .on_press(inc) {
                 text("inc").font(&TINY5_4X5).padding(1)
             }
-            col().width(25).color(BTN_COLOR).hover_color(BTN_HOVER).pressed_color(BTN_PRESS)
-                .on_press(inc) {
-                text("+1").font(&TINY5_4X5).padding(1)
-            }
             // Short closure — || desugared to move |_, _|
             col().width(25).color(BTN_COLOR).hover_color(BTN_HOVER).pressed_color(BTN_PRESS)
-                .on_press(|| count.set(count.get() - 1)) {
+                .on_press(|app| {
+                    app.count += 1;
+                    count.set(count.get() - 1);
+                }) {
                 text("dec").font(&TINY5_4X5).padding(1)
             }
         }

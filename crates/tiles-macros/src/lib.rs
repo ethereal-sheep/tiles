@@ -263,16 +263,26 @@ fn is_basic_handler_method(name: &str) -> bool {
     BASIC_HANDLER_METHODS.contains(&name)
 }
 
-fn rewrite_handler_arg(expr: &Expr) -> TokenStream2 {
+fn rewrite_handler_arg(expr: &Expr, app_type: Option<&Type>) -> TokenStream2 {
     match expr {
         Expr::Closure(closure) => {
             let body = &closure.body;
             let params: Vec<_> = closure.inputs.iter().collect();
             match params.len() {
-                0 => quote! { move |_, _| #body },
+                0 => {
+                    if let Some(ty) = app_type {
+                        quote! { move |_: &mut #ty, _: &mut ::tiles::State| #body }
+                    } else {
+                        quote! { move |_, _| #body }
+                    }
+                }
                 1 => {
                     let a = &params[0];
-                    quote! { move |#a, _| #body }
+                    if let Some(ty) = app_type {
+                        quote! { move |#a: &mut #ty, _: &mut ::tiles::State| #body }
+                    } else {
+                        quote! { move |#a, _| #body }
+                    }
                 }
                 _ => {
                     let inputs = &closure.inputs;
@@ -281,20 +291,24 @@ fn rewrite_handler_arg(expr: &Expr) -> TokenStream2 {
             }
         }
         other => {
-            quote! { move |__app, __state| ::tiles::signal::Handler::call(#other, __app, __state) }
+            if let Some(ty) = app_type {
+                quote! { move |__app: &mut #ty, __state: &mut ::tiles::State| ::tiles::signal::Handler::call(#other, __app, __state) }
+            } else {
+                quote! { move |__app, __state| ::tiles::signal::Handler::call(#other, __app, __state) }
+            }
         }
     }
 }
 
-fn rewrite_handlers_in_expr(expr: &Expr) -> Expr {
+fn rewrite_handlers_in_expr(expr: &Expr, app_type: Option<&Type>) -> Expr {
     match expr {
         Expr::MethodCall(mc) => {
-            let receiver = rewrite_handlers_in_expr(&mc.receiver);
+            let receiver = rewrite_handlers_in_expr(&mc.receiver, app_type);
             let method = &mc.method;
             let turbofish = &mc.turbofish;
 
             if is_basic_handler_method(&method.to_string()) && mc.args.len() == 1 {
-                let rewritten_arg = rewrite_handler_arg(&mc.args[0]);
+                let rewritten_arg = rewrite_handler_arg(&mc.args[0], app_type);
                 syn::parse_quote! { #receiver.#method #turbofish(#rewritten_arg) }
             } else {
                 let args = &mc.args;
@@ -356,7 +370,7 @@ fn signal_context_for_expr(expr: &Expr, in_loop: bool) -> (TokenStream2, TokenSt
 fn expand_widget_stmt(stmt: &UiStmt, app_type: Option<&Type>, in_loop: bool) -> TokenStream2 {
     match stmt {
         UiStmt::Widget { expr, children } => {
-            let expr = &rewrite_handlers_in_expr(expr);
+            let expr = &rewrite_handlers_in_expr(expr, app_type);
             let auto_id = auto_id_for_expr(expr, in_loop);
             let children_expr = if let Some(block) = children {
                 expand_widget_block(block, app_type, in_loop)
