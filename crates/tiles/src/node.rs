@@ -704,6 +704,8 @@ impl<A: App> ResolvedNode<A> {
             0.0,
             &mut debug_color_index,
         );
+
+        cells.sort_by(|a, b| b.position.z.total_cmp(&a.position.z));
         cells.reverse();
         state.draw_screen_overlay(cells);
         state.get_input_mut_ref().consumed_state = consumed;
@@ -719,6 +721,8 @@ impl<A: App> ResolvedNode<A> {
         depth: f32,
         debug_color_index: &mut usize,
     ) {
+        let effective_depth = depth.max(self.style.z_index as f32);
+
         let is_captured = state
             .get_input_ref()
             .drag_capture
@@ -762,7 +766,7 @@ impl<A: App> ResolvedNode<A> {
                         cells,
                         consumed,
                         text_color,
-                        depth + 1.0,
+                        effective_depth,
                         debug_color_index,
                     );
                 }
@@ -857,18 +861,18 @@ impl<A: App> ResolvedNode<A> {
             }
         }
 
-        // Draw pane background
-        if let Some(color) = color {
-            self.rect.fill().color(color).emit_cells(&mut |mut c| {
-                c.position.z = depth;
+        // Draw text glyphs
+        if let (Some(text), Some(text_color)) = (text, text_color) {
+            text.color(text_color).emit_cells(&mut |mut c| {
+                c.position.z = effective_depth;
                 cells.push(c);
             });
         }
 
-        // Draw text glyphs
-        if let (Some(text), Some(text_color)) = (text, text_color) {
-            text.color(text_color).emit_cells(&mut |mut c| {
-                c.position.z = depth + 0.5;
+        // Draw pane background
+        if let Some(color) = color {
+            self.rect.fill().color(color).emit_cells(&mut |mut c| {
+                c.position.z = effective_depth;
                 cells.push(c);
             });
         }
