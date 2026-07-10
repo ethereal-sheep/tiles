@@ -247,6 +247,64 @@ fn maybe_turbofish(expr: &Expr, ty: &Type) -> TokenStream2 {
     }
 }
 
+const BASIC_HANDLER_METHODS: &[&str] = &[
+    "on_click",
+    "on_double_click",
+    "on_press",
+    "on_release",
+    "on_hover",
+    "on_enter",
+    "on_leave",
+    "on_hold",
+    "on_right_click",
+];
+
+fn is_basic_handler_method(name: &str) -> bool {
+    BASIC_HANDLER_METHODS.contains(&name)
+}
+
+fn rewrite_handler_arg(expr: &Expr) -> TokenStream2 {
+    match expr {
+        Expr::Closure(closure) => {
+            let body = &closure.body;
+            let params: Vec<_> = closure.inputs.iter().collect();
+            match params.len() {
+                0 => quote! { move |_, _| #body },
+                1 => {
+                    let a = &params[0];
+                    quote! { move |#a, _| #body }
+                }
+                _ => {
+                    let inputs = &closure.inputs;
+                    quote! { move |#inputs| #body }
+                }
+            }
+        }
+        other => {
+            quote! { move |__app, __state| ::tiles::signal::Handler::call(#other, __app, __state) }
+        }
+    }
+}
+
+fn rewrite_handlers_in_expr(expr: &Expr) -> Expr {
+    match expr {
+        Expr::MethodCall(mc) => {
+            let receiver = rewrite_handlers_in_expr(&mc.receiver);
+            let method = &mc.method;
+            let turbofish = &mc.turbofish;
+
+            if is_basic_handler_method(&method.to_string()) && mc.args.len() == 1 {
+                let rewritten_arg = rewrite_handler_arg(&mc.args[0]);
+                syn::parse_quote! { #receiver.#method #turbofish(#rewritten_arg) }
+            } else {
+                let args = &mc.args;
+                syn::parse_quote! { #receiver.#method #turbofish(#args) }
+            }
+        }
+        _ => expr.clone(),
+    }
+}
+
 fn expand_widget_block(block: &UiBlock, app_type: Option<&Type>, in_loop: bool) -> TokenStream2 {
     let mut pushes = Vec::new();
     for stmt in &block.stmts {
@@ -266,27 +324,62 @@ fn expand_widget_block(block: &UiBlock, app_type: Option<&Type>, in_loop: bool) 
     }
 }
 
+fn is_widget_fn_call(expr: &Expr) -> bool {
+    matches!(expr, Expr::Call(_))
+}
+
+fn signal_context_for_expr(expr: &Expr, in_loop: bool) -> (TokenStream2, TokenStream2) {
+    if !is_widget_fn_call(expr) {
+        return (quote! {}, quote! {});
+    }
+    let span = match expr {
+        Expr::Call(call) => call.func.span(),
+        _ => expr.span(),
+    };
+    let line = span.start().line as u64;
+    let col = span.start().column as u64;
+    let widget_id = if in_loop {
+        quote! {
+            {
+                let __base = ::tiles::__private::__widget_id("", #line as u32, #col as u32);
+                __base.wrapping_mul(2654435761).wrapping_add(__widget_idx as u64)
+            }
+        }
+    } else {
+        quote! { ::tiles::__private::__widget_id("", #line as u32, #col as u32) }
+    };
+    let before = quote! { ::tiles::__private::__push_widget(#widget_id); };
+    let after = quote! { ::tiles::__private::__pop_widget(); };
+    (before, after)
+}
+
 fn expand_widget_stmt(stmt: &UiStmt, app_type: Option<&Type>, in_loop: bool) -> TokenStream2 {
     match stmt {
         UiStmt::Widget { expr, children } => {
+            let expr = &rewrite_handlers_in_expr(expr);
             let auto_id = auto_id_for_expr(expr, in_loop);
             let children_expr = if let Some(block) = children {
                 expand_widget_block(block, app_type, in_loop)
             } else {
                 quote! { vec![] }
             };
+            let (sig_before, sig_after) = signal_context_for_expr(expr, in_loop);
             if let Some(ty) = app_type {
                 let typed_expr = maybe_turbofish(expr, ty);
                 quote! {
+                    #sig_before
                     __children.push(
                         ::tiles::__private::Widget::render(#typed_expr #auto_id, #children_expr)
                     );
+                    #sig_after
                 }
             } else {
                 quote! {
+                    #sig_before
                     __children.push(
                         ::tiles::__private::Widget::render(#expr #auto_id, #children_expr)
                     );
+                    #sig_after
                 }
             }
         }

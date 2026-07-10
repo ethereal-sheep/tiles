@@ -418,6 +418,7 @@ pub(crate) fn run_app<A: App + 'static>(
     let mut runner: Runner<A> = Runner {
         app: unsafe { &mut *app_ptr },
         state,
+        signal_runtime: crate::signal::SignalRuntime::new(),
     };
     event_loop.run_app(&mut runner)
 }
@@ -425,6 +426,7 @@ pub(crate) fn run_app<A: App + 'static>(
 struct Runner<'a, A: App> {
     app: &'a mut A,
     state: State,
+    signal_runtime: crate::signal::SignalRuntime,
 }
 
 impl<A: App> ApplicationHandler for Runner<'_, A> {
@@ -638,6 +640,7 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
 
                 self.state.debug_vertices.clear();
 
+                crate::signal::set_runtime(&self.signal_runtime);
                 let tree = self.app.ui(&self.state);
                 let resolved =
                     tree.layout(self.state.viewport_width(), self.state.viewport_height());
@@ -646,6 +649,7 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                     dbg!(&resolved);
                 }
                 resolved.evaluate(self.app, &mut self.state);
+                crate::signal::clear_runtime();
 
                 self.state.dt = self.state.fixed_dt;
                 for i in 1..=update_count {

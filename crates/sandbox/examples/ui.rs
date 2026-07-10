@@ -4,6 +4,7 @@ use std::f32::consts::PI;
 use glam::Vec2;
 use tiles::{
     App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, Node, State, Text,
+    create_handler, create_signal,
     font::TINY5_4X5,
     ui::{app_widget, col, row, text, widget, widget_fn},
 };
@@ -50,6 +51,34 @@ fn border(c: Color, children: Vec<Node<Demo>>) -> Node<Demo> {
     widget! {
         row().gap(1).padding(5).color(c) {
             @children
+        }
+    }
+}
+
+#[widget_fn(Demo)]
+fn signal_counter(children: Vec<Node<Demo>>) -> Node<Demo> {
+    let count = create_signal(0i32);
+    let inc = create_handler(move |_app: &mut Demo, _state: &mut State| {
+        count.set(count.get() + 1);
+    });
+
+    widget! {
+        row().gap(2).padding(2) {
+            text(format!("{}", count.get())).font(&TINY5_4X5)
+            // Copy handler handle — reused across two buttons
+            col().width(25).color(BTN_COLOR).hover_color(BTN_HOVER).pressed_color(BTN_PRESS)
+                .on_press(inc) {
+                text("inc").font(&TINY5_4X5).padding(1)
+            }
+            col().width(25).color(BTN_COLOR).hover_color(BTN_HOVER).pressed_color(BTN_PRESS)
+                .on_press(inc) {
+                text("+1").font(&TINY5_4X5).padding(1)
+            }
+            // Short closure — || desugared to move |_, _|
+            col().width(25).color(BTN_COLOR).hover_color(BTN_HOVER).pressed_color(BTN_PRESS)
+                .on_press(|| count.set(count.get() - 1)) {
+                text("dec").font(&TINY5_4X5).padding(1)
+            }
         }
     }
 }
@@ -118,6 +147,8 @@ impl App for Demo {
 
                 }
                 col().fill_w().fill_h() {
+                    signal_counter()
+                    signal_counter()
                     // Counter indicator
                     // col().gap(1) {
                     //     @ for j in 0..=(self.count.unsigned_abs().saturating_sub(1) / row_count) {

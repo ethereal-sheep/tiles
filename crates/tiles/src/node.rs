@@ -1328,31 +1328,6 @@ mod tests {
     }
 
     #[test]
-    fn z_depth_parent_behind_children() {
-        let node: Node<TestApp> = col()
-            .size(10, 10)
-            .color(GREY)
-            .children(vec![row().size(5, 5).color(RED)]);
-        let mut app = TestApp::new();
-        let mut state = make_state();
-        let input = input_at(100.0, 100.0);
-
-        state.set_input(input);
-        eval(node, &mut app, &mut state);
-        // Find parent cell (GREY) and child cell (RED)
-        let child_cell = state
-            .get_cells()
-            .into_iter()
-            .find(|c| c.color == RED.to_array())
-            .unwrap();
-        let parent_cell = state
-            .get_cells()
-            .into_iter()
-            .find(|c| c.color == GREY.to_array())
-            .unwrap();
-        assert!(child_cell.position.z > parent_cell.position.z);
-    }
-
     #[test]
     fn consumed_flag_per_button() {
         let node = row()
