@@ -59,7 +59,6 @@ impl<T: Clone + 'static> Signal<T> {
 
 pub struct SignalRuntime {
     storage: RefCell<HashMap<SignalId, Box<dyn Any>>>,
-    handlers: RefCell<HashMap<SignalId, Box<dyn Any>>>,
     widget_stack: RefCell<Vec<u64>>,
     local_counter: Cell<usize>,
 }
@@ -68,7 +67,6 @@ impl SignalRuntime {
     pub fn new() -> Self {
         Self {
             storage: RefCell::new(HashMap::new()),
-            handlers: RefCell::new(HashMap::new()),
             widget_stack: RefCell::new(Vec::new()),
             local_counter: Cell::new(0),
         }
