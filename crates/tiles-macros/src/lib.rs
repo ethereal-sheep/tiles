@@ -5,8 +5,8 @@ use syn::parse::{Parse, ParseStream};
 use syn::spanned::Spanned;
 use syn::token::Brace;
 use syn::{
-    braced, parse_macro_input, Expr, FnArg, Ident, ImplItem, ItemImpl, LitStr, Pat, Path, Token,
-    Type,
+    Expr, FnArg, Ident, ImplItem, ItemImpl, LitStr, Pat, Path, Token, Type, braced,
+    parse_macro_input,
 };
 
 // =============================================================================
@@ -247,20 +247,8 @@ fn maybe_turbofish(expr: &Expr, ty: &Type) -> TokenStream2 {
     }
 }
 
-const BASIC_HANDLER_METHODS: &[&str] = &[
-    "on_click",
-    "on_double_click",
-    "on_press",
-    "on_release",
-    "on_hover",
-    "on_enter",
-    "on_leave",
-    "on_hold",
-    "on_right_click",
-];
-
 fn is_basic_handler_method(name: &str) -> bool {
-    BASIC_HANDLER_METHODS.contains(&name)
+    name.starts_with("on_")
 }
 
 fn rewrite_handler_arg(expr: &Expr, app_type: Option<&Type>) -> TokenStream2 {
@@ -706,13 +694,10 @@ fn has_type_prefix(tokens: &TokenStream2) -> bool {
     // We check if the second meaningful token is `;`
     let first = iter.next();
     match first {
-        Some(TokenTree::Ident(_)) => {
-            match iter.next() { Some(TokenTree::Punct(p)) => {
-                p.as_char() == ';'
-            } _ => {
-                false
-            }}
-        }
+        Some(TokenTree::Ident(_)) => match iter.next() {
+            Some(TokenTree::Punct(p)) => p.as_char() == ';',
+            _ => false,
+        },
         _ => false,
     }
 }
@@ -784,28 +769,35 @@ fn gen_default_method_for_field(
                 self
             }
         });
-    } else { match extract_option_box_fn(field_ty) { Some(fn_args) => {
-        out.push(quote! {
-            pub fn #field_name(mut self, f: impl Fn(#fn_args) + 'static) -> Self {
-                self.#prefix #field_name = Some(Box::new(f));
-                self
-            }
-        });
-    } _ => if let Ok(inner_ty) = extract_option_inner(field_ty) {
-        out.push(quote! {
-            pub fn #field_name(mut self, v: #inner_ty) -> Self {
-                self.#prefix #field_name = Some(v);
-                self
-            }
-        });
     } else {
-        out.push(quote! {
-            pub fn #field_name(mut self, v: #field_ty) -> Self {
-                self.#prefix #field_name = v;
-                self
+        match extract_option_box_fn(field_ty) {
+            Some(fn_args) => {
+                out.push(quote! {
+                    pub fn #field_name(mut self, f: impl Fn(#fn_args) + 'static) -> Self {
+                        self.#prefix #field_name = Some(Box::new(f));
+                        self
+                    }
+                });
             }
-        });
-    }}}
+            _ => {
+                if let Ok(inner_ty) = extract_option_inner(field_ty) {
+                    out.push(quote! {
+                        pub fn #field_name(mut self, v: #inner_ty) -> Self {
+                            self.#prefix #field_name = Some(v);
+                            self
+                        }
+                    });
+                } else {
+                    out.push(quote! {
+                        pub fn #field_name(mut self, v: #field_ty) -> Self {
+                            self.#prefix #field_name = v;
+                            self
+                        }
+                    });
+                }
+            }
+        }
+    }
     out
 }
 
@@ -826,28 +818,35 @@ fn gen_method_for_field(
                     self
                 }
             });
-        } else { match extract_option_box_fn(field_ty) { Some(fn_args) => {
-            out.push(quote! {
-                pub fn #field_name(mut self, f: impl Fn(#fn_args) + 'static) -> Self {
-                    self.#prefix #field_name = Some(Box::new(f));
-                    self
-                }
-            });
-        } _ => if let Ok(inner_ty) = extract_option_inner(field_ty) {
-            out.push(quote! {
-                pub fn #field_name(mut self, v: #inner_ty) -> Self {
-                    self.#prefix #field_name = Some(v);
-                    self
-                }
-            });
         } else {
-            out.push(quote! {
-                pub fn #field_name(mut self, v: #field_ty) -> Self {
-                    self.#prefix #field_name = v;
-                    self
+            match extract_option_box_fn(field_ty) {
+                Some(fn_args) => {
+                    out.push(quote! {
+                        pub fn #field_name(mut self, f: impl Fn(#fn_args) + 'static) -> Self {
+                            self.#prefix #field_name = Some(Box::new(f));
+                            self
+                        }
+                    });
                 }
-            });
-        }}}
+                _ => {
+                    if let Ok(inner_ty) = extract_option_inner(field_ty) {
+                        out.push(quote! {
+                            pub fn #field_name(mut self, v: #inner_ty) -> Self {
+                                self.#prefix #field_name = Some(v);
+                                self
+                            }
+                        });
+                    } else {
+                        out.push(quote! {
+                            pub fn #field_name(mut self, v: #field_ty) -> Self {
+                                self.#prefix #field_name = v;
+                                self
+                            }
+                        });
+                    }
+                }
+            }
+        }
         return Ok(out);
     }
 

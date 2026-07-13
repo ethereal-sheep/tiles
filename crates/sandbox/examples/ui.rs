@@ -4,9 +4,8 @@ use std::f32::consts::PI;
 use glam::Vec2;
 use tiles::{
     App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, Node, State, Text,
-    create_handler, create_signal,
     font::TINY5_4X5,
-    ui::{app_widget, col, row, text, widget, widget_fn},
+    ui::{app_widget, col, row, signal, text, widget, widget_fn},
 };
 
 const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
@@ -57,17 +56,16 @@ fn border(c: Color, children: Vec<Node<Demo>>) -> Node<Demo> {
 
 #[widget_fn(Demo)]
 fn signal_counter(children: Vec<Node<Demo>>) -> Node<Demo> {
-    let count = create_signal(0i32);
-    let inc = create_handler(move |_app: &mut Demo, _state: &mut State| {
-        count.set(count.get() + 1);
-    });
+    let count = signal(0i32);
 
     widget! {
         row().gap(2).padding(2) {
             text(format!("{}", count.get())).font(&TINY5_4X5)
             // Copy handler handle — reused across two buttons
             col().width(25).color(BTN_COLOR).hover_color(BTN_HOVER).pressed_color(BTN_PRESS)
-                .on_press(inc) {
+                .on_press(move |_app, _state| {
+                    count.set(count.get() + 1);
+                }) {
                 text("inc").font(&TINY5_4X5).padding(1)
             }
             // Short closure — || desugared to move |_, _|

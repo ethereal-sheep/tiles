@@ -11,16 +11,17 @@ mod input;
 mod line;
 mod node;
 mod rect;
-pub mod signal;
 #[cfg(feature = "runtime")]
 mod renderer;
 #[cfg(feature = "runtime")]
 mod runner;
 mod shape;
+pub mod signal;
 mod size;
 mod text;
 pub mod ui {
     pub use crate::node::{col, pane, row, text};
+    pub use crate::signal::signal;
     pub use tiles_macros::{app_widget, widget, widget_fn};
 }
 
@@ -36,14 +37,15 @@ pub use rect::{Rect, RoundedRect};
 #[cfg(feature = "runtime")]
 pub use runner::{App, State};
 pub use shape::{Fill, Shape, Stroke, StrokePosition};
-pub use signal::{Handler, Signal, create_handler, create_signal};
 pub use size::Size;
 pub use text::Text;
 
 #[doc(hidden)]
 pub mod __private {
     pub use crate::node::{Node, Widget, WidgetFn};
-    pub use crate::signal::{__pop_widget, __push_instance, __push_widget, __widget_id, __pop_instance};
+    pub use crate::signal::{
+        __pop_instance, __pop_widget, __push_instance, __push_widget, __widget_id,
+    };
 }
 
 #[cfg(feature = "runtime")]
