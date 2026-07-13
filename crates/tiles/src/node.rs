@@ -1328,7 +1328,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn consumed_flag_per_button() {
         let node = row()
             .size(10, 10)
