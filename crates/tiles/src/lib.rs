@@ -1,5 +1,6 @@
 extern crate self as tiles;
 
+mod anchor;
 mod camera;
 mod cell;
 mod color;
@@ -7,6 +8,7 @@ mod config;
 mod drawable;
 mod element;
 pub mod font;
+mod image;
 mod input;
 mod line;
 mod node;
@@ -30,6 +32,7 @@ pub use color::Color;
 pub use config::{Config, ConfigBuilder};
 pub use drawable::Drawable;
 pub use element::{DragInfo, Element, ElementState, HitState};
+pub use image::{Image, ImageError};
 pub use input::{KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent};
 pub use line::Line;
 pub use node::Node;

@@ -79,7 +79,7 @@ Data returned by `HitState::is_dragging()` when a drag is active. Contains delta
 _Avoid_: DragState, drag data
 
 **Drawable**:
-A trait that produces **Cells** via a visitor callback. The unified interface for submitting visual content to the renderer. **Cell**, **Text**, **Line**, **Fill**, and **Stroke** implement Drawable. Combinators (`.color()`, `.map_cell()`, `.flip_x()`, `.translate()`, etc.) wrap any Drawable in a `Mapped<T>` adapter.
+A trait that produces **Cells** via a visitor callback. The unified interface for submitting visual content to the renderer. **Cell**, **Text**, **Image**, **Line**, **Fill**, and **Stroke** implement Drawable. Combinators (`.color()`, `.map_cell()`, `.flip_x()`, `.translate()`, etc.) wrap any Drawable in a `Mapped<T>` adapter.
 _Avoid_: Renderable, primitive
 
 **Shape**:
@@ -105,6 +105,10 @@ _Avoid_: Label, string renderer, text primitive
 **Glyph**:
 A per-character bitmap with pre-computed tight bounding dimensions (width and height of actual lit pixels). Stored in a **Font**'s static glyph array. Not directly drawable — consumed by **Text** internally.
 _Avoid_: Character, letter, char data
+
+**Image**:
+A **Drawable** that decodes a PNG or JPEG file (`Image::from_path`) into an RGBA pixel buffer, emitting one **Cell** per non-transparent pixel — one source pixel is one Cell, no scaling. Single frame only. Cheap to `Clone` (shares its decoded pixel buffer), so a decoded Image can be redrawn every frame without re-decoding.
+_Avoid_: Sprite, Texture, Bitmap (imply GPU texturing, which the engine does not have)
 
 **Rect**:
 An axis-aligned bounding box defined by position and size (all f32). Constructed from any corner or from two opposing corners. Provides accessors for edges and corners. Implements **Shape** for fill/stroke. Not directly **Drawable** — use `.fill()` or `.stroke()`.

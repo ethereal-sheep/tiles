@@ -1,5 +1,6 @@
 use core::fmt;
 
+use crate::anchor::{AnchorCorner, corner_offset};
 use crate::cell::Cell;
 use crate::color::Color;
 use crate::drawable::Drawable;
@@ -12,20 +13,6 @@ pub(crate) enum AnchorBox {
     #[default]
     Highlight,
     Tight,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
-pub(crate) enum AnchorCorner {
-    #[default]
-    TopLeft,
-    TopRight,
-    BottomLeft,
-    BottomRight,
-    TopCenter,
-    BottomCenter,
-    CenterLeft,
-    CenterRight,
-    Center,
 }
 
 pub struct Text {
@@ -214,20 +201,7 @@ impl Text {
             ),
         };
 
-        let half_w = box_w / 2.0;
-        let half_h = box_h / 2.0;
-
-        match self.anchor_corner {
-            AnchorCorner::TopLeft => (-box_offset_x, -box_offset_y),
-            AnchorCorner::TopRight => (-box_w - box_offset_x, -box_offset_y),
-            AnchorCorner::BottomLeft => (-box_offset_x, -box_h - box_offset_y),
-            AnchorCorner::BottomRight => (-box_w - box_offset_x, -box_h - box_offset_y),
-            AnchorCorner::TopCenter => (-half_w - box_offset_x, -box_offset_y),
-            AnchorCorner::BottomCenter => (-half_w - box_offset_x, -box_h - box_offset_y),
-            AnchorCorner::CenterLeft => (-box_offset_x, -half_h - box_offset_y),
-            AnchorCorner::CenterRight => (-box_w - box_offset_x, -half_h - box_offset_y),
-            AnchorCorner::Center => (-half_w - box_offset_x, -half_h - box_offset_y),
-        }
+        corner_offset(self.anchor_corner, box_w, box_h, box_offset_x, box_offset_y)
     }
 
     fn layout_origin(&self) -> (f32, f32) {

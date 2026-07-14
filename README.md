@@ -73,12 +73,15 @@ cargo run -p sandbox --example rotation
 cargo run -p sandbox --example element
 cargo run -p sandbox --example ui
 cargo run -p sandbox --example palette
+cargo run -p sandbox --example image
 ```
 
 ## ToDo
 - [ ] Resource Loader
     - [ ] Runtime Fonts - Loaded at runtime 
-    - [ ] Images - loaded into memory, can be drawn to world, screen, or in UI
+    - [x] Images - loaded into memory, can be drawn to world, screen, or in UI (`Image::from_path`, PNG/JPEG, single frame)
+        - [ ] Pixel-perfect scaling algorithms (nearest-neighbor, Scale2x/3x, Eagle, hqNx, 2xSaI, xBR/xBRZ) and RotSprite rotation — should be `Image` methods that bake a resample into a new `Image` (new pixel buffer, computed once), not resampled inside `emit_local_cells` every frame
+        - [ ] Multi-frame / sprite sheet support
     - [ ] Sounds - ''
 - [ ] CLI commands to interact with engine
 - [ ] Animation tool
@@ -105,3 +108,4 @@ cargo run -p sandbox --example palette
 | glam | 0.29 |
 | bytemuck | 1 |
 | pollster | 0.4 |
+| image | 0.25 |
