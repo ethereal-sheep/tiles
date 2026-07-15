@@ -28,13 +28,10 @@ impl From<image::ImageError> for ImageError {
     }
 }
 
-#[derive(Clone)]
 pub struct Image {
     pixels: Rc<[u8]>,
     width: u32,
     height: u32,
-    position: (f32, f32),
-    anchor_corner: AnchorCorner,
 }
 
 impl fmt::Debug for Image {
@@ -54,11 +51,52 @@ impl Image {
             pixels: Rc::from(decoded.into_raw()),
             width,
             height,
-            position: (0.0, 0.0),
-            anchor_corner: AnchorCorner::default(),
         })
     }
 
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    pub fn instance(&self) -> Frame {
+        self.frame(0)
+    }
+
+    pub fn frame(&self, _index: usize) -> Frame {
+        Frame {
+            pixels: self.pixels.clone(),
+            width: self.width,
+            height: self.height,
+            position: (0.0, 0.0),
+            anchor_corner: AnchorCorner::default(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Frame {
+    pixels: Rc<[u8]>,
+    width: u32,
+    height: u32,
+    position: (f32, f32),
+    anchor_corner: AnchorCorner,
+}
+
+impl fmt::Debug for Frame {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Frame")
+            .field("width", &self.width)
+            .field("height", &self.height)
+            .field("position", &self.position)
+            .finish()
+    }
+}
+
+impl Frame {
     pub fn width(&self) -> u32 {
         self.width
     }
@@ -128,7 +166,7 @@ impl Image {
     }
 }
 
-impl Drawable for Image {
+impl Drawable for Frame {
     fn origin(&self) -> Option<(f32, f32)> {
         Some(self.position)
     }
@@ -190,13 +228,42 @@ mod tests {
     }
 
     #[test]
+    fn instance_matches_frame_zero() {
+        let img = RgbaImage::from_pixel(2, 2, Rgba([255, 255, 255, 255]));
+        let path = write_temp_png("instance_matches_frame", &img);
+
+        let image = Image::from_path(&path).unwrap();
+        assert_eq!(image.instance().to_cells().len(), image.frame(0).to_cells().len());
+    }
+
+    #[test]
+    fn frame_ignores_index() {
+        let img = RgbaImage::from_pixel(2, 2, Rgba([255, 255, 255, 255]));
+        let path = write_temp_png("frame_ignores_index", &img);
+
+        let image = Image::from_path(&path).unwrap();
+        assert_eq!(image.frame(0).to_cells().len(), image.frame(7).to_cells().len());
+    }
+
+    #[test]
+    fn frame_reports_dimensions() {
+        let img = RgbaImage::from_pixel(3, 2, Rgba([255, 0, 0, 255]));
+        let path = write_temp_png("frame_dimensions", &img);
+
+        let image = Image::from_path(&path).unwrap();
+        let frame = image.instance();
+        assert_eq!(frame.width(), 3);
+        assert_eq!(frame.height(), 2);
+    }
+
+    #[test]
     fn alpha_zero_pixels_are_skipped() {
         let mut img = RgbaImage::from_pixel(2, 1, Rgba([255, 255, 255, 255]));
         img.put_pixel(1, 0, Rgba([0, 0, 0, 0]));
         let path = write_temp_png("alpha_skip", &img);
 
         let image = Image::from_path(&path).unwrap();
-        let cells = image.to_cells();
+        let cells = image.instance().to_cells();
         assert_eq!(cells.len(), 1);
         assert_eq!(cells[0].position.x, 0.0);
     }
@@ -207,7 +274,7 @@ mod tests {
         let path = write_temp_png("srgb", &img);
 
         let image = Image::from_path(&path).unwrap();
-        let cells = image.to_cells();
+        let cells = image.instance().to_cells();
         let expected = srgb_to_linear(128.0 / 255.0);
         assert!((cells[0].color[0] - expected).abs() < 1e-5);
         assert_eq!(cells[0].color[3], 1.0);
@@ -218,8 +285,8 @@ mod tests {
         let img = RgbaImage::from_pixel(1, 1, Rgba([255, 255, 255, 255]));
         let path = write_temp_png("position", &img);
 
-        let image = Image::from_path(&path).unwrap().position(10.0, 20.0);
-        let cells = image.to_cells();
+        let image = Image::from_path(&path).unwrap();
+        let cells = image.instance().position(10.0, 20.0).to_cells();
         assert_eq!(cells[0].position.x, 10.0);
         assert_eq!(cells[0].position.y, 20.0);
     }
@@ -229,8 +296,8 @@ mod tests {
         let img = RgbaImage::from_pixel(4, 4, Rgba([255, 255, 255, 255]));
         let path = write_temp_png("center", &img);
 
-        let image = Image::from_path(&path).unwrap().position(0.0, 0.0).center();
-        let cells = image.to_cells();
+        let image = Image::from_path(&path).unwrap();
+        let cells = image.instance().position(0.0, 0.0).center().to_cells();
 
         let min_x = cells.iter().map(|c| c.position.x).fold(f32::MAX, f32::min);
         let max_x = cells.iter().map(|c| c.position.x).fold(f32::MIN, f32::max);
@@ -238,12 +305,13 @@ mod tests {
     }
 
     #[test]
-    fn clone_shares_pixel_buffer() {
+    fn frame_clone_shares_pixel_buffer() {
         let img = RgbaImage::from_pixel(1, 1, Rgba([255, 255, 255, 255]));
         let path = write_temp_png("clone", &img);
 
         let image = Image::from_path(&path).unwrap();
-        let cloned = image.clone();
-        assert!(Rc::ptr_eq(&image.pixels, &cloned.pixels));
+        let frame = image.instance();
+        let cloned = frame.clone();
+        assert!(Rc::ptr_eq(&frame.pixels, &cloned.pixels));
     }
 }

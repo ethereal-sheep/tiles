@@ -21,7 +21,7 @@ impl App for ImageDemo {
 
     fn draw(&mut self, state: &mut State) {
         if let Some(logo) = &self.logo {
-            state.draw_world(logo.clone().position(0.0, 0.0).center());
+            state.draw_world(logo.instance().position(0.0, 0.0).center());
         }
     }
 }

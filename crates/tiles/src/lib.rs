@@ -32,7 +32,7 @@ pub use color::Color;
 pub use config::{Config, ConfigBuilder};
 pub use drawable::Drawable;
 pub use element::{DragInfo, Element, ElementState, HitState};
-pub use image::{Image, ImageError};
+pub use image::{Frame, Image, ImageError};
 pub use input::{KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent};
 pub use line::Line;
 pub use node::Node;

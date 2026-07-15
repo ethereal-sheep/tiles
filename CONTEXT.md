@@ -79,7 +79,7 @@ Data returned by `HitState::is_dragging()` when a drag is active. Contains delta
 _Avoid_: DragState, drag data
 
 **Drawable**:
-A trait that produces **Cells** via a visitor callback. The unified interface for submitting visual content to the renderer. **Cell**, **Text**, **Image**, **Line**, **Fill**, and **Stroke** implement Drawable. Combinators (`.color()`, `.map_cell()`, `.flip_x()`, `.translate()`, etc.) wrap any Drawable in a `Mapped<T>` adapter.
+A trait that produces **Cells** via a visitor callback. The unified interface for submitting visual content to the renderer. **Cell**, **Text**, **Frame**, **Line**, **Fill**, and **Stroke** implement Drawable. Combinators (`.color()`, `.map_cell()`, `.flip_x()`, `.translate()`, etc.) wrap any Drawable in a `Mapped<T>` adapter.
 _Avoid_: Renderable, primitive
 
 **Shape**:
@@ -107,8 +107,12 @@ A per-character bitmap with pre-computed tight bounding dimensions (width and he
 _Avoid_: Character, letter, char data
 
 **Image**:
-A **Drawable** that decodes a PNG or JPEG file (`Image::from_path`) into an RGBA pixel buffer, emitting one **Cell** per non-transparent pixel — one source pixel is one Cell, no scaling. Single frame only. Cheap to `Clone` (shares its decoded pixel buffer), so a decoded Image can be redrawn every frame without re-decoding.
+A static resource holding a decoded PNG or JPEG (`Image::from_path`) as an RGBA pixel buffer. Not directly **Drawable** — call `.instance()` (or `.frame(n)`) to get a **Frame**. Meant to be loaded once and kept around; `.instance()`/`.frame(n)` are cheap to call repeatedly since the pixel buffer is shared, not re-decoded.
 _Avoid_: Sprite, Texture, Bitmap (imply GPU texturing, which the engine does not have)
+
+**Frame**:
+A **Drawable** view over an **Image**'s pixel buffer, produced by `Image::instance()` or `Image::frame(n)`. Holds position, anchor, and its own width/height (decoupled from the source Image for future sprite-sheet support). Emits one **Cell** per non-transparent pixel — one source pixel is one Cell, no scaling. `frame(n)`'s index is currently ignored (multi-frame/sprite-sheet slicing not yet implemented); every Frame from a given Image is the same single frame. Cheap to `Clone` (shares its pixel buffer).
+_Avoid_: Sprite, Texture, Bitmap
 
 **Rect**:
 An axis-aligned bounding box defined by position and size (all f32). Constructed from any corner or from two opposing corners. Provides accessors for edges and corners. Implements **Shape** for fill/stroke. Not directly **Drawable** — use `.fill()` or `.stroke()`.
