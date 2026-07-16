@@ -290,6 +290,7 @@ fn rotsprite(pixels: &[u8], width: u32, height: u32, degrees: f32) -> (Vec<u8>, 
     let (pixels, width, height) = scale2x(&pixels, width, height);
     let (pixels, width, height) = scale2x(&pixels, width, height);
     let (pixels, width, height) = nn_rotate(&pixels, width, height, degrees);
+    let (pixels, width, height) = pad_to_multiple(&pixels, width, height, 8);
     down_nx(&pixels, width, height, 8)
 }
 
@@ -408,6 +409,34 @@ fn nn_rotate(pixels: &[u8], width: u32, height: u32, degrees: f32) -> (Vec<u8>, 
     }
 
     (out, dst_w, dst_h)
+}
+
+/// Centers `pixels` in a transparent canvas whose dimensions are the next
+/// multiple of `n` at or above `width`/`height`. Padding is split as evenly
+/// as possible on both axes so the downstream block-sampling grid in
+/// `down_nx` stays centered on the original content instead of biased
+/// toward one edge.
+fn pad_to_multiple(pixels: &[u8], width: u32, height: u32, n: u32) -> (Vec<u8>, u32, u32) {
+    let out_w = width.div_ceil(n) * n;
+    let out_h = height.div_ceil(n) * n;
+
+    if out_w == width && out_h == height {
+        return (pixels.into(), width, height);
+    }
+
+    let pad_x = (out_w - width) / 2;
+    let pad_y = (out_h - height) / 2;
+
+    let mut out = vec![0u8; (out_w * out_h * 4) as usize];
+    for y in 0..height {
+        let src_start = ((y * width) * 4) as usize;
+        let src_end = src_start + (width * 4) as usize;
+        let dst_start = (((y + pad_y) * out_w + pad_x) * 4) as usize;
+        let dst_end = dst_start + (width * 4) as usize;
+        out[dst_start..dst_end].copy_from_slice(&pixels[src_start..src_end]);
+    }
+
+    (out, out_w, out_h)
 }
 
 /// Downscales by exactly nx by voting on the most common color within each
@@ -592,6 +621,11 @@ impl Frame {
         self
     }
 
+    pub fn rotate(mut self, degrees: f32) -> Self {
+        self.degrees = (self.degrees + degrees).rem_euclid(360.0);
+        self
+    }
+
     fn anchor_offset(&self) -> (f32, f32) {
         corner_offset(
             self.anchor_corner,
@@ -601,11 +635,6 @@ impl Frame {
             0.0,
         )
     }
-
-    fn rotate(mut self, degrees: f32) -> Self {
-        self.degrees = (self.degrees + degrees).rem_euclid(360.0);
-        self
-    }
 }
 
 impl Drawable for Frame {
@@ -614,7 +643,6 @@ impl Drawable for Frame {
     }
 
     fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
-        let (ax, ay) = self.anchor_offset();
         let (offset_x, offset_y) = self.offset;
         let subrect =
             &self
@@ -627,6 +655,14 @@ impl Drawable for Frame {
         } else {
             subrect.rotsprite(self.degrees)
         };
+
+        let (ax, ay) = corner_offset(
+            self.anchor_corner,
+            transformed.width() as f32,
+            transformed.height() as f32,
+            0.0,
+            0.0,
+        );
 
         for row in 0..transformed.height() {
             for col in 0..transformed.width() {
@@ -802,7 +838,11 @@ mod tests {
 
         let image = Image::from_path(&path).unwrap();
         let cells = image.instance().rotate(-1e-6).to_cells();
-        assert_eq!(cells.len(), 16, "degrees just below 360 should skip rotsprite");
+        assert_eq!(
+            cells.len(),
+            16,
+            "degrees just below 360 should skip rotsprite"
+        );
     }
 
     #[test]

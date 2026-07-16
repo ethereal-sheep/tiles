@@ -1,4 +1,4 @@
-use tiles::{App, Color, Config, Image, State};
+use tiles::{App, Color, Config, Image, KeyCode::Space, State};
 
 struct ImageDemo {
     logo: Option<Image>,
@@ -21,12 +21,21 @@ impl App for ImageDemo {
 
     fn draw(&mut self, state: &mut State) {
         if let Some(logo) = &self.logo {
-            state.draw_world(logo.instance().position(0.0, 0.0).center());
+            state.draw_world(
+                logo.instance()
+                    .rotate((state.elapsed() * 5.0).sin() * 10.0)
+                    .position(0.0, 0.0)
+                    .center(),
+            );
         }
+    }
+
+    fn on_key(&mut self, _state: &mut State, _event: tiles::KeyEvent) {
+        if _event.key == Space && _event.state == tiles::KeyState::Pressed {}
     }
 }
 
 fn main() {
-    let config = Config::builder().title("Image").viewport(256, 256).build();
+    let config = Config::builder().title("Image").viewport(64, 64).build();
     tiles::run(ImageDemo::new(), config).unwrap();
 }
