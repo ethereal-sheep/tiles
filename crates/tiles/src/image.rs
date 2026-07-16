@@ -5,7 +5,7 @@ use std::rc::Rc;
 
 use crate::anchor::{AnchorCorner, corner_offset};
 use crate::cell::Cell;
-use crate::color::{Color, srgb_to_linear};
+use crate::color::srgb_to_linear;
 use crate::drawable::Drawable;
 use crate::rect::Rect;
 
@@ -36,6 +36,16 @@ struct PixelBuffer {
     height: u32,
 }
 
+#[derive(Clone)]
+pub struct PixelBufferView<'a> {
+    pixels: &'a [u8],
+    stride: u32, // width of the *parent* buffer, in pixels
+    x: u32,
+    y: u32,
+    width: u32,
+    height: u32,
+}
+
 struct ImageData {
     base: PixelBuffer,
     // Consumed by Frame::rotate() (RotSprite upscale step), not yet implemented.
@@ -57,6 +67,68 @@ impl ImageData {
 }
 
 impl PixelBuffer {
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.width as usize * self.height as usize * 4
+    }
+
+    #[inline]
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    #[inline]
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Byte offset of the start of pixel (x, y). Panics if out of bounds.
+    #[inline]
+    fn pixel_offset(&self, x: u32, y: u32) -> usize {
+        assert!(
+            x < self.width && y < self.height,
+            "pixel ({x}, {y}) out of bounds"
+        );
+        ((y * self.width + x) * 4) as usize
+    }
+
+    /// Single pixel as an RGBA array.
+    #[inline]
+    pub fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
+        let off = self.pixel_offset(x, y);
+        (&self.pixels[off..off + 4]).try_into().unwrap()
+    }
+
+    /// One full row of pixels, as raw bytes (width * 4 bytes).
+    #[inline]
+    pub fn row(&self, y: u32) -> &[u8] {
+        assert!(y < self.height, "row {y} out of bounds");
+        let start = (y * self.width * 4) as usize;
+        let end = start + (self.width * 4) as usize;
+        &self.pixels[start..end]
+    }
+
+    /// Borrow as a read-only view.
+    pub fn view(&self) -> PixelBufferView<'_> {
+        self.subrect(0, 0, self.width, self.height)
+    }
+
+    /// Borrow a sub-rectangle of this buffer as a read-only view.
+    pub fn subrect(&self, x: u32, y: u32, width: u32, height: u32) -> PixelBufferView<'_> {
+        assert!(
+            x + width <= self.width && y + height <= self.height,
+            "view out of bounds"
+        );
+        PixelBufferView {
+            pixels: &self.pixels,
+            stride: self.width,
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
     fn scale2x(&self) -> PixelBuffer {
         let (p, w, h) = scale2x(&self.pixels, self.width, self.height);
         Self {
@@ -102,6 +174,110 @@ impl PixelBuffer {
             width: w,
             height: h,
         }
+    }
+}
+
+impl<'a> From<PixelBufferView<'a>> for PixelBuffer {
+    fn from(value: PixelBufferView<'a>) -> Self {
+        value.to_pixel_buffer()
+    }
+}
+
+impl<'a> PixelBufferView<'a> {
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.width as usize * self.height as usize * 4
+    }
+
+    #[inline]
+    pub fn width(&self) -> u32 {
+        self.width
+    }
+
+    #[inline]
+    pub fn height(&self) -> u32 {
+        self.height
+    }
+
+    /// Byte offset (into the *parent* buffer) of local pixel (x, y).
+    #[inline]
+    fn pixel_offset(&self, x: u32, y: u32) -> usize {
+        assert!(
+            x < self.width && y < self.height,
+            "pixel ({x}, {y}) out of view bounds"
+        );
+        (((self.y + y) * self.stride + (self.x + x)) * 4) as usize
+    }
+
+    #[inline]
+    fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
+        let off = self.pixel_offset(x, y);
+        (&self.pixels[off..off + 4]).try_into().unwrap()
+    }
+
+    #[inline]
+    fn row(&self, y: u32) -> &[u8] {
+        assert!(y < self.height, "row {y} out of view bounds");
+        let start = (((self.y + y) * self.stride + self.x) * 4) as usize;
+        let end = start + (self.width * 4) as usize;
+        &self.pixels[start..end]
+    }
+
+    /// Take a sub-rect of this view (relative coordinates).
+    fn subrect(&self, x: u32, y: u32, width: u32, height: u32) -> PixelBufferView<'_> {
+        assert!(
+            x + width <= self.width && y + height <= self.height,
+            "sub-view out of bounds"
+        );
+        PixelBufferView {
+            pixels: self.pixels,
+            stride: self.stride,
+            x: self.x + x,
+            y: self.y + y,
+            width,
+            height,
+        }
+    }
+
+    /// Copy this view's pixels into a new, owned, tightly-packed PixelBuffer.
+    fn to_pixel_buffer(&self) -> PixelBuffer {
+        let mut out = vec![0u8; self.len()];
+        for y in 0..self.height {
+            let src = self.row(y);
+            let dst_start = (y * self.width * 4) as usize;
+            let dst_end = dst_start + (self.width * 4) as usize;
+            out[dst_start..dst_end].copy_from_slice(src);
+        }
+        PixelBuffer {
+            pixels: out.into(),
+            width: self.width,
+            height: self.height,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn scale2x(&self) -> PixelBuffer {
+        self.to_pixel_buffer().scale2x()
+    }
+
+    #[allow(dead_code)]
+    fn down2x(&self) -> PixelBuffer {
+        self.to_pixel_buffer().down2x()
+    }
+
+    #[allow(dead_code)]
+    fn down8x(&self) -> PixelBuffer {
+        self.to_pixel_buffer().down8x()
+    }
+
+    #[allow(dead_code)]
+    fn nn_rotate(&self, degrees: f32) -> PixelBuffer {
+        self.to_pixel_buffer().nn_rotate(degrees)
+    }
+
+    #[allow(dead_code)]
+    fn rotsprite(&self, degrees: f32) -> PixelBuffer {
+        self.to_pixel_buffer().rotsprite(degrees)
     }
 }
 
@@ -334,6 +510,7 @@ impl Image {
             rect: Rect::from_top_left(0.0, 0.0, self.width(), self.height()),
             offset: (0, 0),
             anchor_corner: AnchorCorner::default(),
+            degrees: 0.0,
         }
     }
 }
@@ -344,6 +521,7 @@ pub struct Frame {
     rect: Rect,
     offset: (u32, u32),
     anchor_corner: AnchorCorner,
+    degrees: f32,
 }
 
 impl fmt::Debug for Frame {
@@ -423,6 +601,11 @@ impl Frame {
             0.0,
         )
     }
+
+    fn rotate(mut self, degrees: f32) -> Self {
+        self.degrees = (self.degrees + degrees).rem_euclid(360.0);
+        self
+    }
 }
 
 impl Drawable for Frame {
@@ -432,30 +615,26 @@ impl Drawable for Frame {
 
     fn emit_local_cells(&self, f: &mut dyn FnMut(Cell)) {
         let (ax, ay) = self.anchor_offset();
-        let base = &self.data.base;
         let (offset_x, offset_y) = self.offset;
+        let subrect =
+            &self
+                .data
+                .base
+                .subrect(offset_x, offset_y, self.rect.width(), self.rect.height());
 
-        for row in 0..self.rect.height() {
-            for col in 0..self.rect.width() {
-                let px = offset_x + col;
-                let py = offset_y + row;
-                let idx = ((py * base.width + px) * 4) as usize;
-                let [r, g, b, a] = base.pixels[idx..idx + 4] else {
-                    unreachable!("pixel buffer sized as width * height * 4")
-                };
+        let transformed = if self.degrees < f32::EPSILON || self.degrees > 360.0 - f32::EPSILON {
+            subrect.to_pixel_buffer()
+        } else {
+            subrect.rotsprite(self.degrees)
+        };
 
-                if a == 0 {
+        for row in 0..transformed.height() {
+            for col in 0..transformed.width() {
+                let color = transformed.pixel(col, row);
+                if color[3] == 0 {
                     continue;
                 }
-
-                let color = Color::linear(
-                    srgb_to_linear(r as f32 / 255.0),
-                    srgb_to_linear(g as f32 / 255.0),
-                    srgb_to_linear(b as f32 / 255.0),
-                    a as f32 / 255.0,
-                );
-
-                let cell = Cell::new(ax + col as f32, ay + row as f32).color(color);
+                let cell = Cell::new(ax + col as f32, ay + row as f32).color(color.into());
                 f(cell);
             }
         }
@@ -584,6 +763,59 @@ mod tests {
         assert!(Rc::ptr_eq(&frame.data, &cloned.data));
     }
 
+    // --- Frame::rotate ---
+
+    #[test]
+    fn rotate_accumulates_across_calls() {
+        let img = RgbaImage::from_pixel(2, 2, Rgba([255, 255, 255, 255]));
+        let path = write_temp_png("rotate_accumulates", &img);
+
+        let image = Image::from_path(&path).unwrap();
+        let frame = image.instance().rotate(30.0).rotate(40.0);
+        assert!((frame.degrees - 70.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn rotate_wraps_past_360_degrees() {
+        let img = RgbaImage::from_pixel(2, 2, Rgba([255, 255, 255, 255]));
+        let path = write_temp_png("rotate_wraps", &img);
+
+        let image = Image::from_path(&path).unwrap();
+        let frame = image.instance().rotate(200.0).rotate(200.0);
+        assert!((frame.degrees - 40.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn rotate_by_zero_does_not_change_pixel_count() {
+        let img = RgbaImage::from_pixel(4, 4, Rgba([255, 255, 255, 255]));
+        let path = write_temp_png("rotate_zero", &img);
+
+        let image = Image::from_path(&path).unwrap();
+        let cells = image.instance().rotate(0.0).to_cells();
+        assert_eq!(cells.len(), 16);
+    }
+
+    #[test]
+    fn rotate_near_360_degrees_stays_a_no_op() {
+        let img = RgbaImage::from_pixel(4, 4, Rgba([255, 255, 255, 255]));
+        let path = write_temp_png("rotate_near_360", &img);
+
+        let image = Image::from_path(&path).unwrap();
+        let cells = image.instance().rotate(-1e-6).to_cells();
+        assert_eq!(cells.len(), 16, "degrees just below 360 should skip rotsprite");
+    }
+
+    #[test]
+    fn rotate_90_expands_cell_count_via_rotsprite() {
+        let img = RgbaImage::from_pixel(4, 4, Rgba([255, 255, 255, 255]));
+        let path = write_temp_png("rotate_90_cells", &img);
+
+        let image = Image::from_path(&path).unwrap();
+        let cells = image.instance().rotate(90.0).to_cells();
+        // 90-degree rotations don't expand the bounding box.
+        assert_eq!(cells.len(), 16);
+    }
+
     // --- ImageData x8 (lazy upscale) ---
 
     fn test_image_data(colors: &[[u8; 4]], width: u32, height: u32) -> ImageData {
@@ -634,6 +866,116 @@ mod tests {
         let first = data.x8() as *const PixelBuffer;
         let second = data.x8() as *const PixelBuffer;
         assert_eq!(first, second);
+    }
+
+    // --- PixelBuffer / PixelBufferView ---
+
+    fn test_pixel_buffer(colors: &[[u8; 4]], width: u32, height: u32) -> PixelBuffer {
+        PixelBuffer {
+            pixels: rgba_buffer(colors).into(),
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn pixel_buffer_len_is_width_height_times_four() {
+        let buf = test_pixel_buffer(&[RED; 6], 3, 2);
+        assert_eq!(buf.len(), 3 * 2 * 4);
+    }
+
+    #[test]
+    fn pixel_buffer_pixel_reads_correct_pixel() {
+        let buf = test_pixel_buffer(&[RED, GREEN, BLUE, YELLOW], 2, 2);
+        assert_eq!(buf.pixel(0, 0), RED);
+        assert_eq!(buf.pixel(1, 0), GREEN);
+        assert_eq!(buf.pixel(0, 1), BLUE);
+        assert_eq!(buf.pixel(1, 1), YELLOW);
+    }
+
+    #[test]
+    #[should_panic(expected = "out of bounds")]
+    fn pixel_buffer_pixel_out_of_bounds_panics() {
+        let buf = test_pixel_buffer(&[RED], 1, 1);
+        buf.pixel(1, 0);
+    }
+
+    #[test]
+    fn pixel_buffer_row_returns_full_row() {
+        let buf = test_pixel_buffer(&[RED, GREEN, BLUE, YELLOW], 2, 2);
+        assert_eq!(buf.row(1), [BLUE, YELLOW].concat().as_slice());
+    }
+
+    #[test]
+    fn view_of_full_buffer_matches_source_dimensions_and_pixels() {
+        let buf = test_pixel_buffer(&[RED, GREEN, BLUE, YELLOW], 2, 2);
+        let view = buf.view();
+        assert_eq!(view.width(), 2);
+        assert_eq!(view.height(), 2);
+        assert_eq!(view.pixel(1, 1), YELLOW);
+    }
+
+    #[test]
+    fn subrect_indexes_relative_to_its_own_origin() {
+        // 3x2 buffer; take the right 2x2 sub-rect (columns 1..3).
+        let buf = test_pixel_buffer(&[RED, GREEN, BLUE, BLUE, YELLOW, RED], 3, 2);
+        let sub = buf.subrect(1, 0, 2, 2);
+        assert_eq!(sub.width(), 2);
+        assert_eq!(sub.height(), 2);
+        // sub-local (0,0) is parent (1,0) = GREEN; sub-local (1,1) is parent (2,1) = RED.
+        assert_eq!(sub.pixel(0, 0), GREEN);
+        assert_eq!(sub.pixel(1, 1), RED);
+    }
+
+    #[test]
+    fn subrect_row_uses_parent_stride() {
+        let buf = test_pixel_buffer(&[RED, GREEN, BLUE, BLUE, YELLOW, RED], 3, 2);
+        let sub = buf.subrect(1, 0, 2, 2);
+        assert_eq!(sub.row(1), [YELLOW, RED].concat().as_slice());
+    }
+
+    #[test]
+    #[should_panic(expected = "out of bounds")]
+    fn subrect_beyond_parent_bounds_panics() {
+        let buf = test_pixel_buffer(&[RED; 4], 2, 2);
+        buf.subrect(1, 1, 2, 2);
+    }
+
+    #[test]
+    fn nested_subrect_composes_offsets() {
+        let buf = test_pixel_buffer(
+            &[RED, GREEN, BLUE, BLUE, YELLOW, RED, RED, RED, GREEN],
+            3,
+            3,
+        );
+        let outer = buf.subrect(1, 1, 2, 2); // local (0,0) = parent (1,1) = RED
+        let inner = outer.subrect(1, 1, 1, 1); // local (0,0) = outer (1,1) = parent (2,2) = GREEN
+        assert_eq!(inner.pixel(0, 0), GREEN);
+    }
+
+    #[test]
+    fn to_pixel_buffer_copies_view_tightly_packed() {
+        let buf = test_pixel_buffer(&[RED, GREEN, BLUE, BLUE, YELLOW, RED], 3, 2);
+        let sub = buf.subrect(1, 0, 2, 2);
+        let owned = sub.to_pixel_buffer();
+
+        assert_eq!(owned.width(), 2);
+        assert_eq!(owned.height(), 2);
+        assert_eq!(owned.pixel(0, 0), GREEN);
+        assert_eq!(owned.pixel(1, 0), BLUE);
+        assert_eq!(owned.pixel(0, 1), YELLOW);
+        assert_eq!(owned.pixel(1, 1), RED);
+    }
+
+    #[test]
+    fn from_pixel_buffer_view_matches_to_pixel_buffer() {
+        let buf = test_pixel_buffer(&[RED, GREEN, BLUE, YELLOW], 2, 2);
+        let view = buf.subrect(1, 0, 1, 2);
+        let owned: PixelBuffer = view.clone().into();
+        assert_eq!(owned.width(), view.width());
+        assert_eq!(owned.height(), view.height());
+        assert_eq!(owned.pixel(0, 0), GREEN);
+        assert_eq!(owned.pixel(0, 1), YELLOW);
     }
 
     // --- scale2x ---

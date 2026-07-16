@@ -33,12 +33,33 @@ impl Color {
         }
     }
 
+    pub fn rgba8(r: u8, g: u8, b: u8, a: u8) -> Self {
+        Self {
+            r: srgb_to_linear(r as f32 / 255.0),
+            g: srgb_to_linear(g as f32 / 255.0),
+            b: srgb_to_linear(b as f32 / 255.0),
+            a: a as f32 / 255.0,
+        }
+    }
+
     pub fn alpha(self, a: f32) -> Self {
         Self { a, ..self }
     }
 
     pub fn to_array(self) -> [f32; 4] {
         [self.r, self.g, self.b, self.a]
+    }
+}
+
+impl From<[u8; 3]> for Color {
+    fn from(arr: [u8; 3]) -> Self {
+        Self::rgb8(arr[0], arr[1], arr[2])
+    }
+}
+
+impl From<[u8; 4]> for Color {
+    fn from(arr: [u8; 4]) -> Self {
+        Self::rgba8(arr[0], arr[1], arr[2], arr[3])
     }
 }
 
@@ -96,5 +117,29 @@ mod tests {
         assert_eq!(srgb_to_linear(0.0), 0.0);
         assert!((srgb_to_linear(1.0) - 1.0).abs() < 1e-5);
         assert!(srgb_to_linear(0.5) < 0.5);
+    }
+
+    #[test]
+    fn rgba8_matches_rgb8_with_alpha() {
+        let a = Color::rgba8(0x40, 0x80, 0xC0, 128);
+        let b = Color::rgb8(0x40, 0x80, 0xC0);
+        assert_eq!(a.r, b.r);
+        assert_eq!(a.g, b.g);
+        assert_eq!(a.b, b.b);
+        assert!((a.a - 128.0 / 255.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn from_u8_3_array_is_opaque_rgb8() {
+        let c: Color = [0x40, 0x80, 0xC0].into();
+        let expected = Color::rgb8(0x40, 0x80, 0xC0);
+        assert_eq!(c, expected);
+    }
+
+    #[test]
+    fn from_u8_4_array_matches_rgba8() {
+        let c: Color = [0x40, 0x80, 0xC0, 128].into();
+        let expected = Color::rgba8(0x40, 0x80, 0xC0, 128);
+        assert_eq!(c, expected);
     }
 }
