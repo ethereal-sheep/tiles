@@ -49,6 +49,11 @@ impl ImageData {
         self.x8
             .get_or_init(|| self.base.scale2x().scale2x().scale2x())
     }
+
+    #[allow(dead_code)]
+    fn rotsprite(&self, degrees: f32) -> PixelBuffer {
+        self.x8().nn_rotate(degrees).down8x()
+    }
 }
 
 impl PixelBuffer {
@@ -60,6 +65,74 @@ impl PixelBuffer {
             height: h,
         }
     }
+
+    #[allow(dead_code)]
+    fn down2x(&self) -> PixelBuffer {
+        let (p, w, h) = down_nx(&self.pixels, self.width, self.height, 2);
+        Self {
+            pixels: p.into(),
+            width: w,
+            height: h,
+        }
+    }
+
+    fn down8x(&self) -> PixelBuffer {
+        let (p, w, h) = down_nx(&self.pixels, self.width, self.height, 8);
+        Self {
+            pixels: p.into(),
+            width: w,
+            height: h,
+        }
+    }
+
+    fn nn_rotate(&self, degrees: f32) -> PixelBuffer {
+        let (p, w, h) = nn_rotate(&self.pixels, self.width, self.height, degrees);
+        Self {
+            pixels: p.into(),
+            width: w,
+            height: h,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn rotsprite(&self, degrees: f32) -> PixelBuffer {
+        let (p, w, h) = rotsprite(&self.pixels, self.width, self.height, degrees);
+        Self {
+            pixels: p.into(),
+            width: w,
+            height: h,
+        }
+    }
+}
+
+/// RotSprite rotation: NN-rotates an 8x-upscaled buffer into an expanded
+/// bounding box (no cropping), then mode-filter-downscales by 8. `degrees`
+/// is clockwise as seen on screen. `width_x8`/`height_x8` must be multiples
+/// of 8 (the scale factor produced by three `scale2x` passes).
+fn rotsprite(pixels: &[u8], width: u32, height: u32, degrees: f32) -> (Vec<u8>, u32, u32) {
+    let (pixels, width, height) = scale2x(pixels, width, height);
+    let (pixels, width, height) = scale2x(&pixels, width, height);
+    let (pixels, width, height) = scale2x(&pixels, width, height);
+    let (pixels, width, height) = nn_rotate(&pixels, width, height, degrees);
+    down_nx(&pixels, width, height, 8)
+}
+
+fn derive_bbox(width: u32, height: u32, degrees: f32) -> (u32, u32) {
+    let radians = degrees.to_radians();
+    let cos = radians.cos();
+    let sin = radians.sin();
+
+    // Subtract a small epsilon before ceiling so floating-point trig error
+    // (e.g. cos(pi) landing a hair above -1.0) doesn't spuriously expand the
+    // bounding box for exact multiples of 90 degrees.
+    const EPS: f32 = 1e-3;
+    let bbox_w = ((width as f32 * cos.abs() + height as f32 * sin.abs() - EPS)
+        .ceil()
+        .max(1.0)) as u32;
+    let bbox_h = ((width as f32 * sin.abs() + height as f32 * cos.abs() - EPS)
+        .ceil()
+        .max(1.0)) as u32;
+    (bbox_w, bbox_h)
 }
 
 #[allow(dead_code)]
@@ -114,6 +187,100 @@ fn scale2x(pixels: &[u8], width: u32, height: u32) -> (Vec<u8>, u32, u32) {
             put(x * 2 + 1, y * 2, e1);
             put(x * 2, y * 2 + 1, e2);
             put(x * 2 + 1, y * 2 + 1, e3);
+        }
+    }
+
+    (out, out_w, out_h)
+}
+
+/// Pull-sampling NN rotate: for each destination pixel, inverse-rotate back
+/// into source space. Destination pixels landing outside the source stay
+/// transparent (the bounding-box padding added by the expanded canvas).
+fn nn_rotate(pixels: &[u8], width: u32, height: u32, degrees: f32) -> (Vec<u8>, u32, u32) {
+    let (dst_w, dst_h) = derive_bbox(width, height, degrees);
+    let mut out = vec![0u8; (dst_w * dst_h * 4) as usize];
+
+    let radians = degrees.to_radians();
+    let cos = radians.cos();
+    let sin = radians.sin();
+
+    let cx_src = width as f32 / 2.0;
+    let cy_src = height as f32 / 2.0;
+    let cx_dst = dst_w as f32 / 2.0;
+    let cy_dst = dst_h as f32 / 2.0;
+
+    for oy in 0..dst_h {
+        for ox in 0..dst_w {
+            let dx = (ox as f32 + 0.5) - cx_dst;
+            let dy = (oy as f32 + 0.5) - cy_dst;
+
+            // Inverse of the forward clockwise-on-screen rotation matrix.
+            let sx = dx * cos + dy * sin;
+            let sy = -dx * sin + dy * cos;
+
+            let src_x = (sx + cx_src).floor() as i32;
+            let src_y = (sy + cy_src).floor() as i32;
+
+            if src_x < 0 || src_y < 0 || src_x >= width as i32 || src_y >= height as i32 {
+                continue;
+            }
+
+            let src_idx = ((src_y as u32 * width + src_x as u32) * 4) as usize;
+            let dst_idx = ((oy * dst_w + ox) * 4) as usize;
+            out[dst_idx..dst_idx + 4].copy_from_slice(&pixels[src_idx..src_idx + 4]);
+        }
+    }
+
+    (out, dst_w, dst_h)
+}
+
+/// Downscales by exactly nx by voting on the most common color within each
+/// nxn block, ignoring fully-transparent pixels in the vote. A block is
+/// only transparent in the output if every one of its nxn pixels is.
+fn down_nx(pixels: &[u8], width: u32, height: u32, n: u32) -> (Vec<u8>, u32, u32) {
+    if n == 0 || n == 1 || n > width.min(height) {
+        return (pixels.into(), width, height);
+    }
+
+    let out_w = width / n;
+    let out_h = height / n;
+    let mut out = vec![0u8; (out_w * out_h * 4) as usize];
+
+    for by in 0..out_h {
+        for bx in 0..out_w {
+            let mut counts: Vec<([u8; 4], u32)> = Vec::new();
+
+            for dy in 0..n {
+                for dx in 0..n {
+                    let x = bx * n + dx;
+                    let y = by * n + dy;
+                    let idx = ((y * width + x) * 4) as usize;
+                    let px = [
+                        pixels[idx],
+                        pixels[idx + 1],
+                        pixels[idx + 2],
+                        pixels[idx + 3],
+                    ];
+
+                    if px[3] == 0 {
+                        continue;
+                    }
+
+                    match counts.iter_mut().find(|(c, _)| *c == px) {
+                        Some(entry) => entry.1 += 1,
+                        None => counts.push((px, 1)),
+                    }
+                }
+            }
+
+            let mode = counts
+                .iter()
+                .max_by_key(|(_, count)| *count)
+                .map(|(c, _)| *c)
+                .unwrap_or([0, 0, 0, 0]);
+
+            let out_idx = ((by * out_w + bx) * 4) as usize;
+            out[out_idx..out_idx + 4].copy_from_slice(&mode);
         }
     }
 
@@ -518,5 +685,151 @@ mod tests {
             "corner nearest the diagonal should fill with A"
         );
         assert_eq!(get(3, 3), b, "corner farthest from the diagonal stays B");
+    }
+
+    // --- rotate ---
+
+    /// Builds a buffer with 4 color quadrants: TL=colors[0], TR=colors[1],
+    /// BL=colors[2], BR=colors[3]. `cols` x `rows` total pixel dimensions.
+    fn quadrant_buffer(colors: &[[u8; 4]; 4], cols: u32, rows: u32) -> (Vec<u8>, u32, u32) {
+        let mut out = vec![0u8; (cols * rows * 4) as usize];
+        let h_w = cols / 2;
+        let h_h = rows / 2;
+
+        for row in 0..rows {
+            for col in 0..cols {
+                let qi = (row / h_h) * 2 + col / h_w;
+                let color = colors[qi as usize];
+                let idx = ((row * cols + col) * 4) as usize;
+                out[idx..idx + 4].copy_from_slice(&color);
+            }
+        }
+
+        (out, cols, rows)
+    }
+
+    fn pixel_at(pixels: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
+        let idx = ((y * width + x) * 4) as usize;
+        [
+            pixels[idx],
+            pixels[idx + 1],
+            pixels[idx + 2],
+            pixels[idx + 3],
+        ]
+    }
+
+    const RED: [u8; 4] = [255, 0, 0, 255];
+    const GREEN: [u8; 4] = [0, 255, 0, 255];
+    const BLUE: [u8; 4] = [0, 0, 255, 255];
+    const YELLOW: [u8; 4] = [255, 255, 0, 255];
+
+    #[test]
+    fn rotate_90_moves_quadrants_clockwise() {
+        // TL=Red TR=Green / BL=Blue BR=Yellow, 16x16 pixels
+        let (pixels, w, h) = quadrant_buffer(&[RED, GREEN, BLUE, YELLOW], 16, 16);
+        let (out, out_w, out_h) = nn_rotate(&pixels, w, h, 90.0);
+
+        assert_eq!(out_w, 16);
+        assert_eq!(out_h, 16);
+        // After 90° CW: TL←BL, TR←TL, BR←TR, BL←BR
+        assert_eq!(pixel_at(&out, out_w, 0, 0), BLUE, "new TL was old BL");
+        assert_eq!(pixel_at(&out, out_w, 15, 0), RED, "new TR was old TL");
+        assert_eq!(pixel_at(&out, out_w, 15, 15), GREEN, "new BR was old TR");
+        assert_eq!(pixel_at(&out, out_w, 0, 15), YELLOW, "new BL was old BR");
+    }
+
+    #[test]
+    fn rotate_180_swaps_opposite_corners() {
+        let (pixels, w, h) = quadrant_buffer(&[RED, GREEN, BLUE, YELLOW], 16, 16);
+        let (out, out_w, out_h) = nn_rotate(&pixels, w, h, 180.0);
+
+        assert_eq!(out_w, 16);
+        assert_eq!(out_h, 16);
+        assert_eq!(pixel_at(&out, out_w, 0, 0), YELLOW);
+        assert_eq!(pixel_at(&out, out_w, 15, 15), RED);
+    }
+
+    #[test]
+    fn rotate_270_moves_quadrants_counter_to_90() {
+        let (pixels, w, h) = quadrant_buffer(&[RED, GREEN, BLUE, YELLOW], 16, 16);
+        let (out, out_w, out_h) = nn_rotate(&pixels, w, h, 270.0);
+
+        assert_eq!(out_w, 16);
+        assert_eq!(out_h, 16);
+        assert_eq!(pixel_at(&out, out_w, 0, 0), GREEN);
+        assert_eq!(pixel_at(&out, out_w, 15, 15), BLUE);
+    }
+
+    #[test]
+    fn rotate_90_multiples_do_not_expand_bounding_box() {
+        let (pixels, w, h) = quadrant_buffer(&[RED, GREEN, BLUE, YELLOW], 16, 16);
+        for angle in [0.0, 90.0, 180.0, 270.0] {
+            let (_out, out_w, out_h) = nn_rotate(&pixels, w, h, angle);
+            assert_eq!(
+                (out_w, out_h),
+                (16, 16),
+                "angle {angle} should not expand bbox"
+            );
+        }
+    }
+
+    #[test]
+    fn rotate_45_expands_bounding_box() {
+        let (pixels, w, h) = quadrant_buffer(&[RED, GREEN, BLUE, YELLOW], 16, 16);
+        let (_out, out_w, out_h) = nn_rotate(&pixels, w, h, 45.0);
+
+        assert_eq!(out_w, 23);
+        assert_eq!(out_h, 23);
+    }
+
+    #[test]
+    fn mode_downscale_picks_majority_color() {
+        let mut block = vec![0u8; 8 * 8 * 4];
+        for i in 0..48 {
+            block[i * 4..i * 4 + 4].copy_from_slice(&RED);
+        }
+        for i in 48..64 {
+            block[i * 4..i * 4 + 4].copy_from_slice(&GREEN);
+        }
+
+        let (out, out_w, out_h) = down_nx(&block, 8, 8, 8);
+        assert_eq!((out_w, out_h), (1, 1));
+        assert_eq!(&out[0..4], &RED);
+    }
+
+    #[test]
+    fn mode_downscale_single_opaque_pixel_wins_over_transparent() {
+        let mut block = vec![0u8; 8 * 8 * 4];
+        block[0..4].copy_from_slice(&RED);
+
+        let (out, _w, _h) = down_nx(&block, 8, 8, 8);
+        assert_eq!(
+            &out[0..4],
+            &RED,
+            "the only opaque pixel should win the vote"
+        );
+    }
+
+    #[test]
+    fn mode_downscale_all_transparent_block_stays_transparent() {
+        let block = vec![0u8; 8 * 8 * 4];
+        let (out, _w, _h) = down_nx(&block, 8, 8, 8);
+        assert_eq!(
+            out[3], 0,
+            "block with zero opaque pixels must stay transparent"
+        );
+    }
+
+    #[test]
+    fn nn_rotate_pads_expanded_corners_as_transparent() {
+        // 8x8 solid red block rotated 45° → bbox expands to 12x12.
+        // Corners of expanded canvas should be transparent.
+        let pixels = vec![RED; 8 * 8].into_iter().flatten().collect::<Vec<_>>();
+        let (rotated, out_w, _out_h) = nn_rotate(&pixels, 8, 8, 45.0);
+        let corner = pixel_at(&rotated, out_w, 0, 0);
+        assert_eq!(
+            corner[3], 0,
+            "expanded corner should be transparent, not sampled"
+        );
     }
 }
