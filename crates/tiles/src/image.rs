@@ -1,13 +1,32 @@
 use core::cell::OnceCell;
 use core::fmt;
+use std::fs::File;
+use std::io::BufReader;
 use std::path::Path;
 use std::rc::Rc;
 
+use image::AnimationDecoder;
+use image::codecs::gif::GifDecoder;
+
 use crate::anchor::{AnchorCorner, corner_offset};
 use crate::cell::Cell;
-use crate::color::srgb_to_linear;
 use crate::drawable::Drawable;
 use crate::rect::Rect;
+
+/// A default frame duration (seconds) used where no real timing is known:
+/// grid-sliced frames, and any `Sprite::frame_at` lookup against a `FrameData`
+/// with `duration: None`.
+const DEFAULT_FRAME_DURATION: f32 = 0.1;
+
+/// One sub-region of a multi-frame `Image`. `duration` is `Some` only when
+/// decoded from a source with real per-frame timing (e.g. a GIF); grid
+/// slicing (`Sprite::grid`) always sets it explicitly instead.
+#[derive(Clone, Copy, Debug)]
+pub struct FrameData {
+    pub offset: (u32, u32),
+    pub size: (u32, u32),
+    pub duration: Option<f32>,
+}
 
 #[derive(Debug)]
 pub struct ImageError(image::ImageError);
@@ -48,7 +67,6 @@ pub struct PixelBufferView<'a> {
 
 struct ImageData {
     base: PixelBuffer,
-    // Consumed by Frame::rotate() (RotSprite upscale step), not yet implemented.
     #[allow(dead_code)]
     x8: OnceCell<PixelBuffer>,
 }
@@ -82,30 +100,15 @@ impl PixelBuffer {
         self.height
     }
 
-    /// Byte offset of the start of pixel (x, y). Panics if out of bounds.
-    #[inline]
-    fn pixel_offset(&self, x: u32, y: u32) -> usize {
-        assert!(
-            x < self.width && y < self.height,
-            "pixel ({x}, {y}) out of bounds"
-        );
-        ((y * self.width + x) * 4) as usize
-    }
-
     /// Single pixel as an RGBA array.
     #[inline]
     pub fn pixel(&self, x: u32, y: u32) -> [u8; 4] {
-        let off = self.pixel_offset(x, y);
-        (&self.pixels[off..off + 4]).try_into().unwrap()
+        self.view().pixel(x, y)
     }
 
-    /// One full row of pixels, as raw bytes (width * 4 bytes).
     #[inline]
-    pub fn row(&self, y: u32) -> &[u8] {
-        assert!(y < self.height, "row {y} out of bounds");
-        let start = (y * self.width * 4) as usize;
-        let end = start + (self.width * 4) as usize;
-        &self.pixels[start..end]
+    fn row(&self, y: u32) -> &[u8] {
+        self.view().row(y)
     }
 
     /// Borrow as a read-only view.
@@ -166,7 +169,6 @@ impl PixelBuffer {
         }
     }
 
-    #[allow(dead_code)]
     fn rotsprite(&self, degrees: f32) -> PixelBuffer {
         let (p, w, h) = rotsprite(&self.pixels, self.width, self.height, degrees);
         Self {
@@ -204,7 +206,7 @@ impl<'a> PixelBufferView<'a> {
     fn pixel_offset(&self, x: u32, y: u32) -> usize {
         assert!(
             x < self.width && y < self.height,
-            "pixel ({x}, {y}) out of view bounds"
+            "pixel ({x}, {y}) out of bounds"
         );
         (((self.y + y) * self.stride + (self.x + x)) * 4) as usize
     }
@@ -216,14 +218,15 @@ impl<'a> PixelBufferView<'a> {
     }
 
     #[inline]
-    fn row(&self, y: u32) -> &[u8] {
-        assert!(y < self.height, "row {y} out of view bounds");
+    fn row(&self, y: u32) -> &'a [u8] {
+        assert!(y < self.height, "row {y} out of bounds");
         let start = (((self.y + y) * self.stride + self.x) * 4) as usize;
         let end = start + (self.width * 4) as usize;
         &self.pixels[start..end]
     }
 
     /// Take a sub-rect of this view (relative coordinates).
+    #[allow(dead_code)]
     fn subrect(&self, x: u32, y: u32, width: u32, height: u32) -> PixelBufferView<'_> {
         assert!(
             x + width <= self.width && y + height <= self.height,
@@ -494,6 +497,7 @@ fn down_nx(pixels: &[u8], width: u32, height: u32, n: u32) -> (Vec<u8>, u32, u32
 
 pub struct Image {
     data: Rc<ImageData>,
+    frame_data: Vec<FrameData>,
 }
 
 impl fmt::Debug for Image {
@@ -507,18 +511,84 @@ impl fmt::Debug for Image {
 
 impl Image {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Self, ImageError> {
-        let decoded = image::open(path)?.to_rgba8();
-        let (width, height) = decoded.dimensions();
-        Ok(Self {
-            data: Rc::new(ImageData {
-                base: PixelBuffer {
+        let path = path.as_ref();
+        let is_gif = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("gif"));
+
+        let (base, frame_data) = if is_gif {
+            Self::decode_gif(path)?
+        } else {
+            let decoded = image::open(path)?.to_rgba8();
+            let (width, height) = decoded.dimensions();
+            (
+                PixelBuffer {
                     pixels: decoded.into_raw().into(),
                     width,
                     height,
                 },
+                Vec::new(),
+            )
+        };
+
+        Ok(Self {
+            data: Rc::new(ImageData {
+                base,
                 x8: OnceCell::new(),
             }),
+            frame_data,
         })
+    }
+
+    /// Decodes a GIF's frames (already fully composited to canvas size by
+    /// the `image` crate's disposal-method handling) into a horizontal strip
+    /// buffer, with one `FrameData` per source frame.
+    fn decode_gif(path: &Path) -> Result<(PixelBuffer, Vec<FrameData>), ImageError> {
+        let file = File::open(path).map_err(image::ImageError::from)?;
+        let decoder = GifDecoder::new(BufReader::new(file))?;
+
+        let decoded: Vec<(image::RgbaImage, f32)> = decoder
+            .into_frames()
+            .map(|frame| {
+                let frame = frame?;
+                let (numer, denom) = frame.delay().numer_denom_ms();
+                let duration_secs = numer as f32 / denom as f32 / 1000.0;
+                Ok((frame.into_buffer(), duration_secs))
+            })
+            .collect::<image::ImageResult<_>>()?;
+
+        let frame_w = decoded.first().map_or(0, |(buf, _)| buf.width());
+        let frame_h = decoded.first().map_or(0, |(buf, _)| buf.height());
+        let strip_width = frame_w * decoded.len() as u32;
+
+        let mut pixels = vec![0u8; strip_width as usize * frame_h as usize * 4];
+        let mut frame_data = Vec::with_capacity(decoded.len());
+
+        for (i, (buffer, duration_secs)) in decoded.iter().enumerate() {
+            let x_offset = frame_w * i as u32;
+            for y in 0..frame_h {
+                let src_start = (y * frame_w * 4) as usize;
+                let src_end = src_start + (frame_w * 4) as usize;
+                let dst_start = ((y * strip_width + x_offset) * 4) as usize;
+                let dst_end = dst_start + (frame_w * 4) as usize;
+                pixels[dst_start..dst_end].copy_from_slice(&buffer.as_raw()[src_start..src_end]);
+            }
+            frame_data.push(FrameData {
+                offset: (x_offset, 0),
+                size: (frame_w, frame_h),
+                duration: Some(*duration_secs),
+            });
+        }
+
+        Ok((
+            PixelBuffer {
+                pixels: pixels.into(),
+                width: strip_width,
+                height: frame_h,
+            },
+            frame_data,
+        ))
     }
 
     pub fn width(&self) -> u32 {
@@ -530,10 +600,6 @@ impl Image {
     }
 
     pub fn instance(&self) -> Frame {
-        self.frame(0)
-    }
-
-    pub fn frame(&self, _index: usize) -> Frame {
         Frame {
             data: self.data.clone(),
             rect: Rect::from_top_left(0.0, 0.0, self.width(), self.height()),
@@ -625,16 +691,6 @@ impl Frame {
         self.degrees = (self.degrees + degrees).rem_euclid(360.0);
         self
     }
-
-    fn anchor_offset(&self) -> (f32, f32) {
-        corner_offset(
-            self.anchor_corner,
-            self.rect.width() as f32,
-            self.rect.height() as f32,
-            0.0,
-            0.0,
-        )
-    }
 }
 
 impl Drawable for Frame {
@@ -677,15 +733,137 @@ impl Drawable for Frame {
     }
 }
 
+/// An `Image` paired with a list of sub-regions (`FrameData`) and a loop
+/// mode, producing `Frame`s for drawing either by index or by elapsed time.
+pub struct Sprite {
+    data: Rc<ImageData>,
+    frame_data: Vec<FrameData>,
+    repeat: bool,
+}
+
+impl Sprite {
+    pub fn new(image: &Image) -> Self {
+        let frame_data = if image.frame_data.is_empty() {
+            vec![FrameData {
+                offset: (0, 0),
+                size: (image.width(), image.height()),
+                duration: None,
+            }]
+        } else {
+            image.frame_data.clone()
+        };
+
+        Self {
+            data: image.data.clone(),
+            frame_data,
+            repeat: false,
+        }
+    }
+
+    /// Overwrites the frame data with `cols * rows` equal-size cells sliced
+    /// from the image in row-major order, each defaulted to
+    /// `DEFAULT_FRAME_DURATION`.
+    pub fn grid(mut self, cols: u32, rows: u32) -> Self {
+        let cell_w = self.data.base.width / cols;
+        let cell_h = self.data.base.height / rows;
+
+        self.frame_data = (0..rows)
+            .flat_map(|row| (0..cols).map(move |col| (col, row)))
+            .map(|(col, row)| FrameData {
+                offset: (col * cell_w, row * cell_h),
+                size: (cell_w, cell_h),
+                duration: Some(DEFAULT_FRAME_DURATION),
+            })
+            .collect();
+
+        self
+    }
+
+    pub fn repeat(mut self) -> Self {
+        self.repeat = true;
+        self
+    }
+
+    pub fn one_shot(mut self) -> Self {
+        self.repeat = false;
+        self
+    }
+
+    pub fn frame_count(&self) -> usize {
+        self.frame_data.len()
+    }
+
+    /// Looks up a frame by index, wrapping via modulo.
+    pub fn frame(&self, index: usize) -> Option<Frame> {
+        let frame_data = self.frame_data.get(index)?;
+        Some(self.frame_from_data(frame_data))
+    }
+
+    /// Looks up the frame active at elapsed time `t` (seconds). Wraps `t` via
+    /// modulo the total duration when looping; clamps to the last frame
+    /// otherwise.
+    pub fn frame_at(&self, t: f32) -> Frame {
+        let durations: Vec<f32> = self
+            .frame_data
+            .iter()
+            .map(|f| f.duration.unwrap_or(DEFAULT_FRAME_DURATION))
+            .collect();
+        let total: f32 = durations.iter().sum();
+
+        let t = if self.repeat && total > 0.0 {
+            t.rem_euclid(total)
+        } else {
+            t.clamp(0.0, total)
+        };
+
+        let mut elapsed = 0.0;
+        for (i, duration) in durations.iter().enumerate() {
+            elapsed += duration;
+            if t < elapsed || i == durations.len() - 1 {
+                return self.frame_from_data(&self.frame_data[i]);
+            }
+        }
+
+        self.frame_from_data(&self.frame_data[0])
+    }
+
+    fn frame_from_data(&self, frame_data: &FrameData) -> Frame {
+        let (w, h) = frame_data.size;
+        Frame {
+            data: self.data.clone(),
+            rect: Rect::from_top_left(0.0, 0.0, w, h),
+            offset: frame_data.offset,
+            anchor_corner: AnchorCorner::default(),
+            degrees: 0.0,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::srgb_to_linear;
     use image::{Rgba, RgbaImage};
 
     fn write_temp_png(name: &str, img: &RgbaImage) -> std::path::PathBuf {
         let mut path = std::env::temp_dir();
         path.push(format!("tiles_image_test_{name}.png"));
         img.save(&path).unwrap();
+        path
+    }
+
+    fn write_temp_gif(name: &str, frames: &[(RgbaImage, u32)]) -> std::path::PathBuf {
+        use image::Delay;
+        use image::codecs::gif::GifEncoder;
+
+        let mut path = std::env::temp_dir();
+        path.push(format!("tiles_image_test_{name}.gif"));
+        let file = File::create(&path).unwrap();
+        let mut encoder = GifEncoder::new(file);
+        let anim_frames = frames.iter().map(|(img, delay_ms)| {
+            image::Frame::from_parts(img.clone(), 0, 0, Delay::from_numer_denom_ms(*delay_ms, 1))
+        });
+        encoder.encode_frames(anim_frames).unwrap();
         path
     }
 
@@ -703,30 +881,6 @@ mod tests {
     fn from_path_missing_file_errors() {
         let result = Image::from_path("/nonexistent/path/does-not-exist.png");
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn instance_matches_frame_zero() {
-        let img = RgbaImage::from_pixel(2, 2, Rgba([255, 255, 255, 255]));
-        let path = write_temp_png("instance_matches_frame", &img);
-
-        let image = Image::from_path(&path).unwrap();
-        assert_eq!(
-            image.instance().to_cells().len(),
-            image.frame(0).to_cells().len()
-        );
-    }
-
-    #[test]
-    fn frame_ignores_index() {
-        let img = RgbaImage::from_pixel(2, 2, Rgba([255, 255, 255, 255]));
-        let path = write_temp_png("frame_ignores_index", &img);
-
-        let image = Image::from_path(&path).unwrap();
-        assert_eq!(
-            image.frame(0).to_cells().len(),
-            image.frame(7).to_cells().len()
-        );
     }
 
     #[test]
@@ -934,7 +1088,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "out of bounds")]
+    #[should_panic(expected = "pixel (1, 0) out of bounds")]
     fn pixel_buffer_pixel_out_of_bounds_panics() {
         let buf = test_pixel_buffer(&[RED], 1, 1);
         buf.pixel(1, 0);
@@ -1213,5 +1367,159 @@ mod tests {
             corner[3], 0,
             "expanded corner should be transparent, not sampled"
         );
+    }
+
+    // --- Sprite ---
+
+    /// Builds a 4x1-grid image, one solid color per cell, `cell_size` square.
+    fn grid_image(name: &str, colors: &[[u8; 4]; 4], cell_size: u32) -> Image {
+        let mut img = RgbaImage::new(cell_size * 4, cell_size);
+        for (i, color) in colors.iter().enumerate() {
+            for y in 0..cell_size {
+                for x in 0..cell_size {
+                    img.put_pixel(i as u32 * cell_size + x, y, Rgba(*color));
+                }
+            }
+        }
+        let path = write_temp_png(&format!("grid_{name}"), &img);
+        Image::from_path(&path).unwrap()
+    }
+
+    #[test]
+    fn frame_out_of_bounds_index_returns_none() {
+        let image = grid_image("wraps", &[RED, GREEN, BLUE, YELLOW], 2);
+        let sprite = Sprite::new(&image).grid(4, 1);
+
+        assert!(sprite.frame(1).is_some());
+        assert!(sprite.frame(5).is_none());
+    }
+
+    #[test]
+    fn grid_slices_into_equal_cells() {
+        let image = grid_image("slices", &[RED, GREEN, BLUE, YELLOW], 2);
+        let sprite = Sprite::new(&image).grid(4, 1);
+
+        assert_eq!(sprite.frame(0).unwrap().width(), 2);
+        assert_eq!(sprite.frame(0).unwrap().height(), 2);
+    }
+
+    #[test]
+    fn grid_frame_colors_match_source_cells() {
+        let image = grid_image("colors", &[RED, GREEN, BLUE, YELLOW], 2);
+        let sprite = Sprite::new(&image).grid(4, 1);
+
+        for (i, expected) in [RED, GREEN, BLUE, YELLOW].iter().enumerate() {
+            let cells = sprite.frame(i).unwrap().to_cells();
+            let expected_linear = srgb_to_linear(expected[0] as f32 / 255.0);
+            assert!(
+                (cells[0].color[0] - expected_linear).abs() < 1e-5,
+                "frame {i} did not match expected cell color"
+            );
+        }
+    }
+
+    #[test]
+    fn no_grid_call_treats_image_as_single_frame() {
+        let image = grid_image("single_frame", &[RED, GREEN, BLUE, YELLOW], 2);
+        let sprite = Sprite::new(&image);
+
+        assert_eq!(sprite.frame(0).unwrap().width(), image.width());
+        assert_eq!(sprite.frame(0).unwrap().height(), image.height());
+    }
+
+    #[test]
+    fn frame_at_picks_frame_by_elapsed_time() {
+        let image = grid_image("elapsed_time", &[RED, GREEN, BLUE, YELLOW], 2);
+        // 100ms per frame by default.
+        let sprite = Sprite::new(&image).grid(4, 1);
+
+        let at_start = sprite.frame_at(0.0).to_cells();
+        let at_frame_two = sprite.frame_at(0.25).to_cells();
+        assert_eq!(
+            at_start[0].color,
+            sprite.frame(0).unwrap().to_cells()[0].color
+        );
+        assert_eq!(
+            at_frame_two[0].color,
+            sprite.frame(2).unwrap().to_cells()[0].color
+        );
+    }
+
+    #[test]
+    fn frame_at_one_shot_clamps_to_last_frame_past_end() {
+        let image = grid_image("one_shot_clamp", &[RED, GREEN, BLUE, YELLOW], 2);
+        let sprite = Sprite::new(&image).grid(4, 1).one_shot();
+
+        let past_end = sprite.frame_at(1000.0).to_cells();
+        let last = sprite.frame(3).unwrap().to_cells();
+        assert_eq!(past_end[0].color, last[0].color);
+    }
+
+    #[test]
+    fn frame_at_looping_wraps_past_total_duration() {
+        let image = grid_image("looping_wrap", &[RED, GREEN, BLUE, YELLOW], 2);
+        let sprite = Sprite::new(&image).grid(4, 1).repeat();
+
+        // Total duration is 0.4s; 0.45s should wrap to the same frame as 0.05s.
+        let wrapped = sprite.frame_at(0.45).to_cells();
+        let expected = sprite.frame_at(0.05).to_cells();
+        assert_eq!(wrapped[0].color, expected[0].color);
+    }
+
+    #[test]
+    fn one_shot_is_default_before_looping_called() {
+        let image = grid_image("default_one_shot", &[RED, GREEN, BLUE, YELLOW], 2);
+        let sprite = Sprite::new(&image).grid(4, 1);
+
+        let past_end = sprite.frame_at(1000.0).to_cells();
+        let last = sprite.frame(3).unwrap().to_cells();
+        assert_eq!(past_end[0].color, last[0].color);
+    }
+
+    // --- GIF decoding ---
+
+    #[test]
+    fn gif_decode_produces_one_frame_data_entry_per_frame() {
+        let frames = [
+            (RgbaImage::from_pixel(2, 2, Rgba(RED)), 50),
+            (RgbaImage::from_pixel(2, 2, Rgba(GREEN)), 150),
+            (RgbaImage::from_pixel(2, 2, Rgba(BLUE)), 200),
+        ];
+        let path = write_temp_gif("frame_count", &frames);
+
+        let image = Image::from_path(&path).unwrap();
+        assert_eq!(image.frame_data.len(), 3);
+    }
+
+    #[test]
+    fn gif_decode_reads_real_per_frame_delay() {
+        let frames = [
+            (RgbaImage::from_pixel(2, 2, Rgba(RED)), 50),
+            (RgbaImage::from_pixel(2, 2, Rgba(GREEN)), 150),
+        ];
+        let path = write_temp_gif("delay", &frames);
+
+        let image = Image::from_path(&path).unwrap();
+        assert!((image.frame_data[0].duration.unwrap() - 0.05).abs() < 1e-3);
+        assert!((image.frame_data[1].duration.unwrap() - 0.15).abs() < 1e-3);
+    }
+
+    #[test]
+    fn gif_backed_sprite_plays_back_via_frame_at() {
+        let frames = [
+            (RgbaImage::from_pixel(2, 2, Rgba(RED)), 100),
+            (RgbaImage::from_pixel(2, 2, Rgba(GREEN)), 100),
+        ];
+        let path = write_temp_gif("playback", &frames);
+
+        let image = Image::from_path(&path).unwrap();
+        let sprite = Sprite::new(&image);
+
+        let first = sprite.frame_at(0.0).to_cells();
+        let second = sprite.frame_at(0.15).to_cells();
+        let red_linear = srgb_to_linear(RED[0] as f32 / 255.0);
+        let green_linear = srgb_to_linear(GREEN[1] as f32 / 255.0);
+        assert!((first[0].color[0] - red_linear).abs() < 1e-5);
+        assert!((second[0].color[1] - green_linear).abs() < 1e-5);
     }
 }

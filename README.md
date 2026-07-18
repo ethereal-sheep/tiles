@@ -74,14 +74,16 @@ cargo run -p sandbox --example element
 cargo run -p sandbox --example ui
 cargo run -p sandbox --example palette
 cargo run -p sandbox --example image
+cargo run -p sandbox --example sprite
 ```
 
 ## ToDo
 - [ ] Resource Loader
     - [ ] Runtime Fonts - Loaded at runtime 
-    - [x] Images - loaded into memory, can be drawn to world, screen, or in UI (`Image::from_path`, PNG/JPEG; `.instance()`/`.frame(n)` produce a drawable `Frame`)
+    - [x] Images - loaded into memory, can be drawn to world, screen, or in UI (`Image::from_path`, PNG/JPEG/GIF; `.instance()` produces a drawable `Frame`)
         - [ ] Pixel-perfect scaling algorithms (nearest-neighbor, Scale2x/3x, Eagle, hqNx, 2xSaI, xBR/xBRZ) and RotSprite rotation — should be `Frame` methods that bake a resample into a new `Frame` (new pixel buffer, computed once), not resampled inside `emit_local_cells` every frame
-        - [ ] Multi-frame / sprite sheet support — `Image::frame(n)` currently ignores `n`; needs real per-frame slicing/layout
+        - [x] Multi-frame / sprite sheet support — `Sprite::new(&image)` (uses a decoded GIF's real per-frame timing) or `.grid(cols, rows)` (slices a plain image into equal cells); `.frame(index)` / `.frame_at(t)` produce a drawable `Frame`
+            - [ ] Stateful animation player that owns its own playhead and advances via `.update(dt)`, instead of the caller tracking elapsed time
     - [ ] Sounds - ''
 - [ ] CLI commands to interact with engine
 - [ ] Animation tool

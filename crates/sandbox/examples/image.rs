@@ -2,11 +2,17 @@ use tiles::{App, Color, Config, Image, KeyCode::Space, State};
 
 struct ImageDemo {
     logo: Option<Image>,
+    elapsed: f32,
+    paused: bool,
 }
 
 impl ImageDemo {
     fn new() -> Self {
-        Self { logo: None }
+        Self {
+            logo: None,
+            elapsed: 0.0,
+            paused: false,
+        }
     }
 }
 
@@ -20,10 +26,13 @@ impl App for ImageDemo {
     }
 
     fn draw(&mut self, state: &mut State) {
+        if !self.paused {
+            self.elapsed += state.dt();
+        }
         if let Some(logo) = &self.logo {
             state.draw_world(
                 logo.instance()
-                    .rotate((state.elapsed() * 5.0).sin() * 10.0)
+                    .rotate((self.elapsed * 3.0).sin() * 45.0)
                     .position(0.0, 0.0)
                     .center(),
             );
@@ -31,7 +40,9 @@ impl App for ImageDemo {
     }
 
     fn on_key(&mut self, _state: &mut State, _event: tiles::KeyEvent) {
-        if _event.key == Space && _event.state == tiles::KeyState::Pressed {}
+        if _event.key == Space && _event.state == tiles::KeyState::Pressed {
+            self.paused = !self.paused;
+        }
     }
 }
 

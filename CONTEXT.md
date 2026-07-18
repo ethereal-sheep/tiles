@@ -107,12 +107,20 @@ A per-character bitmap with pre-computed tight bounding dimensions (width and he
 _Avoid_: Character, letter, char data
 
 **Image**:
-A static resource holding a decoded PNG or JPEG (`Image::from_path`) as an RGBA pixel buffer. Not directly **Drawable** — call `.instance()` (or `.frame(n)`) to get a **Frame**. Meant to be loaded once and kept around; `.instance()`/`.frame(n)` are cheap to call repeatedly since the pixel buffer is shared, not re-decoded.
-_Avoid_: Sprite, Texture, Bitmap (imply GPU texturing, which the engine does not have)
+A static resource holding a decoded PNG, JPEG, or GIF (`Image::from_path`, dispatched by file extension) as an RGBA pixel buffer. Not directly **Drawable** — call `.instance()` to get a whole-image **Frame**, or wrap in a **Sprite** for multi-frame access. Meant to be loaded once and kept around; `.instance()` is cheap to call repeatedly since the pixel buffer is shared, not re-decoded. A decoded GIF carries its per-frame layout and timing internally (consumed by `Sprite::new`).
+_Avoid_: Texture, Bitmap (imply GPU texturing, which the engine does not have)
 
 **Frame**:
-A **Drawable** view over an **Image**'s pixel buffer, produced by `Image::instance()` or `Image::frame(n)`. Holds position, anchor, and its own width/height (decoupled from the source Image for future sprite-sheet support). Emits one **Cell** per non-transparent pixel — one source pixel is one Cell, no scaling. `frame(n)`'s index is currently ignored (multi-frame/sprite-sheet slicing not yet implemented); every Frame from a given Image is the same single frame. Cheap to `Clone` (shares its pixel buffer).
-_Avoid_: Sprite, Texture, Bitmap
+A **Drawable** view over an **Image**'s pixel buffer, produced by `Image::instance()` or a **Sprite**'s `.frame(index)` / `.frame_at(t)`. Holds position, anchor, offset, and its own width/height (decoupled from the source Image, so it can be a sub-region). Emits one **Cell** per non-transparent pixel — one source pixel is one Cell, no scaling. Cheap to `Clone` (shares its pixel buffer).
+_Avoid_: Texture, Bitmap
+
+**Sprite**:
+An **Image** paired with a list of sub-regions (**FrameData**: offset, size, optional duration) and a loop mode (one-shot by default). Built via `Sprite::new(&image)` — uses the Image's inherent frame data if any (e.g. from a decoded GIF, one entry per real frame with its real delay), otherwise treats the whole Image as one static frame. `.grid(cols, rows)` overwrites the frame data with `cols * rows` equal cells sliced row-major from the Image, each defaulted to a 100ms duration, overriding whatever was there before. `.frame(index)` looks up a **Frame** by index (wraps via modulo); `.frame_at(t)` looks up by elapsed seconds, respecting `.looping()` / `.one_shot()`.
+_Avoid_: Spritesheet (the file/asset convention Sprite slices, not a synonym for the type), Animation (a future stateful player, see KIV)
+
+**FrameData**:
+One sub-region of a multi-frame **Image**: pixel `offset`, pixel `size`, and an optional per-frame `duration` (seconds). Populated automatically when `Image::from_path` decodes a GIF (one entry per decoded frame, real delay from the file, frames packed into one horizontal-strip buffer); empty for plain PNG/JPEG. Consumed by **Sprite**, and overwritable via `Sprite::grid`.
+_Avoid_: Frame (different concept — FrameData is metadata, Frame is the drawable view)
 
 **Rect**:
 An axis-aligned bounding box defined by position and size (all f32). Constructed from any corner or from two opposing corners. Provides accessors for edges and corners. Implements **Shape** for fill/stroke. Not directly **Drawable** — use `.fill()` or `.stroke()`.
@@ -145,6 +153,8 @@ _Avoid_: Global light, brightness, exposure
 **Tile** — A square grid of Cells that forms a reusable visual unit (e.g. 8x8, 16x16). Each Cell references a Palette index.
 
 **Tilesheet** — An ordered collection of Tiles, all sharing the same dimensions and Palette. The export artifact of the editor and the import artifact of the engine.
+
+**Animation Player** — A stateful wrapper over a **Sprite** that owns its own playhead (current elapsed time or frame index) and advances it via an `.update(dt)` call, instead of the caller tracking elapsed time itself. Complements Sprite's current stateless `.frame_at(t)`.
 
 **Pattern** — A fixed-length grid of rows × channels containing note events (note, instrument, volume, effect commands). The atomic unit of composition in a tracker.
 
