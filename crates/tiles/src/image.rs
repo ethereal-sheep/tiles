@@ -8,7 +8,7 @@ use std::rc::Rc;
 use image::AnimationDecoder;
 use image::codecs::gif::GifDecoder;
 
-use crate::anchor::{AnchorCorner, corner_offset};
+use crate::anchor::AnchorCorner;
 use crate::cell::Cell;
 use crate::drawable::Drawable;
 use crate::rect::Rect;
@@ -712,8 +712,7 @@ impl Drawable for Frame {
             subrect.rotsprite(self.degrees)
         };
 
-        let (ax, ay) = corner_offset(
-            self.anchor_corner,
+        let (ax, ay) = self.anchor_corner.corner_offset(
             transformed.width() as f32,
             transformed.height() as f32,
             0.0,

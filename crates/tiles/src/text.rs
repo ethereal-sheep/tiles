@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::anchor::{AnchorCorner, corner_offset};
+use crate::anchor::AnchorCorner;
 use crate::cell::Cell;
 use crate::color::Color;
 use crate::drawable::Drawable;
@@ -201,7 +201,8 @@ impl Text {
             ),
         };
 
-        corner_offset(self.anchor_corner, box_w, box_h, box_offset_x, box_offset_y)
+        self.anchor_corner
+            .corner_offset(box_w, box_h, box_offset_x, box_offset_y)
     }
 
     fn layout_origin(&self) -> (f32, f32) {
