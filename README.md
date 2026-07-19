@@ -78,7 +78,7 @@ cargo run -p sandbox --example sprite
 ```
 
 ## ToDo
-- [ ] Resource Loader
+- [x] Resource Loader
     - [ ] Runtime Fonts - Loaded at runtime 
     - [x] Images - loaded into memory, can be drawn to world, screen, or in UI (`Image::from_path`, PNG/JPEG/GIF; `.instance()` produces a drawable `Frame`)
         - [ ] Pixel-perfect scaling algorithms (nearest-neighbor, Scale2x/3x, Eagle, hqNx, 2xSaI, xBR/xBRZ) and RotSprite rotation — should be `Frame` methods that bake a resample into a new `Frame` (new pixel buffer, computed once), not resampled inside `emit_local_cells` every frame

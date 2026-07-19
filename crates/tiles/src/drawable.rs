@@ -25,6 +25,12 @@ pub trait Drawable {
         }
     }
 
+    fn to_local_cells(&self) -> Vec<Cell> {
+        let mut cells = vec![];
+        self.emit_local_cells(&mut |cell| cells.push(cell));
+        cells
+    }
+
     fn to_cells(&self) -> Vec<Cell> {
         let mut cells = vec![];
         self.emit_cells(&mut |cell| cells.push(cell));

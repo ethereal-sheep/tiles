@@ -10,6 +10,7 @@ use image::codecs::gif::GifDecoder;
 
 use crate::anchor::AnchorCorner;
 use crate::cell::Cell;
+use crate::color::linear_to_srgb;
 use crate::drawable::Drawable;
 use crate::rect::Rect;
 
@@ -591,6 +592,71 @@ impl Image {
         ))
     }
 
+    /// Rasterizes a `Drawable`'s cells into a new `Image`, sized to their
+    /// tight integer bounding box (cell positions are floored). Cells
+    /// overlapping the same pixel are drawn in emission order, later
+    /// overwriting earlier.
+    pub fn from_drawable(drawable: impl Drawable) -> Self {
+        let cells = drawable.to_cells();
+
+        if cells.is_empty() {
+            return Self {
+                data: Rc::new(ImageData {
+                    base: PixelBuffer {
+                        pixels: Vec::new().into(),
+                        width: 0,
+                        height: 0,
+                    },
+                    x8: OnceCell::new(),
+                }),
+                frame_data: Vec::new(),
+            };
+        }
+
+        let points: Vec<(i32, i32, [u8; 4])> = cells
+            .into_iter()
+            .map(|cell| {
+                let x = cell.position.x.floor() as i32;
+                let y = cell.position.y.floor() as i32;
+                let color: [u8; 4] = [
+                    (linear_to_srgb(cell.color[0]) * 255.0).round() as u8,
+                    (linear_to_srgb(cell.color[1]) * 255.0).round() as u8,
+                    (linear_to_srgb(cell.color[2]) * 255.0).round() as u8,
+                    (cell.color[3] * 255.0).round() as u8,
+                ];
+                (x, y, color)
+            })
+            .collect();
+
+        let min_x = points.iter().map(|(x, _, _)| *x).min().unwrap();
+        let min_y = points.iter().map(|(_, y, _)| *y).min().unwrap();
+        let max_x = points.iter().map(|(x, _, _)| *x).max().unwrap();
+        let max_y = points.iter().map(|(_, y, _)| *y).max().unwrap();
+
+        let width = (max_x - min_x + 1) as u32;
+        let height = (max_y - min_y + 1) as u32;
+        let mut pixels = vec![0u8; (width * height * 4) as usize];
+
+        for (x, y, color) in points {
+            let px = (x - min_x) as u32;
+            let py = (y - min_y) as u32;
+            let idx = ((py * width + px) * 4) as usize;
+            pixels[idx..idx + 4].copy_from_slice(&color);
+        }
+
+        Self {
+            data: Rc::new(ImageData {
+                base: PixelBuffer {
+                    pixels: pixels.into(),
+                    width,
+                    height,
+                },
+                x8: OnceCell::new(),
+            }),
+            frame_data: Vec::new(),
+        }
+    }
+
     pub fn width(&self) -> u32 {
         self.data.base.width
     }
@@ -873,7 +939,7 @@ impl Sprite {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::srgb_to_linear;
+    use crate::color::{Color, srgb_to_linear};
     use image::{Rgba, RgbaImage};
 
     fn write_temp_png(name: &str, img: &RgbaImage) -> std::path::PathBuf {
@@ -1505,6 +1571,45 @@ mod tests {
         let past_end = sprite.frame_at(1000.0).to_cells();
         let last = sprite.frame(3).unwrap().to_cells();
         assert_eq!(past_end[0].color, last[0].color);
+    }
+
+    // --- Image::from_drawable ---
+
+    #[test]
+    fn from_drawable_sizes_to_tight_bounding_box() {
+        let cells = vec![Cell::new(1.0, 1.0), Cell::new(3.0, 4.0)];
+        let image = Image::from_drawable(cells);
+        assert_eq!(image.width(), 3);
+        assert_eq!(image.height(), 4);
+    }
+
+    #[test]
+    fn from_drawable_places_cells_relative_to_min_corner() {
+        let cells = vec![Cell::new(2.0, 5.0).color(Color::rgba8(255, 0, 0, 255))];
+        let image = Image::from_drawable(cells);
+        let out_cells = image.instance().to_cells();
+        assert_eq!(out_cells.len(), 1);
+        assert_eq!(out_cells[0].position.x, 0.0);
+        assert_eq!(out_cells[0].position.y, 0.0);
+    }
+
+    #[test]
+    fn from_drawable_round_trips_color() {
+        let cells = vec![Cell::new(0.0, 0.0).color(Color::rgba8(200, 100, 50, 255))];
+        let image = Image::from_drawable(cells);
+        let out_cells = image.instance().to_cells();
+        let expected = Color::rgba8(200, 100, 50, 255);
+        assert!((out_cells[0].color[0] - expected.r).abs() < 1e-2);
+        assert!((out_cells[0].color[1] - expected.g).abs() < 1e-2);
+        assert!((out_cells[0].color[2] - expected.b).abs() < 1e-2);
+    }
+
+    #[test]
+    fn from_drawable_empty_yields_zero_sized_image() {
+        let cells: Vec<Cell> = Vec::new();
+        let image = Image::from_drawable(cells);
+        assert_eq!(image.width(), 0);
+        assert_eq!(image.height(), 0);
     }
 
     // --- GIF decoding ---

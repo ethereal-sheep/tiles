@@ -4,11 +4,11 @@ use crate::cell::Cell;
 use crate::color::Color;
 use crate::element::DragInfo;
 use crate::font::Font;
+use crate::image::placeholder_image;
 use crate::input::ConsumedState;
 use crate::rect::Rect;
 use crate::runner::{App, State};
 use crate::size::Size;
-use crate::image::placeholder_image;
 use crate::{Drawable, Frame, Shape, Sprite, Text};
 use tiles_macros::Builders;
 
@@ -220,7 +220,12 @@ impl<A: App> Node<A> {
 
     /// Pass 0: resolve font inheritance, marshal text, resolve image keys, and
     /// compute effective fill info.
-    fn pre_process(self, parent_font: &'static Font, path: &str, state: &State) -> ProcessedNode<A> {
+    fn pre_process(
+        self,
+        parent_font: &'static Font,
+        path: &str,
+        state: &State,
+    ) -> ProcessedNode<A> {
         let font = self.style.font.unwrap_or(parent_font);
 
         match self.content {

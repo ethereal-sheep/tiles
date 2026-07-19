@@ -71,6 +71,14 @@ pub(crate) fn srgb_to_linear(s: f32) -> f32 {
     }
 }
 
+pub(crate) fn linear_to_srgb(l: f32) -> f32 {
+    if l <= 0.0031308 {
+        l * 12.92
+    } else {
+        1.055 * l.powf(1.0 / 2.4) - 0.055
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
