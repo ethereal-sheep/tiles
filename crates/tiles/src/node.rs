@@ -8,7 +8,8 @@ use crate::input::ConsumedState;
 use crate::rect::Rect;
 use crate::runner::{App, State};
 use crate::size::Size;
-use crate::{Drawable, Shape, Text};
+use crate::image::placeholder_image;
+use crate::{Drawable, Frame, Shape, Sprite, Text};
 use tiles_macros::Builders;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
@@ -138,25 +139,26 @@ impl<A: App> Default for Handlers<A> {
 
 // --- Node types ---
 #[derive(Debug)]
-enum NodeContent<N, T> {
+enum NodeContent<N, T, I> {
     Children(Vec<N>),
     Text(T),
+    Image(I),
 }
 
 pub struct Node<A: App> {
     id: String,
     style: Style,
     handlers: Handlers<A>,
-    content: NodeContent<Self, String>,
+    content: NodeContent<Self, String, String>,
 }
 
-impl<N, T> From<Vec<N>> for NodeContent<N, T> {
+impl<N, T, I> From<Vec<N>> for NodeContent<N, T, I> {
     fn from(children: Vec<N>) -> Self {
         NodeContent::Children(children)
     }
 }
 
-impl<N> From<String> for NodeContent<N, String> {
+impl<N, I> From<String> for NodeContent<N, String, I> {
     fn from(string: String) -> Self {
         NodeContent::Text(string)
     }
@@ -169,7 +171,7 @@ struct ProcessedNode<A: App> {
     handlers: Handlers<A>,
     fills_row: bool,
     fills_col: bool,
-    content: NodeContent<Self, Text>,
+    content: NodeContent<Self, Text, Frame>,
 }
 
 /// Intermediate tree produced by the size pass, consumed by the position pass
@@ -178,7 +180,7 @@ struct SizedNode<A: App> {
     style: Style,
     handlers: Handlers<A>,
     size: Size,
-    content: NodeContent<Self, Text>,
+    content: NodeContent<Self, Text, Frame>,
 }
 
 impl<A: App> Node<A> {
@@ -187,20 +189,20 @@ impl<A: App> Node<A> {
         self
     }
 
-    pub fn children<I: Into<Node<A>>>(mut self, children: Vec<I>) -> Self {
+    pub fn children<C: Into<Node<A>>>(mut self, children: Vec<C>) -> Self {
         match self.content {
             NodeContent::Children(_) => {
                 self.content =
                     NodeContent::Children(children.into_iter().map(Into::into).collect());
                 self
             }
-            NodeContent::Text(_) => self,
+            NodeContent::Text(_) | NodeContent::Image(_) => self,
         }
     }
 
     /// Entry point: three-pass layout (pre-process → size → position)
-    pub(crate) fn layout(self, screen_w: u32, screen_h: u32) -> ResolvedNode<A> {
-        let processed = self.pre_process(None.unwrap_or_default(), "0");
+    pub(crate) fn layout(self, screen_w: u32, screen_h: u32, state: &State) -> ResolvedNode<A> {
+        let processed = self.pre_process(None.unwrap_or_default(), "0", state);
         let sized = processed.size_pass(screen_w, screen_h);
         sized.position_pass(0.0, 0.0)
     }
@@ -216,8 +218,9 @@ impl<A: App> Node<A> {
         }
     }
 
-    /// Pass 0: resolve font inheritance, marshal text, and compute effective fill info.
-    fn pre_process(self, parent_font: &'static Font, path: &str) -> ProcessedNode<A> {
+    /// Pass 0: resolve font inheritance, marshal text, resolve image keys, and
+    /// compute effective fill info.
+    fn pre_process(self, parent_font: &'static Font, path: &str, state: &State) -> ProcessedNode<A> {
         let font = self.style.font.unwrap_or(parent_font);
 
         match self.content {
@@ -234,13 +237,29 @@ impl<A: App> Node<A> {
                     content: NodeContent::Text(text),
                 }
             }
+            NodeContent::Image(key) => {
+                let fills_row = matches!(self.style.w, Sizing::Fill);
+                let fills_col = matches!(self.style.h, Sizing::Fill);
+                let frame = state
+                    .image(key)
+                    .and_then(|image| Sprite::new(image).frame(0))
+                    .unwrap_or_else(placeholder_image);
+                ProcessedNode {
+                    id: path.to_string(),
+                    style: self.style,
+                    handlers: self.handlers,
+                    fills_row,
+                    fills_col,
+                    content: NodeContent::Image(frame),
+                }
+            }
             NodeContent::Children(children) => {
                 let processed_children: Vec<ProcessedNode<A>> = children
                     .into_iter()
                     .enumerate()
                     .map(|(i, c)| {
                         let child_path = c.resolve_id(path, i);
-                        c.pre_process(font, &child_path)
+                        c.pre_process(font, &child_path, state)
                     })
                     .collect();
 
@@ -303,6 +322,31 @@ impl<A: App> ProcessedNode<A> {
                         height: h,
                     },
                     content: NodeContent::Text(text),
+                }
+            }
+            NodeContent::Image(frame) => {
+                let padding = self.style.padding.unwrap_or(0);
+                let intrinsic_w = frame.width() + padding * 2;
+                let intrinsic_h = frame.height() + padding * 2;
+                let w = match self.style.w {
+                    Sizing::Fixed(w) => w,
+                    Sizing::Fill => available_w.max(intrinsic_w),
+                    Sizing::Shrink => intrinsic_w,
+                };
+                let h = match self.style.h {
+                    Sizing::Fixed(h) => h,
+                    Sizing::Fill => available_h.max(intrinsic_h),
+                    Sizing::Shrink => intrinsic_h,
+                };
+                SizedNode {
+                    id: self.id,
+                    style: self.style,
+                    handlers: self.handlers,
+                    size: Size {
+                        width: w,
+                        height: h,
+                    },
+                    content: NodeContent::Image(frame),
                 }
             }
             NodeContent::Children(children) => {
@@ -533,6 +577,38 @@ impl<A: App> SizedNode<A> {
                     handlers: self.handlers,
                 }
             }
+            NodeContent::Image(frame) => {
+                let padding = self.style.padding.unwrap_or(0);
+                let content_w = self.size.width.saturating_sub(padding * 2);
+                let content_h = self.size.height.saturating_sub(padding * 2);
+                let image_w = frame.width();
+                let image_h = frame.height();
+
+                let image_offset_x = match self.style.justify {
+                    Justify::Start => 0,
+                    Justify::Center | Justify::SpaceBetween => {
+                        (content_w as i32 - image_w as i32) / 2
+                    }
+                    Justify::End => content_w as i32 - image_w as i32,
+                };
+                let image_offset_y = match self.style.align {
+                    Align::Start => 0,
+                    Align::Center => (content_h as i32 - image_h as i32) / 2,
+                    Align::End => content_h as i32 - image_h as i32,
+                };
+
+                let image_x = x + padding as f32 + image_offset_x as f32;
+                let image_y = y + padding as f32 + image_offset_y as f32;
+                let frame = frame.position(image_x, image_y);
+                let rect = Rect::from_top_left(x, y, self.size.width, self.size.height);
+                ResolvedNode {
+                    id: self.id,
+                    rect,
+                    style: self.style,
+                    content: NodeContent::Image(frame),
+                    handlers: self.handlers,
+                }
+            }
             NodeContent::Children(children) => {
                 let padding = self.style.padding.unwrap_or(0);
                 let axis = self.style.axis;
@@ -669,12 +745,21 @@ pub fn text<A: App>(content: impl Into<String>) -> Node<A> {
     }
 }
 
+pub fn img<A: App>(key: impl Into<String>) -> Node<A> {
+    Node {
+        id: String::default(),
+        style: Style::default(),
+        content: NodeContent::Image(key.into()),
+        handlers: Handlers::default(),
+    }
+}
+
 // --- Layout ---
 pub(crate) struct ResolvedNode<A: App> {
     id: String,
     rect: Rect,
     style: Style,
-    content: NodeContent<Self, Text>,
+    content: NodeContent<Self, Text, Frame>,
     handlers: Handlers<A>,
 }
 
@@ -757,7 +842,7 @@ impl<A: App> ResolvedNode<A> {
         }
         .or(text_color);
 
-        let text = match self.content {
+        let (text, image) = match self.content {
             NodeContent::Children(children) => {
                 for node in children.into_iter().rev() {
                     node.evaluate_recursive(
@@ -770,9 +855,10 @@ impl<A: App> ResolvedNode<A> {
                         debug_color_index,
                     );
                 }
-                None
+                (None, None)
             }
-            NodeContent::Text(text) => Some(text),
+            NodeContent::Text(text) => (Some(text), None),
+            NodeContent::Image(frame) => (None, Some(frame)),
         };
 
         if hit.is_hovered() {
@@ -869,6 +955,14 @@ impl<A: App> ResolvedNode<A> {
             });
         }
 
+        // Draw image pixels
+        if let Some(frame) = image {
+            frame.emit_cells(&mut |mut c| {
+                c.position.z = effective_depth;
+                cells.push(c);
+            });
+        }
+
         // Draw pane background
         if let Some(color) = color {
             self.rect.fill().color(color).emit_cells(&mut |mut c| {
@@ -908,7 +1002,7 @@ impl<A: App> ResolvedNode<A> {
     pub(crate) fn find_child_by_index(&self, index: usize) -> Option<&Self> {
         match &self.content {
             NodeContent::Children(children) => children.get(index),
-            NodeContent::Text(_) => None,
+            NodeContent::Text(_) | NodeContent::Image(_) => None,
         }
     }
 
@@ -919,7 +1013,7 @@ impl<A: App> ResolvedNode<A> {
             NodeContent::Children(children) => children
                 .iter()
                 .find(|c| c.id.ends_with(&suffix) || c.id == id),
-            NodeContent::Text(_) => None,
+            NodeContent::Text(_) | NodeContent::Image(_) => None,
         }
     }
 
@@ -927,7 +1021,7 @@ impl<A: App> ResolvedNode<A> {
     pub(crate) fn text_rect(&self) -> Option<Rect> {
         match &self.content {
             NodeContent::Text(t) => Some(t.rect()),
-            NodeContent::Children(_) => None,
+            NodeContent::Children(_) | NodeContent::Image(_) => None,
         }
     }
 }
@@ -991,7 +1085,7 @@ mod tests {
     }
 
     fn eval(node: Node<TestApp>, app: &mut TestApp, state: &mut State) {
-        node.layout(256, 256).evaluate(app, state)
+        node.layout(256, 256, state).evaluate(app, state)
     }
 
     fn input_at(x: f32, y: f32) -> InputState {
@@ -1022,7 +1116,7 @@ mod tests {
     #[test]
     fn empty_node_zero_size() {
         let node: Node<TestApp> = row();
-        let resolved: ResolvedNode<_> = node.layout(256, 256);
+        let resolved: ResolvedNode<_> = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 0);
         assert_eq!(resolved.rect.height(), 0);
     }
@@ -1030,7 +1124,7 @@ mod tests {
     #[test]
     fn explicit_size() {
         let node: Node<TestApp> = row().size(10, 5);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 10);
         assert_eq!(resolved.rect.height(), 5);
     }
@@ -1038,7 +1132,7 @@ mod tests {
     #[test]
     fn fill_w_takes_available() {
         let node: Node<TestApp> = row().fill_w().height(10);
-        let resolved = node.layout(100, 256);
+        let resolved = node.layout(100, 256, &State::new_for_test(100, 256));
         assert_eq!(resolved.rect.width(), 100);
         assert_eq!(resolved.rect.height(), 10);
     }
@@ -1050,7 +1144,7 @@ mod tests {
             row().size(10, 5),
             row().size(10, 5),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 10);
         assert_eq!(resolved.rect.height(), 15);
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 0.0);
@@ -1061,7 +1155,7 @@ mod tests {
     #[test]
     fn row_layout_stacks_horizontally() {
         let node: Node<TestApp> = row().children(vec![row().size(10, 5), row().size(10, 5)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 20);
         assert_eq!(resolved.rect.height(), 5);
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 0.0);
@@ -1073,7 +1167,7 @@ mod tests {
         let node: Node<TestApp> = row()
             .gap(4)
             .children(vec![row().size(10, 5), row().size(10, 5)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 24);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 14.0);
     }
@@ -1081,7 +1175,7 @@ mod tests {
     #[test]
     fn padding_offsets_children() {
         let node: Node<TestApp> = col().padding(3).children(vec![row().size(4, 4)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 10); // 4 + 3*2
         assert_eq!(resolved.rect.height(), 10);
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 3.0);
@@ -1095,7 +1189,7 @@ mod tests {
                 .gap(2)
                 .children(vec![row().size(5, 5), row().size(5, 5)]),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // Inner row: 5+2+5=12 wide, 5 tall
         // Outer: 12+4=16 wide, 5+4=9 tall
         assert_eq!(resolved.rect.width(), 16);
@@ -1109,7 +1203,7 @@ mod tests {
             row().id("abs").size(5, 5).absolute(50.0, 50.0),
             row().id("flow2").size(10, 10),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // Absolute node doesn't affect parent size
         assert_eq!(resolved.rect.height(), 20); // only 2 flow children
         // Absolute node at (50, 50)
@@ -1125,7 +1219,7 @@ mod tests {
         let node: Node<TestApp> = col()
             .padding(5)
             .children(vec![row().size(10, 10).relative(3.0, 3.0)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // Child positioned at parent cursor (5,5) + relative offset (3,3) = (8,8)
         let child = resolved.find_child_by_index(0).unwrap();
         assert_eq!(child.rect.x(), 8.0);
@@ -1322,7 +1416,7 @@ mod tests {
             .color(GREEN)
             .gap(4)
             .children(vec![row().size(5, 5), row().size(5, 5)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // gap=4 applied: 5 + 4 + 5 = 14
         assert_eq!(resolved.rect.width(), 14);
     }
@@ -1414,8 +1508,8 @@ mod tests {
     fn row_col_convenience() {
         let r: Node<TestApp> = row().children(vec![row().size(5, 10), row().size(5, 10)]);
         let c: Node<TestApp> = col().children(vec![row().size(10, 5), row().size(10, 5)]);
-        let r_resolved = r.layout(256, 256);
-        let c_resolved = c.layout(256, 256);
+        let r_resolved = r.layout(256, 256, &State::new_for_test(256, 256));
+        let c_resolved = c.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(r_resolved.rect.width(), 10);
         assert_eq!(r_resolved.rect.height(), 10);
         assert_eq!(c_resolved.rect.width(), 10);
@@ -1443,7 +1537,7 @@ mod tests {
                 row().size(5, 5).color(BLUE);
             }
         };
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // 5 + 4 + 5 = 14
         assert_eq!(resolved.rect.width(), 14);
     }
@@ -1528,7 +1622,7 @@ mod tests {
                 row().size(10, 3).color(GREEN);
             }
         };
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // row: 5+2+5=12, col content: max(12,10)=12 wide, 5+3=8 tall
         // with padding 2: 12+4=16 wide, 8+4=12 tall
         assert_eq!(resolved.rect.width(), 16);
@@ -1552,7 +1646,7 @@ mod tests {
     #[test]
     fn text_node_intrinsic_size() {
         let node: Node<TestApp> = col().children(vec![text("Hi")]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         assert!(child.rect.width() > 0);
         assert!(child.rect.height() > 0);
@@ -1561,10 +1655,10 @@ mod tests {
     #[test]
     fn text_node_with_padding() {
         let node: Node<TestApp> = col().children(vec![text("A").padding(3)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let no_pad: Node<TestApp> = col().children(vec![text("A")]);
-        let no_pad_resolved = no_pad.layout(256, 256);
+        let no_pad_resolved = no_pad.layout(256, 256, &State::new_for_test(256, 256));
         let no_pad_child = no_pad_resolved.find_child_by_index(0).unwrap();
         assert_eq!(child.rect.width(), no_pad_child.rect.width() + 6);
         assert_eq!(child.rect.height(), no_pad_child.rect.height() + 6);
@@ -1576,7 +1670,7 @@ mod tests {
     //     let mut app = TestApp::new();
     //     let mut state = make_state();
     //     state.set_input(input_at(100.0, 100.0));
-    //     let (cells, _) = node.layout(256, 256).evaluate(&mut app, &mut state);
+    //     let (cells, _) = node.layout(256, 256, &state).evaluate(&mut app, &mut state);
     //     assert!(cells.is_empty());
     // }
 
@@ -1586,7 +1680,7 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         state.set_input(input_at(100.0, 100.0));
-        node.layout(256, 256).evaluate(&mut app, &mut state);
+        node.layout(256, 256, &state).evaluate(&mut app, &mut state);
         assert!(!state.get_cells().is_empty());
         assert_eq!(state.get_cells()[0].color, RED.to_array());
     }
@@ -1599,7 +1693,7 @@ mod tests {
         let mut app = TestApp::new();
         let mut state = make_state();
         state.set_input(input_at(100.0, 100.0));
-        node.layout(256, 256).evaluate(&mut app, &mut state);
+        node.layout(256, 256, &state).evaluate(&mut app, &mut state);
         assert!(!state.get_cells().is_empty());
         assert_eq!(state.get_cells()[0].color, BLUE.to_array());
     }
@@ -1608,7 +1702,7 @@ mod tests {
     fn text_inherits_font() {
         use crate::font::TOM_THUMB_3X5;
         let node: Node<TestApp> = col().font(&TOM_THUMB_3X5).children(vec![text("A")]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         match &resolved.content {
             NodeContent::Children(children) => match &children[0].content {
                 NodeContent::Text(t) => assert!(std::ptr::eq(t.font(), &TOM_THUMB_3X5)),
@@ -1635,7 +1729,7 @@ mod tests {
         let node: Node<TestApp> = row()
             .width(100)
             .children(vec![pane().fill_w().height(10), pane().fill_w().height(10)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 50);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 50);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 50.0);
@@ -1648,7 +1742,7 @@ mod tests {
             pane().fill_w().height(10),
             pane().fill_w().height(10),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // 100 - 20 fixed = 80 remaining, split equally = 40 each
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 20);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 40);
@@ -1661,7 +1755,7 @@ mod tests {
             .width(100)
             .gap(10)
             .children(vec![pane().fill_w().height(10), pane().fill_w().height(10)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // 100 - 10 gap = 90 remaining, split = 45 each
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 45);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 45);
@@ -1673,7 +1767,7 @@ mod tests {
         let node: Node<TestApp> = col()
             .height(60)
             .children(vec![pane().size(10, 20), pane().fill_h().width(10)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // 60 - 20 fixed = 40 for fill child
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.height(), 40);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.y(), 20.0);
@@ -1686,7 +1780,7 @@ mod tests {
             pane().fill_w().height(10),
             pane().fill_w().height(10),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 30);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 30);
         assert_eq!(resolved.find_child_by_index(2).unwrap().rect.width(), 30);
@@ -1701,7 +1795,7 @@ mod tests {
             ]),
             pane().fill_w().height(10),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // First child overflows to 60, second gets remaining 40
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 60);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 40);
@@ -1716,7 +1810,7 @@ mod tests {
             pane().fill_w().height(10),
             pane().fill_w().height(10),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // First overflows to 80, remaining 40 split equally = 20 each
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 80);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 20);
@@ -1732,7 +1826,7 @@ mod tests {
             row().fill_w().height(10),
             row().fill_w().height(10),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 40);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 40);
         assert_eq!(resolved.find_child_by_index(2).unwrap().rect.width(), 40);
@@ -1771,7 +1865,7 @@ mod tests {
             row().fill_w().height(10),
             row().fill_w().height(10),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 40);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 40);
         assert_eq!(resolved.find_child_by_index(2).unwrap().rect.width(), 40);
@@ -1836,7 +1930,7 @@ mod tests {
         let node: Node<TestApp> = row()
             .size(100, 60)
             .children(vec![pane().width(50).fill_h(), pane().width(50).height(30)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.height(), 60);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.height(), 30);
     }
@@ -1847,7 +1941,7 @@ mod tests {
             pane().fill_w().height(50),
             pane().width(30).height(50),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 60);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 30);
     }
@@ -1858,7 +1952,7 @@ mod tests {
             pane().width(50).children(vec![pane().fill_h()]),
             pane().width(50).height(30),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.height(), 60);
         assert_eq!(
             resolved
@@ -1878,7 +1972,7 @@ mod tests {
             pane().height(50).children(vec![pane().fill_w()]),
             pane().width(30).height(50),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 60);
         assert_eq!(
             resolved
@@ -1899,7 +1993,7 @@ mod tests {
         let node: Node<TestApp> = row()
             .width(100)
             .children(vec![pane().size(20, 10), pane().size(20, 10)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 0.0);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 20.0);
     }
@@ -1910,7 +2004,7 @@ mod tests {
             .width(100)
             .justify_center()
             .children(vec![pane().size(20, 10), pane().size(20, 10)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // leftover = 100 - 40 = 60, offset = 30
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 30.0);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 50.0);
@@ -1922,7 +2016,7 @@ mod tests {
             .height(100)
             .justify_center()
             .children(vec![pane().size(10, 20), pane().size(10, 20)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // leftover = 100 - 40 = 60, offset = 30
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 30.0);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.y(), 50.0);
@@ -1934,7 +2028,7 @@ mod tests {
             .width(100)
             .justify_end()
             .children(vec![pane().size(20, 10), pane().size(20, 10)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // leftover = 100 - 40 = 60
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 60.0);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 80.0);
@@ -1946,7 +2040,7 @@ mod tests {
             .height(100)
             .justify_end()
             .children(vec![pane().size(10, 20), pane().size(10, 20)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // leftover = 100 - 40 = 60
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 60.0);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.y(), 80.0);
@@ -1959,7 +2053,7 @@ mod tests {
             pane().size(20, 10),
             pane().size(20, 10),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // leftover = 100 - 60 = 40, gap = 40 / 2 = 20
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 0.0);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 40.0);
@@ -1972,7 +2066,7 @@ mod tests {
             .width(100)
             .justify_full()
             .children(vec![pane().size(20, 10)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // single child: starts at 0
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 0.0);
     }
@@ -1983,7 +2077,7 @@ mod tests {
             .width(40)
             .justify_center()
             .children(vec![pane().size(30, 10), pane().size(30, 10)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // leftover = 40 - 60 = -20, offset = -10 (overflows equally)
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), -10.0);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 20.0);
@@ -1996,7 +2090,7 @@ mod tests {
             .gap(10)
             .justify_center()
             .children(vec![pane().size(20, 10), pane().size(20, 10)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // leftover = 100 - 40 - 10 = 50, offset = 25
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 25.0);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.x(), 55.0);
@@ -2007,7 +2101,7 @@ mod tests {
     #[test]
     fn align_start_is_default() {
         let node: Node<TestApp> = row().size(100, 60).children(vec![pane().size(20, 20)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 0.0);
     }
 
@@ -2017,7 +2111,7 @@ mod tests {
             .size(100, 60)
             .align_center()
             .children(vec![pane().size(20, 20)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // cross = 60 - 20 = 40, offset = 20
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 20.0);
     }
@@ -2028,7 +2122,7 @@ mod tests {
             .size(60, 100)
             .align_center()
             .children(vec![pane().size(20, 20)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // cross = 60 - 20 = 40, offset = 20
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 20.0);
     }
@@ -2039,7 +2133,7 @@ mod tests {
             .size(100, 60)
             .align_end()
             .children(vec![pane().size(20, 20)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // cross = 60 - 20 = 40
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 40.0);
     }
@@ -2050,7 +2144,7 @@ mod tests {
             .size(60, 100)
             .align_end()
             .children(vec![pane().size(20, 20)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // cross = 60 - 20 = 40
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 40.0);
     }
@@ -2061,7 +2155,7 @@ mod tests {
             .size(100, 60)
             .align_center()
             .children(vec![pane().size(20, 20), pane().size(20, 40)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // each child centered independently
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 20.0);
         assert_eq!(resolved.find_child_by_index(1).unwrap().rect.y(), 10.0);
@@ -2074,7 +2168,7 @@ mod tests {
             .justify_center()
             .align_center()
             .children(vec![pane().size(20, 20)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // justify: leftover = 100 - 20 = 80, offset = 40
         // align: cross = 60 - 20 = 40, offset = 20
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 40.0);
@@ -2089,7 +2183,7 @@ mod tests {
             .justify_center()
             .align_center()
             .children(vec![pane().size(20, 20)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         // content area: 80x40, justify offset = (80-20)/2 = 30, align offset = (40-20)/2 = 10
         // child at: padding(10) + offset
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.x(), 40.0);
@@ -2101,7 +2195,7 @@ mod tests {
     #[test]
     fn text_fixed_size_larger_than_intrinsic() {
         let node: Node<TestApp> = col().children(vec![text("A").size(50, 30)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         assert_eq!(child.rect.width(), 50);
         assert_eq!(child.rect.height(), 30);
@@ -2110,7 +2204,7 @@ mod tests {
     #[test]
     fn text_fill_w_takes_available() {
         let node: Node<TestApp> = row().width(100).children(vec![text("A").fill_w()]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         assert_eq!(child.rect.width(), 100);
     }
@@ -2118,7 +2212,7 @@ mod tests {
     #[test]
     fn text_justify_start_default() {
         let node: Node<TestApp> = col().children(vec![text("A").width(50)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
         assert_eq!(tr.x(), 0.0);
@@ -2127,7 +2221,7 @@ mod tests {
     #[test]
     fn text_justify_center() {
         let node: Node<TestApp> = col().children(vec![text("A").width(50).justify_center()]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
         let text_w = tr.width();
@@ -2138,7 +2232,7 @@ mod tests {
     #[test]
     fn text_justify_end() {
         let node: Node<TestApp> = col().children(vec![text("A").width(50).justify_end()]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
         let text_w = tr.width();
@@ -2149,7 +2243,7 @@ mod tests {
     #[test]
     fn text_align_center() {
         let node: Node<TestApp> = col().children(vec![text("A").size(50, 30).align_center()]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
         let text_h = tr.height();
@@ -2160,7 +2254,7 @@ mod tests {
     #[test]
     fn text_align_end() {
         let node: Node<TestApp> = col().children(vec![text("A").size(50, 30).align_end()]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
         let text_h = tr.height();
@@ -2172,7 +2266,7 @@ mod tests {
     fn text_justify_center_align_center() {
         let node: Node<TestApp> =
             col().children(vec![text("A").size(50, 30).justify_center().align_center()]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
         let text_w = tr.width();
@@ -2185,7 +2279,7 @@ mod tests {
     fn text_justify_center_with_padding() {
         let node: Node<TestApp> =
             col().children(vec![text("A").width(50).padding(5).justify_center()]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
         let text_w = tr.width();
@@ -2200,7 +2294,7 @@ mod tests {
             .width(100)
             .justify_center()
             .children(vec![text("A").width(40).justify_center()]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         // child rect centered in parent: (100-40)/2 = 30
         assert_eq!(child.rect.x(), 30.0);
@@ -2220,7 +2314,7 @@ mod tests {
             pane().size(10, 10),
             pane().size(10, 10),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().id(), "0/0");
         assert_eq!(resolved.find_child_by_index(1).unwrap().id(), "0/1");
         assert_eq!(resolved.find_child_by_index(2).unwrap().id(), "0/2");
@@ -2232,7 +2326,7 @@ mod tests {
             pane().id("foo").size(10, 10),
             pane().id("bar").size(10, 10),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().id(), "0/foo");
         assert_eq!(resolved.find_child_by_index(1).unwrap().id(), "0/bar");
     }
@@ -2244,7 +2338,7 @@ mod tests {
                 .id("row1")
                 .children(vec![pane().id("a").size(5, 5), pane().size(5, 5)]),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.id(), "0");
         let row1 = resolved.find_child_by_id("row1").unwrap();
         assert_eq!(row1.id(), "0/row1");
@@ -2260,14 +2354,14 @@ mod tests {
             pane().size(10, 10),
             pane().size(5, 5).absolute(50.0, 50.0),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(1).unwrap().id(), "0/abs_1");
     }
 
     #[test]
     fn id_relative_uses_rel_prefix() {
         let node: Node<TestApp> = col().children(vec![pane().size(10, 10).relative(3.0, 3.0)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().id(), "0/rel_0");
     }
 
@@ -2275,7 +2369,7 @@ mod tests {
     fn id_explicit_on_absolute_still_scoped() {
         let node: Node<TestApp> =
             col().children(vec![pane().id("drag").size(5, 5).absolute(10.0, 10.0)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_id("drag").unwrap().id(), "0/drag");
     }
 
@@ -2284,7 +2378,7 @@ mod tests {
         let node: Node<TestApp> = col()
             .id("root")
             .children(vec![pane().id("target").size(5, 5), pane().size(5, 5)]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let found = resolved.find_child_by_id("target");
         assert!(found.is_some());
         assert_eq!(found.unwrap().id(), "0/target");
@@ -2299,7 +2393,7 @@ mod tests {
             row().id("site_a").children(vec![widget()]),
             row().id("site_b").children(vec![widget()]),
         ]);
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let site_a = resolved.find_child_by_id("site_a").unwrap();
         let site_b = resolved.find_child_by_id("site_b").unwrap();
         let inner_a = site_a.find_child_by_id("inner").unwrap();
@@ -2315,8 +2409,8 @@ mod tests {
             col().children(vec![pane().id("drag").size(5, 5).absolute(10.0, 10.0)]);
         let node2: Node<TestApp> =
             col().children(vec![pane().id("drag").size(5, 5).absolute(99.0, 99.0)]);
-        let r1 = node1.layout(256, 256);
-        let r2 = node2.layout(256, 256);
+        let r1 = node1.layout(256, 256, &State::new_for_test(256, 256));
+        let r2 = node2.layout(256, 256, &State::new_for_test(256, 256));
         let id1 = r1.find_child_by_id("drag").unwrap().id().to_string();
         let id2 = r2.find_child_by_id("drag").unwrap().id().to_string();
         assert_eq!(id1, id2);
@@ -2333,7 +2427,7 @@ mod tests {
                 pane().size(20, 20)
             }
         };
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let c0 = resolved.find_child_by_index(0).unwrap();
         let c1 = resolved.find_child_by_index(1).unwrap();
         // Macro injects line:col IDs — they should be different from each other
@@ -2355,8 +2449,8 @@ mod tests {
                 }
             }
         };
-        let r1 = build().layout(256, 256);
-        let r2 = build().layout(256, 256);
+        let r1 = build().layout(256, 256, &State::new_for_test(256, 256));
+        let r2 = build().layout(256, 256, &State::new_for_test(256, 256));
         let id1 = r1.find_child_by_index(0).unwrap().id().to_string();
         let id2 = r2.find_child_by_index(0).unwrap().id().to_string();
         assert_eq!(id1, id2);
@@ -2370,7 +2464,7 @@ mod tests {
                 pane().id("custom").size(10, 10)
             }
         };
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         assert_eq!(child.id(), "0/custom");
     }
@@ -2386,7 +2480,7 @@ mod tests {
                 }
             }
         };
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let c0 = resolved.find_child_by_index(0).unwrap();
         let c1 = resolved.find_child_by_index(1).unwrap();
         let c2 = resolved.find_child_by_index(2).unwrap();
@@ -2409,8 +2503,8 @@ mod tests {
                 }
             }
         };
-        let r1 = build().layout(256, 256);
-        let r2 = build().layout(256, 256);
+        let r1 = build().layout(256, 256, &State::new_for_test(256, 256));
+        let r2 = build().layout(256, 256, &State::new_for_test(256, 256));
         for i in 0..3 {
             let id1 = r1.find_child_by_index(i).unwrap().id().to_string();
             let id2 = r2.find_child_by_index(i).unwrap().id().to_string();
@@ -2432,7 +2526,7 @@ mod tests {
                 row().id("b") { my_widget() }
             }
         };
-        let resolved = node.layout(256, 256);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let a = resolved.find_child_by_id("a").unwrap();
         let b = resolved.find_child_by_id("b").unwrap();
         let wa = a.find_child_by_id("w").unwrap();

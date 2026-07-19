@@ -610,6 +610,38 @@ impl Image {
     }
 }
 
+/// An 8x8 fallback image (transparent background, red border, red X) drawn
+/// in place of any `img(key)` widget whose key has no loaded `Image`.
+pub(crate) fn placeholder_image() -> Frame {
+    const SIZE: u32 = 8;
+    const RED: [u8; 4] = [255, 0, 0, 255];
+
+    let mut pixels = vec![0u8; (SIZE * SIZE * 4) as usize];
+    for y in 0..SIZE {
+        for x in 0..SIZE {
+            let is_border = x == 0 || x == SIZE - 1 || y == 0 || y == SIZE - 1;
+            let is_diagonal = x == y || x + y == SIZE - 1;
+            if is_border || is_diagonal {
+                let idx = ((y * SIZE + x) * 4) as usize;
+                pixels[idx..idx + 4].copy_from_slice(&RED);
+            }
+        }
+    }
+
+    Image {
+        data: Rc::new(ImageData {
+            base: PixelBuffer {
+                pixels: pixels.into(),
+                width: SIZE,
+                height: SIZE,
+            },
+            x8: OnceCell::new(),
+        }),
+        frame_data: Vec::new(),
+    }
+    .instance()
+}
+
 #[derive(Clone)]
 pub struct Frame {
     data: Rc<ImageData>,

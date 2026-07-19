@@ -14,6 +14,7 @@ use crate::color::Color;
 use crate::config::Config;
 use crate::drawable::Drawable;
 use crate::element::{self, HitState};
+use crate::image::{Image, ImageError};
 use crate::input::{
     self, ButtonState, InputState, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent,
 };
@@ -59,6 +60,7 @@ pub struct State {
     start_timer: Instant,
     quit: bool,
     debug: bool,
+    images: std::collections::HashMap<String, Image>,
 }
 
 impl State {
@@ -87,6 +89,7 @@ impl State {
             elapsed: Duration::from_secs(0),
             quit: false,
             debug: false,
+            images: std::collections::HashMap::new(),
         }
     }
 
@@ -176,6 +179,22 @@ impl State {
 
     pub fn set_viewport_background(&mut self, color: Color) {
         self.viewport_bg = color;
+    }
+
+    // --- Resources ---
+
+    pub fn load_image(
+        &mut self,
+        key: impl Into<String>,
+        path: impl AsRef<std::path::Path>,
+    ) -> Result<(), ImageError> {
+        let image = Image::from_path(path)?;
+        self.images.insert(key.into(), image);
+        Ok(())
+    }
+
+    pub fn image(&self, key: impl Into<String>) -> Option<&Image> {
+        self.images.get(&key.into())
     }
 
     pub fn set_ambient_illumination(&mut self, ambient: f32) {
@@ -642,8 +661,11 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
 
                 crate::signal::set_runtime(&self.signal_runtime);
                 let tree = self.app.ui(&self.state);
-                let resolved =
-                    tree.layout(self.state.viewport_width(), self.state.viewport_height());
+                let resolved = tree.layout(
+                    self.state.viewport_width(),
+                    self.state.viewport_height(),
+                    &self.state,
+                );
 
                 if self.state.is_debug() {
                     dbg!(&resolved);
