@@ -49,8 +49,7 @@ struct LightData {
     position: vec2<f32>,
     radius: f32,
     intensity: f32,
-    color: vec3<f32>,
-    _pad: f32,
+    color: vec4<f32>,
 }
 
 struct LightUniforms {
@@ -410,7 +409,7 @@ impl Renderer {
                     offset: 0,
                     shader_location: 0,
                 },
-                // color: vec4 at offset 16 (after position + pad)
+                // color: vec4 at offset 16 (after position + emissive)
                 wgpu::VertexAttribute {
                     format: wgpu::VertexFormat::Float32x4,
                     offset: 16,
@@ -422,10 +421,10 @@ impl Renderer {
                     offset: 32,
                     shader_location: 2,
                 },
-                // emissive: f32 at offset 48
+                // emissive: f32 at offset 12 (fills position's vec3->vec4 alignment gap)
                 wgpu::VertexAttribute {
                     format: wgpu::VertexFormat::Float32,
-                    offset: 48,
+                    offset: 12,
                     shader_location: 3,
                 },
             ],
@@ -779,8 +778,7 @@ impl Renderer {
                 position: [0.0; 2],
                 radius: 0.0,
                 intensity: 0.0,
-                color: [0.0; 3],
-                _pad: 0.0,
+                color: [0.0; 4],
             }; MAX_LIGHTS],
             light_count: lights.len().min(MAX_LIGHTS) as u32,
             ambient,
@@ -800,7 +798,7 @@ impl Renderer {
         for source in bloom_sources.iter() {
             bloom_instances.push(CellInstance {
                 position: [source.position[0], source.position[1], 0.0],
-                _pad0: 0.0,
+                emissive: source.radius,
                 color: [
                     source.color[0],
                     source.color[1],
@@ -808,8 +806,6 @@ impl Renderer {
                     source.intensity * 0.4,
                 ],
                 rotation: [0.0, 0.0, 0.0, 1.0],
-                emissive: source.radius,
-                _pad1: [0.0; 3],
             });
         }
 

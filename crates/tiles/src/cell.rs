@@ -8,11 +8,9 @@ use crate::rect::Rect;
 #[derive(Copy, Clone, Debug, Pod, Zeroable)]
 pub struct CellInstance {
     pub position: [f32; 3],
-    pub _pad0: f32,
+    pub emissive: f32,
     pub color: [f32; 4],
     pub rotation: [f32; 4],
-    pub emissive: f32,
-    pub _pad1: [f32; 3],
 }
 
 #[repr(C)]
@@ -21,8 +19,7 @@ pub struct LightData {
     pub position: [f32; 2],
     pub radius: f32,
     pub intensity: f32,
-    pub color: [f32; 3],
-    pub _pad: f32,
+    pub color: [f32; 4],
 }
 
 #[derive(Clone, Copy)]
@@ -146,11 +143,9 @@ impl Cell {
         let q = self.quat;
         CellInstance {
             position: self.position.to_array(),
-            _pad0: 0.0,
+            emissive: if self.light_radius >= 0.0 { 1.0 } else { 0.0 },
             color: self.color,
             rotation: [q.x, q.y, q.z, q.w],
-            emissive: if self.light_radius >= 0.0 { 1.0 } else { 0.0 },
-            _pad1: [0.0; 3],
         }
     }
 
@@ -158,11 +153,9 @@ impl Cell {
         let q = self.quat;
         CellInstance {
             position: self.position.to_array(),
-            _pad0: 0.0,
+            emissive: 1.0,
             color: self.color,
             rotation: [q.x, q.y, q.z, q.w],
-            emissive: 1.0,
-            _pad1: [0.0; 3],
         }
     }
 
@@ -171,8 +164,7 @@ impl Cell {
             position: [self.position.x, self.position.y],
             radius: self.light_radius.max(0.0),
             intensity: self.intensity,
-            color: [self.color[0], self.color[1], self.color[2]],
-            _pad: 0.0,
+            color: self.color,
         }
     }
 
