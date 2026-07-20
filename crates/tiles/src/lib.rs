@@ -22,7 +22,7 @@ pub mod signal;
 mod size;
 mod text;
 pub mod ui {
-    pub use crate::node::{col, img, pane, row, text};
+    pub use crate::node::{col, img, paint, pane, row, text};
     pub use crate::signal::signal;
     pub use tiles_macros::{app_widget, widget, widget_fn};
 }

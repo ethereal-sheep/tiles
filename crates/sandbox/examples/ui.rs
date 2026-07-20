@@ -3,9 +3,10 @@ use std::f32::consts::PI;
 
 use glam::Vec2;
 use tiles::{
-    App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, Node, State, Text,
+    App, Cell, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Node, Rect, Shape,
+    State, Text,
     font::TINY5_4X5,
-    ui::{app_widget, col, img, row, signal, text, widget, widget_fn},
+    ui::{app_widget, col, img, paint, row, signal, text, widget, widget_fn},
 };
 
 const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
@@ -130,22 +131,25 @@ impl App for Demo {
         let _row_count = 20;
         let _pos = self.pos;
         let _elapsed = _state.elapsed();
+        let fps = 1.0 / _state.dt();
         widget! {
             col().fill_w().fill_h() {
-                // title bar
-                action_bar(self.active_index, |app, state, i| { app.active_index = Some(i); eprintln!("{}", i); }, vec!["test1"]) {
-                    button("file", |app, _state| { app.count += 1; })
-                }
                 row().padding(2).gap(2).fill_w() {
                     button("file", |app, _state| { app.count += 1; })
                     button("edit", |app, _state| { app.count -= 1; })
                     button("clear", |app, _state| app.count = 0)
                     button("debug", |_app, state| state.set_debug(!state.is_debug()))
 
+                    text(format!("{:.0}", fps)).fill_w().justify_end()
+                }
+                // title bar
+                action_bar(self.active_index, |app, _state, i| { app.active_index = Some(i); eprintln!("{}", i); }, vec!["test1"]) {
+                    button("file", |app, _state| { app.count += 1; })
                 }
                 col().fill_w().fill_h() {
                     signal_counter()
                     img("knight")
+                    paint(Rect::from_top_left(0.0, 0.0, 12, 12).fill().color(RED))
                     // Counter indicator
                     // col().gap(1) {
                     //     @ for j in 0..=(self.count.unsigned_abs().saturating_sub(1) / row_count) {

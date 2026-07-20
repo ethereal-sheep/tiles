@@ -79,12 +79,15 @@ cargo run -p sandbox --example sprite
 
 ## ToDo
 - [x] Resource Loader
-    - [ ] Runtime Fonts - Loaded at runtime 
     - [x] Images - loaded into memory, can be drawn to world, screen, or in UI (`Image::from_path`, PNG/JPEG/GIF; `.instance()` produces a drawable `Frame`)
         - [ ] Pixel-perfect scaling algorithms (nearest-neighbor, Scale2x/3x, Eagle, hqNx, 2xSaI, xBR/xBRZ) and RotSprite rotation — should be `Frame` methods that bake a resample into a new `Frame` (new pixel buffer, computed once), not resampled inside `emit_local_cells` every frame
         - [x] Multi-frame / sprite sheet support — `Sprite::new(&image)` (uses a decoded GIF's real per-frame timing) or `.grid(cols, rows)` (slices a plain image into equal cells); `.frame(index)` / `.frame_at(t)` produce a drawable `Frame`
             - [ ] Stateful animation player that owns its own playhead and advances via `.update(dt)`, instead of the caller tracking elapsed time
     - [ ] Sounds - ''
+- [x] UI
+    - [ ] draw tag, draw(impl Drawable)
+    - [ ] clip; if parent has size, and clip is true, then children will crop to parent's size instead of pushing parent size
+    - [ ] onFocusIn, onFocusOut, onFocus, onBlur with better naming
 - [ ] CLI commands to interact with engine
 - [ ] Animation tool
 - [ ] Optimize drawing rect of cells since most cells in a rect are one color

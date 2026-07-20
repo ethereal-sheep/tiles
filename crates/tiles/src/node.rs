@@ -9,7 +9,7 @@ use crate::input::ConsumedState;
 use crate::rect::Rect;
 use crate::runner::{App, State};
 use crate::size::Size;
-use crate::{Drawable, Frame, Shape, Sprite, Text};
+use crate::{Drawable, Frame, Image, Shape, Sprite, Text};
 use tiles_macros::Builders;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
@@ -145,11 +145,17 @@ enum NodeContent<N, T, I> {
     Image(I),
 }
 
+#[derive(Debug)]
+enum ImageSource {
+    Key(String),
+    Direct(Frame),
+}
+
 pub struct Node<A: App> {
     id: String,
     style: Style,
     handlers: Handlers<A>,
-    content: NodeContent<Self, String, String>,
+    content: NodeContent<Self, String, ImageSource>,
 }
 
 impl<N, T, I> From<Vec<N>> for NodeContent<N, T, I> {
@@ -242,13 +248,16 @@ impl<A: App> Node<A> {
                     content: NodeContent::Text(text),
                 }
             }
-            NodeContent::Image(key) => {
+            NodeContent::Image(source) => {
                 let fills_row = matches!(self.style.w, Sizing::Fill);
                 let fills_col = matches!(self.style.h, Sizing::Fill);
-                let frame = state
-                    .image(key)
-                    .and_then(|image| Sprite::new(image).frame(0))
-                    .unwrap_or_else(placeholder_image);
+                let frame = match source {
+                    ImageSource::Key(key) => state
+                        .image(key)
+                        .and_then(|image| Sprite::new(image).frame(0))
+                        .unwrap_or_else(placeholder_image),
+                    ImageSource::Direct(frame) => frame,
+                };
                 ProcessedNode {
                     id: path.to_string(),
                     style: self.style,
@@ -754,7 +763,17 @@ pub fn img<A: App>(key: impl Into<String>) -> Node<A> {
     Node {
         id: String::default(),
         style: Style::default(),
-        content: NodeContent::Image(key.into()),
+        content: NodeContent::Image(ImageSource::Key(key.into())),
+        handlers: Handlers::default(),
+    }
+}
+
+pub fn paint<A: App>(drawable: impl Drawable) -> Node<A> {
+    let frame = Image::from_drawable(drawable).instance();
+    Node {
+        id: String::default(),
+        style: Style::default(),
+        content: NodeContent::Image(ImageSource::Direct(frame)),
         handlers: Handlers::default(),
     }
 }
@@ -1132,6 +1151,27 @@ mod tests {
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 10);
         assert_eq!(resolved.rect.height(), 5);
+    }
+
+    #[test]
+    fn paint_sizes_to_drawable_bounding_box() {
+        let cells = vec![Cell::new(0.0, 0.0), Cell::new(3.0, 4.0)];
+        let node: Node<TestApp> = paint(cells);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
+        assert_eq!(resolved.rect.width(), 4);
+        assert_eq!(resolved.rect.height(), 5);
+    }
+
+    #[test]
+    fn paint_with_empty_drawable_has_zero_size_and_evaluates() {
+        let node: Node<TestApp> = paint(Vec::<Cell>::new());
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
+        assert_eq!(resolved.rect.width(), 0);
+        assert_eq!(resolved.rect.height(), 0);
+
+        let mut app = TestApp::new();
+        let mut state = State::new_for_test(256, 256);
+        eval(paint(Vec::<Cell>::new()), &mut app, &mut state);
     }
 
     #[test]
