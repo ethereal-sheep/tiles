@@ -20,6 +20,7 @@ mod runner;
 mod shape;
 pub mod signal;
 mod size;
+mod style;
 mod text;
 pub mod ui {
     pub use crate::node::{col, img, paint, pane, row, text};

@@ -9,95 +9,9 @@ use crate::input::ConsumedState;
 use crate::rect::Rect;
 use crate::runner::{App, State};
 use crate::size::Size;
+use crate::style::{Align, Axis, Justify, Position, Sizing, Style};
 use crate::{Drawable, Frame, Image, Shape, Sprite, Text};
 use tiles_macros::Builders;
-
-#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
-enum Axis {
-    #[default]
-    Column,
-    Row,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum Justify {
-    #[default]
-    Start,
-    Center,
-    End,
-    SpaceBetween,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-enum Align {
-    #[default]
-    Start,
-    Center,
-    End,
-}
-
-/// How a single axis resolves its size
-#[derive(Clone, Copy, Debug, Default)]
-enum Sizing {
-    /// Exactly this many pixels
-    Fixed(u32),
-    /// Shrink-wrap children (or 0 if no children)
-    #[default]
-    Shrink,
-    /// Take up remaining parent space, divided equally among siblings also Fill
-    Fill,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
-enum Position {
-    #[default]
-    Flow,
-    Relative(f32, f32),
-    Absolute(f32, f32),
-}
-
-// --- Styles ---
-
-// 1. auto mark field as required builder unless marked as custom, or marked as omit
-// 2. mark field as inheritable, and generate a function which allows a Style to inherit from another style
-//      if is None
-
-#[derive(Clone, Debug, Default, Builders)]
-#[builders(forward(to = "Node<A: App>", via = "style"))]
-struct Style {
-    #[builder(dual_variant(name = "size", variant = "Fixed", args = "w: u32, h: u32",))]
-    #[builder(variant(name = "fill_w", variant = "Fill"))]
-    #[builder(variant(name = "shrink_w", variant = "Shrink"))]
-    #[builder(variant(name = "width", variant = "Fixed", args = "width: u32"))]
-    pub w: Sizing,
-    #[builder(variant(name = "fill_h", variant = "Fill"))]
-    #[builder(variant(name = "shrink_h", variant = "Shrink"))]
-    #[builder(variant(name = "height", variant = "Fixed", args = "height: u32"))]
-    pub h: Sizing,
-    pub axis: Axis,
-    pub gap: Option<u32>,
-    pub padding: Option<u32>,
-    #[builder(variant(name = "justify_start", variant = "Start"))]
-    #[builder(variant(name = "justify_center", variant = "Center"))]
-    #[builder(variant(name = "justify_end", variant = "End"))]
-    #[builder(variant(name = "justify_full", variant = "SpaceBetween"))]
-    pub justify: Justify,
-    #[builder(variant(name = "align_start", variant = "Start"))]
-    #[builder(variant(name = "align_center", variant = "Center"))]
-    #[builder(variant(name = "align_end", variant = "End"))]
-    pub align: Align,
-    #[builder(variant(name = "relative", variant = "Relative", args = "x: f32, y: f32"))]
-    #[builder(variant(name = "absolute", variant = "Absolute", args = "x: f32, y: f32"))]
-    pub position: Position,
-    pub z_index: i32,
-    pub color: Option<Color>,
-    pub hover_color: Option<Color>,
-    pub pressed_color: Option<Color>,
-    pub text_color: Option<Color>,
-    pub hover_text_color: Option<Color>,
-    pub pressed_text_color: Option<Color>,
-    pub font: Option<&'static Font>,
-}
 
 // --- Handlers ---
 
@@ -153,9 +67,15 @@ enum ImageSource {
 
 pub struct Node<A: App> {
     id: String,
-    style: Style,
+    pub(crate) style: Style,
     handlers: Handlers<A>,
     content: NodeContent<Self, String, ImageSource>,
+}
+
+pub struct NodeData<A: App> {
+    pub style: Style,
+    pub handlers: Handlers<A>,
+    pub children: Vec<Node<A>>,
 }
 
 impl<N, T, I> From<Vec<N>> for NodeContent<N, T, I> {
@@ -313,7 +233,7 @@ impl<A: App> ProcessedNode<A> {
     fn size_pass(self, available_w: u32, available_h: u32) -> SizedNode<A> {
         match self.content {
             NodeContent::Text(text) => {
-                let padding = self.style.padding.unwrap_or(0);
+                let padding = self.style.padding;
                 let text_rect = text.rect();
                 let intrinsic_w = text_rect.width() + padding * 2;
                 let intrinsic_h = text_rect.height() + padding * 2;
@@ -339,7 +259,7 @@ impl<A: App> ProcessedNode<A> {
                 }
             }
             NodeContent::Image(frame) => {
-                let padding = self.style.padding.unwrap_or(0);
+                let padding = self.style.padding;
                 let intrinsic_w = frame.width() + padding * 2;
                 let intrinsic_h = frame.height() + padding * 2;
                 let w = match self.style.w {
@@ -364,9 +284,9 @@ impl<A: App> ProcessedNode<A> {
                 }
             }
             NodeContent::Children(children) => {
-                let padding = self.style.padding.unwrap_or(0);
+                let padding = self.style.padding;
                 let axis = self.style.axis;
-                let gap = self.style.gap.unwrap_or(0);
+                let gap = self.style.gap;
 
                 let own_w = match self.style.w {
                     Sizing::Fixed(w) => Some(w),
@@ -559,7 +479,7 @@ impl<A: App> SizedNode<A> {
 
         match self.content {
             NodeContent::Text(text) => {
-                let padding = self.style.padding.unwrap_or(0);
+                let padding = self.style.padding;
                 let text_rect = text.rect();
                 let content_w = self.size.width.saturating_sub(padding * 2);
                 let content_h = self.size.height.saturating_sub(padding * 2);
@@ -592,7 +512,7 @@ impl<A: App> SizedNode<A> {
                 }
             }
             NodeContent::Image(frame) => {
-                let padding = self.style.padding.unwrap_or(0);
+                let padding = self.style.padding;
                 let content_w = self.size.width.saturating_sub(padding * 2);
                 let content_h = self.size.height.saturating_sub(padding * 2);
                 let image_w = frame.width();
@@ -624,9 +544,9 @@ impl<A: App> SizedNode<A> {
                 }
             }
             NodeContent::Children(children) => {
-                let padding = self.style.padding.unwrap_or(0);
+                let padding = self.style.padding;
                 let axis = self.style.axis;
-                let gap = self.style.gap.unwrap_or(0);
+                let gap = self.style.gap;
                 let justify = self.style.justify;
                 let align = self.style.align;
                 let content_x = x + padding as f32;
