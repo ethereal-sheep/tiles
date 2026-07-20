@@ -5,7 +5,7 @@ use glam::Vec2;
 use tiles::{
     App, Cell, Color, Config, KeyCode, KeyEvent, KeyState, MouseEvent, Node, State, Text,
     font::TINY5_4X5,
-    ui::{app_widget, col, row, signal, text, widget, widget_fn},
+    ui::{app_widget, col, img, row, signal, text, widget, widget_fn},
 };
 
 const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
@@ -145,7 +145,7 @@ impl App for Demo {
                 }
                 col().fill_w().fill_h() {
                     signal_counter()
-                    signal_counter()
+                    img("knight")
                     // Counter indicator
                     // col().gap(1) {
                     //     @ for j in 0..=(self.count.unsigned_abs().saturating_sub(1) / row_count) {

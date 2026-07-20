@@ -469,6 +469,11 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
         self.state.start_timer = Instant::now();
         self.state.frame_timer = Instant::now();
         self.app.init(&mut self.state);
+
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/images/knight.png");
+        self.state
+            .load_image("knight", path)
+            .expect("failed to load sample image");
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {

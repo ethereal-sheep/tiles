@@ -21,7 +21,7 @@ impl App for ImageDemo {
         state.set_viewport_background(Color::linear(0.05, 0.05, 0.08, 1.0));
         state.set_window_background(Color::linear(0.05, 0.05, 0.08, 1.0));
 
-        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/knight.png");
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/bounce_sheet.png");
         self.logo = Some(Image::from_path(path).expect("failed to load sample image"));
     }
 
@@ -47,6 +47,6 @@ impl App for ImageDemo {
 }
 
 fn main() {
-    let config = Config::builder().title("Image").viewport(64, 64).build();
+    let config = Config::builder().title("Image").viewport(256, 256).build();
     tiles::run(ImageDemo::new(), config).unwrap();
 }
