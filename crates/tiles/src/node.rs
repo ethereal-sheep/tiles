@@ -119,6 +119,11 @@ impl<A: App> Node<A> {
         self
     }
 
+    pub fn on_test<X>(mut self, id: &str) -> Self {
+        self.id = id.to_string();
+        self
+    }
+
     pub fn style(mut self, style: Style) -> Self {
         self.style = style;
         self

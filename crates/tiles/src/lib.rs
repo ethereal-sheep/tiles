@@ -48,9 +48,7 @@ pub use text::Text;
 #[doc(hidden)]
 pub mod __private {
     pub use crate::node::{NewWidgetFn, Node, Widget, WidgetFn};
-    pub use crate::signal::{
-        __pop_instance, __pop_widget, __push_instance, __push_widget, __widget_id,
-    };
+    pub use crate::signal::{__pop_widget, __push_widget, __widget_id};
 }
 
 #[cfg(feature = "runtime")]

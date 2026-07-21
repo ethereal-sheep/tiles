@@ -177,23 +177,6 @@ pub fn __widget_id(file: &str, line: u32, col: u32) -> u64 {
     h
 }
 
-#[doc(hidden)]
-pub fn __push_instance(index: usize) {
-    try_with_runtime(|rt| {
-        let current = rt.widget_stack.borrow().last().copied().unwrap_or(0);
-        let instanced = current.wrapping_mul(2654435761).wrapping_add(index as u64);
-        rt.widget_stack.borrow_mut().push(instanced);
-        rt.local_counter.set(0);
-    });
-}
-
-#[doc(hidden)]
-pub fn __pop_instance() {
-    try_with_runtime(|rt| {
-        rt.widget_stack.borrow_mut().pop();
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,33 +383,29 @@ mod tests {
     }
 
     #[test]
-    fn push_instance_differentiates_loop_iterations() {
+    fn push_widget_differentiates_loop_iterations() {
         with_test_runtime(|| {
-            __push_widget(1); // parent widget
-
+            __push_widget(0); // parent widget
             // Loop iteration 0
-            __push_instance(0);
             let s0 = signal(0i32);
             s0.set(100);
-            __pop_instance();
+            __pop_widget();
 
             // Loop iteration 1
-            __push_instance(1);
+            __push_widget(1);
             let s1 = signal(0i32);
             s1.set(200);
-            __pop_instance();
+            __pop_widget();
 
             // Verify they're independent
-            __push_instance(0);
+            __push_widget(0);
             let s0_again = signal(0i32);
             assert_eq!(s0_again.get(), 100);
-            __pop_instance();
+            __pop_widget();
 
-            __push_instance(1);
+            __push_widget(1);
             let s1_again = signal(0i32);
             assert_eq!(s1_again.get(), 200);
-            __pop_instance();
-
             __pop_widget();
         });
     }
