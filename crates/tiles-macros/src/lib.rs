@@ -219,10 +219,27 @@ fn auto_id_for_expr(expr: &Expr, in_loop: bool) -> TokenStream2 {
     }
 }
 
+/// Built-in constructors generic over the app type (`pane`, `row`, `col`, ...)
+/// that need a turbofish for closure type inference. User-defined widget
+/// functions (`#[widget_fn]`/`#[new_widget_fn]`) bake in their app type via
+/// the attribute and are never generic, so must not be turbofished.
+const BUILTIN_NODE_CONSTRUCTORS: &[&str] = &["pane", "row", "col", "text", "img", "paint"];
+
+fn is_builtin_constructor_call(func: &Expr) -> bool {
+    match func {
+        Expr::Path(path) => {
+            path.path.segments.last().is_some_and(|seg| {
+                BUILTIN_NODE_CONSTRUCTORS.contains(&seg.ident.to_string().as_str())
+            })
+        }
+        _ => false,
+    }
+}
+
 fn turbofish_root_call(expr: &Expr, ty: &Type) -> TokenStream2 {
     // Walk the method chain to find the root function call and add a turbofish.
-    // Only turbofish method chains (needed for closure type inference).
-    // Bare function calls (user-defined widgets) are emitted as-is.
+    // Only turbofish calls to built-in constructors (needed for closure type
+    // inference) — bare calls to user-defined widget functions are emitted as-is.
     match expr {
         Expr::MethodCall(mc) => {
             let receiver = turbofish_root_call(&mc.receiver, ty);
@@ -231,7 +248,7 @@ fn turbofish_root_call(expr: &Expr, ty: &Type) -> TokenStream2 {
             let args = &mc.args;
             quote! { #receiver.#method #turbofish(#args) }
         }
-        Expr::Call(call) => {
+        Expr::Call(call) if is_builtin_constructor_call(&call.func) => {
             let func = &call.func;
             let args = &call.args;
             quote! { #func::<#ty>(#args) }
@@ -326,18 +343,32 @@ fn expand_widget_block(block: &UiBlock, app_type: Option<&Type>, in_loop: bool) 
     }
 }
 
+/// Walks down through `.method()` chains to find the root call — the
+/// expression a chain like `widget_fn(...).fill_w().on_press(f)` bottoms
+/// out on. Returns `None` if the chain doesn't bottom out on a bare call
+/// (e.g. it's a plain identifier or literal).
+fn root_call_of(expr: &Expr) -> Option<&syn::ExprCall> {
+    match expr {
+        Expr::Call(call) => Some(call),
+        Expr::MethodCall(mc) => root_call_of(&mc.receiver),
+        _ => None,
+    }
+}
+
+/// True if `expr` is a call to a user-defined widget function (bare, or
+/// chained with builder calls like `.fill_w()`/`.on_press(...)`) — i.e. not
+/// one of the built-in constructors, which never call `signal()` internally
+/// and so never need widget-id scoping.
 fn is_widget_fn_call(expr: &Expr) -> bool {
-    matches!(expr, Expr::Call(_))
+    root_call_of(expr).is_some_and(|call| !is_builtin_constructor_call(&call.func))
 }
 
 fn signal_context_for_expr(expr: &Expr, in_loop: bool) -> (TokenStream2, TokenStream2) {
     if !is_widget_fn_call(expr) {
         return (quote! {}, quote! {});
     }
-    let span = match expr {
-        Expr::Call(call) => call.func.span(),
-        _ => expr.span(),
-    };
+    let root_call = root_call_of(expr).expect("is_widget_fn_call implies root_call_of is Some");
+    let span = root_call.func.span();
     let line = span.start().line as u64;
     let col = span.start().column as u64;
     let widget_id = if in_loop {
@@ -514,11 +545,76 @@ pub fn widget_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
+/// Computes the outer (caller-facing) parameter list and generics for a
+/// widget-fn-style function: `impl Trait` params get `+ 'static`, bare `&T`
+/// params get an `'a` lifetime (and the generics gain `'a` accordingly,
+/// since the params are captured into a closure). Also returns whether any
+/// borrow was found, so callers can decide how to spell their return type's
+/// lifetime.
+fn compute_outer_signature(
+    generics: &syn::Generics,
+    params: &[&syn::FnArg],
+) -> (Vec<TokenStream2>, TokenStream2, bool) {
+    let has_borrows = params.iter().any(|p| match p {
+        syn::FnArg::Typed(pat_type) => matches!(*pat_type.ty, syn::Type::Reference(_)),
+        _ => false,
+    });
+
+    let outer_params: Vec<TokenStream2> = params
+        .iter()
+        .map(|p| match p {
+            syn::FnArg::Typed(pat_type) => {
+                let pat = &pat_type.pat;
+                let ty = &pat_type.ty;
+                match &**ty {
+                    syn::Type::Reference(r) if has_borrows => {
+                        if r.lifetime.is_none() {
+                            let mutability = &r.mutability;
+                            let elem = &r.elem;
+                            quote! { #pat: &'a #mutability #elem }
+                        } else {
+                            quote! { #p }
+                        }
+                    }
+                    syn::Type::ImplTrait(impl_trait) => {
+                        let has_lifetime_bound = impl_trait
+                            .bounds
+                            .iter()
+                            .any(|b| matches!(b, syn::TypeParamBound::Lifetime(_)));
+                        if has_lifetime_bound {
+                            quote! { #p }
+                        } else {
+                            let bounds = &impl_trait.bounds;
+                            quote! { #pat: impl #bounds + 'static }
+                        }
+                    }
+                    _ => quote! { #p },
+                }
+            }
+            _ => quote! { #p },
+        })
+        .collect();
+
+    let (impl_generics, _ty_generics, _where_clause) = generics.split_for_impl();
+    let combined_generics = if has_borrows {
+        let user_params = &generics.params;
+        if user_params.is_empty() {
+            quote! { <'a> }
+        } else {
+            quote! { <'a, #user_params> }
+        }
+    } else {
+        quote! { #impl_generics }
+    };
+
+    (outer_params, combined_generics, has_borrows)
+}
+
 fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2> {
     let vis = &func.vis;
     let name = &func.sig.ident;
     let generics = &func.sig.generics;
-    let (impl_generics, _ty_generics, where_clause) = generics.split_for_impl();
+    let (_impl_generics, _ty_generics, where_clause) = generics.split_for_impl();
     let body = &func.block;
 
     let mut params: Vec<&syn::FnArg> = func.sig.inputs.iter().collect();
@@ -564,46 +660,7 @@ fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2
         _ => unreachable!(),
     };
 
-    let has_borrows = params.iter().any(|p| match p {
-        syn::FnArg::Typed(pat_type) => matches!(*pat_type.ty, syn::Type::Reference(_)),
-        _ => false,
-    });
-
-    let outer_params: Vec<TokenStream2> = params
-        .iter()
-        .map(|p| match p {
-            syn::FnArg::Typed(pat_type) => {
-                let pat = &pat_type.pat;
-                let ty = &pat_type.ty;
-                match &**ty {
-                    syn::Type::Reference(r) if has_borrows => {
-                        if r.lifetime.is_none() {
-                            let mutability = &r.mutability;
-                            let elem = &r.elem;
-                            quote! { #pat: &'a #mutability #elem }
-                        } else {
-                            quote! { #p }
-                        }
-                    }
-                    syn::Type::ImplTrait(impl_trait) => {
-                        let has_lifetime_bound = impl_trait
-                            .bounds
-                            .iter()
-                            .any(|b| matches!(b, syn::TypeParamBound::Lifetime(_)));
-                        if has_lifetime_bound {
-                            quote! { #p }
-                        } else {
-                            let bounds = &impl_trait.bounds;
-                            quote! { #pat: impl #bounds + 'static }
-                        }
-                    }
-                    _ => quote! { #p },
-                }
-            }
-            _ => quote! { #p },
-        })
-        .collect();
-
+    let (outer_params, combined_generics, has_borrows) = compute_outer_signature(generics, &params);
     let return_ty = if has_borrows {
         quote! { impl ::tiles::__private::Widget<#app_ty> + 'a }
     } else {
@@ -613,21 +670,142 @@ fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2
     // Rewrite body: inject app type into widget! calls that lack it
     let rewritten_body = inject_widget_type(&quote! { #body }, app_ty);
 
-    // Merge user generics with the lifetime param
-    let combined_generics = if has_borrows {
-        let user_params = &generics.params;
-        if user_params.is_empty() {
-            quote! { <'a> }
-        } else {
-            quote! { <'a, #user_params> }
-        }
-    } else {
-        quote! { #impl_generics }
-    };
-
     Ok(quote! {
         #vis fn #name #combined_generics(#(#outer_params),*) -> #return_ty #where_clause {
             ::tiles::__private::WidgetFn(move |#children_ident: #children_ty| #rewritten_body, ::std::marker::PhantomData)
+        }
+    })
+}
+
+// =============================================================================
+// #[new_widget_fn] attribute macro
+// =============================================================================
+
+/// Attribute macro for declaring widget functions that can receive the
+/// caller's style/handlers/children via a trailing `NodeData<A>` parameter.
+///
+/// If the last parameter's type is `NodeData<A>`, the function is wrapped in
+/// `NewWidgetFn` so the caller's `.style(...)`-affecting builder calls and
+/// `.on_*` handlers are captured and handed to the function as `NodeData`
+/// (any pattern is allowed — full destructure, partial, or a plain binding).
+/// Fields the function doesn't bind are simply unavailable to it and never
+/// applied to the returned node (`id` is the only exception — it's always
+/// stamped onto the returned node automatically if the caller set one).
+///
+/// If there's no trailing `NodeData<A>` parameter (including the old-style
+/// bare `children: Vec<Node<A>>`), this macro does nothing but inject the
+/// app type into `widget!` calls in the body — same treatment as
+/// `#[app_widget]`.
+///
+/// ```ignore
+/// #[new_widget_fn(Demo)]
+/// fn button(word: &str, NodeData { style, handlers, children }: NodeData<Demo>) -> Node<Demo> {
+///     widget! { Demo;
+///         col().style(style).handlers(handlers) {
+///             text(word).padding(1)
+///             @children
+///         }
+///     }
+/// }
+/// ```
+#[proc_macro_attribute]
+pub fn new_widget_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let app_ty: Type = syn::parse_macro_input!(attr as Type);
+    let func: syn::ItemFn = syn::parse_macro_input!(item as syn::ItemFn);
+
+    match impl_new_widget_fn(&app_ty, &func) {
+        Ok(ts) => ts.into(),
+        Err(e) => e.to_compile_error().into(),
+    }
+}
+
+/// Returns true if `ty`'s final path segment is `NodeData`.
+fn is_node_data_type(ty: &Type) -> bool {
+    match ty {
+        Type::Path(type_path) => type_path
+            .path
+            .segments
+            .last()
+            .is_some_and(|seg| seg.ident == "NodeData"),
+        _ => false,
+    }
+}
+
+fn impl_new_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2> {
+    let params: Vec<&syn::FnArg> = func.sig.inputs.iter().collect();
+
+    let last_is_node_data = matches!(
+        params.last(),
+        Some(syn::FnArg::Typed(pat_type)) if is_node_data_type(&pat_type.ty)
+    );
+
+    if !last_is_node_data {
+        // Error if a NodeData<...> param appears anywhere but last.
+        for p in params.iter().rev().skip(1) {
+            if let syn::FnArg::Typed(pat_type) = p {
+                if is_node_data_type(&pat_type.ty) {
+                    return Err(syn::Error::new_spanned(
+                        pat_type,
+                        "#[new_widget_fn] a `NodeData<A>` parameter must be the last parameter",
+                    ));
+                }
+            }
+        }
+
+        // No NodeData param: pass-through — leave the signature untouched,
+        // only inject the app type into widget! calls in the body.
+        let rewritten = inject_widget_type(&quote! { #func }, app_ty);
+        return Ok(rewritten);
+    }
+
+    let vis = &func.vis;
+    let name = &func.sig.ident;
+    let generics = &func.sig.generics;
+    let (_impl_generics, _ty_generics, where_clause) = generics.split_for_impl();
+    let body = &func.block;
+
+    let mut params = params;
+    let node_data_param = params.pop().unwrap();
+
+    // Error if another NodeData<...> param appears earlier in the list.
+    for p in &params {
+        if let syn::FnArg::Typed(pat_type) = p {
+            if is_node_data_type(&pat_type.ty) {
+                return Err(syn::Error::new_spanned(
+                    pat_type,
+                    "#[new_widget_fn] a `NodeData<A>` parameter must be the last parameter",
+                ));
+            }
+        }
+    }
+
+    let (node_data_pat, node_data_ty) = match node_data_param {
+        syn::FnArg::Typed(pat_type) => (&pat_type.pat, &pat_type.ty),
+        syn::FnArg::Receiver(_) => {
+            return Err(syn::Error::new_spanned(
+                node_data_param,
+                "#[new_widget_fn] cannot be used on methods with self",
+            ));
+        }
+    };
+
+    let (outer_params, combined_generics, has_borrows) = compute_outer_signature(generics, &params);
+
+    // `NewWidgetFn` is returned concretely (not as `impl Widget<A>`) so callers
+    // can chain its inherent builder methods (`.fill_w()`, `.on_press()`, `.id()`).
+    let closure_bound = if has_borrows {
+        quote! { impl FnOnce(::tiles::NodeData<#app_ty>) -> ::tiles::Node<#app_ty> + 'a }
+    } else {
+        quote! { impl FnOnce(::tiles::NodeData<#app_ty>) -> ::tiles::Node<#app_ty> }
+    };
+    let return_ty = quote! { ::tiles::__private::NewWidgetFn<#app_ty, #closure_bound> };
+
+    // Rewrite body: inject app type into widget! calls that lack it
+    let rewritten_body = inject_widget_type(&quote! { #body }, app_ty);
+
+    Ok(quote! {
+        #vis fn #name #combined_generics(#(#outer_params),*) -> #return_ty #where_clause {
+            ::tiles::__private::NewWidgetFn::new(move |#node_data_pat: #node_data_ty| #rewritten_body)
         }
     })
 }

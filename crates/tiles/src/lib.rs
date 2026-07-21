@@ -25,7 +25,7 @@ mod text;
 pub mod ui {
     pub use crate::node::{col, img, paint, pane, row, text};
     pub use crate::signal::signal;
-    pub use tiles_macros::{app_widget, widget, widget_fn};
+    pub use tiles_macros::{app_widget, new_widget_fn, widget, widget_fn};
 }
 
 pub use cell::{Cell, Rotation};
@@ -36,17 +36,18 @@ pub use element::{DragInfo, Element, ElementState, HitState};
 pub use image::{Frame, Image, ImageError, Sprite};
 pub use input::{KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent};
 pub use line::Line;
-pub use node::Node;
+pub use node::{Node, NodeData};
 pub use rect::{Rect, RoundedRect};
 #[cfg(feature = "runtime")]
 pub use runner::{App, State};
 pub use shape::{Fill, Shape, Stroke, StrokePosition};
 pub use size::Size;
+pub use style::Style;
 pub use text::Text;
 
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::node::{Node, Widget, WidgetFn};
+    pub use crate::node::{NewWidgetFn, Node, Widget, WidgetFn};
     pub use crate::signal::{
         __pop_instance, __pop_widget, __push_instance, __push_widget, __widget_id,
     };

@@ -1,18 +1,19 @@
+use crate::__private::NewWidgetFn;
 use crate::color::Color;
 use crate::font::Font;
 use crate::runner::App;
-use crate::Node;
+use crate::{Node, NodeData};
 use tiles_macros::Builders;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
-pub(crate) enum Axis {
+pub enum Axis {
     #[default]
     Column,
     Row,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Justify {
+pub enum Justify {
     #[default]
     Start,
     Center,
@@ -21,7 +22,7 @@ pub(crate) enum Justify {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum Align {
+pub enum Align {
     #[default]
     Start,
     Center,
@@ -30,7 +31,7 @@ pub(crate) enum Align {
 
 /// How a single axis resolves its size
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) enum Sizing {
+pub enum Sizing {
     /// Exactly this many pixels
     Fixed(u32),
     /// Shrink-wrap children (or 0 if no children)
@@ -41,7 +42,7 @@ pub(crate) enum Sizing {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
-pub(crate) enum Position {
+pub enum Position {
     #[default]
     Flow,
     Relative(f32, f32),
@@ -56,7 +57,11 @@ pub(crate) enum Position {
 
 #[derive(Clone, Debug, Default, Builders)]
 #[builders(forward(to = "Node<A: App>", via = "style"))]
-pub(crate) struct Style {
+#[builders(forward(
+    to = "NewWidgetFn<A: App, F: FnOnce(NodeData<A>) -> Node<A>>",
+    via = "style"
+))]
+pub struct Style {
     #[builder(dual_variant(name = "size", variant = "Fixed", args = "w: u32, h: u32",))]
     #[builder(variant(name = "fill_w", variant = "Fill"))]
     #[builder(variant(name = "shrink_w", variant = "Shrink"))]

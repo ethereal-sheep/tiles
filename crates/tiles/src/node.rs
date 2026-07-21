@@ -11,13 +11,17 @@ use crate::runner::{App, State};
 use crate::size::Size;
 use crate::style::{Align, Axis, Justify, Position, Sizing, Style};
 use crate::{Drawable, Frame, Image, Shape, Sprite, Text};
-use tiles_macros::Builders;
+use tiles_macros::{Builders, new_widget_fn, widget_fn};
 
 // --- Handlers ---
 
 #[derive(Builders)]
 #[builders(forward(to = "Node<A: App>", via = "handlers"))]
-struct Handlers<A: App> {
+#[builders(forward(
+    to = "NewWidgetFn<A: App, F: FnOnce(NodeData<A>) -> Node<A>>",
+    via = "handlers"
+))]
+pub struct Handlers<A: App> {
     pub on_hover: Option<Box<dyn Fn(&mut A, &mut State)>>,
     pub on_enter: Option<Box<dyn Fn(&mut A, &mut State)>>,
     pub on_leave: Option<Box<dyn Fn(&mut A, &mut State)>>,
@@ -112,6 +116,16 @@ struct SizedNode<A: App> {
 impl<A: App> Node<A> {
     pub fn id(mut self, id: &str) -> Self {
         self.id = id.to_string();
+        self
+    }
+
+    pub fn style(mut self, style: Style) -> Self {
+        self.style = style;
+        self
+    }
+
+    pub fn handlers(mut self, handlers: Handlers<A>) -> Self {
+        self.handlers = handlers;
         self
     }
 
@@ -971,6 +985,43 @@ impl<A: App> ResolvedNode<A> {
 }
 
 // --- Public API ---
+pub struct NewWidgetFn<A: App, F: FnOnce(NodeData<A>) -> Node<A>> {
+    pub func: F,
+    pub style: Style,
+    pub handlers: Handlers<A>,
+    pub id: Option<String>,
+}
+
+impl<A: App, F: FnOnce(NodeData<A>) -> Node<A>> NewWidgetFn<A, F> {
+    pub fn new(func: F) -> Self {
+        Self {
+            func,
+            style: Style::default(),
+            handlers: Handlers::default(),
+            id: None,
+        }
+    }
+
+    pub fn id(mut self, id: &str) -> Self {
+        self.id = Some(id.to_string());
+        self
+    }
+}
+
+impl<A: App, F: FnOnce(NodeData<A>) -> Node<A>> Widget<A> for NewWidgetFn<A, F> {
+    fn render(self, children: Vec<Node<A>>) -> Node<A> {
+        let node = (self.func)(NodeData {
+            style: self.style,
+            handlers: self.handlers,
+            children,
+        });
+        match self.id {
+            Some(id) => node.id(&id),
+            None => node,
+        }
+    }
+}
+
 pub trait Widget<A: App> {
     fn render(self, children: Vec<Node<A>>) -> Node<A>;
 }

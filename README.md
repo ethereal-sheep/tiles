@@ -85,9 +85,11 @@ cargo run -p sandbox --example sprite
             - [ ] Stateful animation player that owns its own playhead and advances via `.update(dt)`, instead of the caller tracking elapsed time
     - [ ] Sounds - ''
 - [x] UI
-    - [ ] draw tag, draw(impl Drawable)
+    - [x] paint tag, paint(impl Drawable)
     - [ ] clip; if parent has size, and clip is true, then children will crop to parent's size instead of pushing parent size
     - [ ] onFocusIn, onFocusOut, onFocus, onBlur with better naming
+- [ ] Macro: fix generic widget turbofish
+- [ ] Generic Node Tree (remove typing by caching call back in a global static singleton)
 - [ ] CLI commands to interact with engine
 - [ ] Animation tool
 - [ ] Optimize drawing rect of cells since most cells in a rect are one color

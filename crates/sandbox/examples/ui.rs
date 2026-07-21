@@ -3,10 +3,10 @@ use std::f32::consts::PI;
 
 use glam::Vec2;
 use tiles::{
-    App, Cell, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Node, Rect, Shape,
-    State, Text,
+    App, Cell, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Node, NodeData,
+    Rect, Shape, State, Style, Text,
     font::TINY5_4X5,
-    ui::{app_widget, col, img, paint, row, signal, text, widget, widget_fn},
+    ui::{app_widget, col, img, new_widget_fn, paint, row, signal, text, widget, widget_fn},
 };
 
 const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
@@ -24,6 +24,75 @@ struct Demo {
     show_panel: bool,
     pos: glam::Vec2,
     active_index: Option<usize>,
+}
+
+#[new_widget_fn(Demo)]
+fn new_widget_with_node_data(
+    name: &str,
+    NodeData {
+        style,
+        handlers,
+        children,
+    }: NodeData<Demo>,
+) -> Node<Demo> {
+    widget! {
+        col().style(style).handlers(handlers)
+            .width(25)
+            .color(BTN_COLOR)
+            .hover_color(BTN_HOVER)
+            .pressed_color(BTN_PRESS) {
+            text(name).font(&TINY5_4X5).padding(1)
+            @children
+        }
+    }
+}
+
+#[new_widget_fn(Demo)]
+fn new_widget_with_explicit_merged_style_and_node_data(
+    name: &str,
+    NodeData {
+        style,
+        handlers,
+        children,
+    }: NodeData<Demo>,
+) -> Node<Demo> {
+    let new_style = Style {
+        gap: style.gap + 1,
+        ..style
+    };
+
+    widget! {
+        col().style(new_style).handlers(handlers) {
+            text(name).font(&TINY5_4X5).padding(1)
+            @children
+        }
+    }
+}
+
+#[new_widget_fn(Demo)] // generate a type which doesn't pass in node data, since user never ask for it
+fn new_widget_without_node_data(name: &str) -> Node<Demo> {
+    widget! {
+        col().on_click(|app, state| app.show_panel = true) {
+            text(name).font(&TINY5_4X5).padding(1)
+        }
+    }
+}
+
+#[new_widget_fn(A)] // generate a type which doesn't pass in node data, since user never ask for it
+fn test<A: App>(
+    name: &str,
+    NodeData {
+        style,
+        handlers,
+        children,
+    }: NodeData<A>,
+) -> Node<A> {
+    widget! {
+        col().style(style).handlers(handlers) {
+            text(name).font(&TINY5_4X5).padding(1)
+            @children
+        }
+    }
 }
 
 #[widget_fn(Demo)]
@@ -139,7 +208,12 @@ impl App for Demo {
                     button("edit", |app, _state| { app.count -= 1; })
                     button("clear", |app, _state| app.count = 0)
                     button("debug", |_app, state| state.set_debug(!state.is_debug()))
-
+                    test::<Demo>("test").on_click(|app, state| app.show_panel = true) {
+                        test("test2")
+                    }
+                    // new_widget_with_node_data("test").fill_w()
+                    new_widget_with_explicit_merged_style_and_node_data("merged").gap(3)
+                    new_widget_without_node_data("plain")
                     text(format!("{:.0}", fps)).fill_w().justify_end()
                 }
                 // title bar
