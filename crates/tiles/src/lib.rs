@@ -5,6 +5,8 @@ mod camera;
 mod cell;
 mod color;
 mod config;
+#[cfg(feature = "runtime")]
+mod context;
 mod drawable;
 mod element;
 pub mod font;
@@ -25,12 +27,14 @@ mod text;
 pub mod ui {
     pub use crate::node::{col, img, paint, pane, row, text};
     pub use crate::signal::signal;
-    pub use tiles_macros::{app_widget, new_widget_fn, widget, widget_fn};
+    pub use tiles_macros::{new_widget_fn, widget, widget_fn};
 }
 
 pub use cell::{Cell, Rotation};
 pub use color::Color;
 pub use config::{Config, ConfigBuilder};
+#[cfg(feature = "runtime")]
+pub use context::{AppContext, StateContext, get_app, get_state};
 pub use drawable::Drawable;
 pub use element::{DragInfo, Element, ElementState, HitState};
 pub use image::{Frame, Image, ImageError, Sprite};

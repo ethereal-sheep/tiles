@@ -7,52 +7,33 @@ use crate::font::Font;
 use crate::image::placeholder_image;
 use crate::input::ConsumedState;
 use crate::rect::Rect;
-use crate::runner::{App, State};
+use crate::runner::State;
 use crate::size::Size;
 use crate::style::{Align, Axis, Justify, Position, Sizing, Style};
 use crate::{Drawable, Frame, Image, Shape, Sprite, Text};
-use tiles_macros::{Builders, new_widget_fn, widget_fn};
+use tiles_macros::Builders;
 
 // --- Handlers ---
 
-#[derive(Builders)]
-#[builders(forward(to = "Node<A: App>", via = "handlers"))]
+#[derive(Builders, Default)]
+#[builders(forward(to = "Node", via = "handlers"))]
 #[builders(forward(
-    to = "NewWidgetFn<A: App, F: FnOnce(NodeData<A>) -> Node<A>>",
+    to = "NewWidgetFn<F: FnOnce(NodeData) -> Node>",
     via = "handlers"
 ))]
-pub struct Handlers<A: App> {
-    pub on_hover: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    pub on_enter: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    pub on_leave: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    pub on_click: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    pub on_double_click: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    pub on_press: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    pub on_release: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    pub on_right_click: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    pub on_hold: Option<Box<dyn Fn(&mut A, &mut State)>>,
-    pub on_drag: Option<Box<dyn Fn(&mut A, &mut State, DragInfo)>>,
-    pub on_drag_end: Option<Box<dyn Fn(&mut A, &mut State, DragInfo)>>,
-    pub on_scroll: Option<Box<dyn Fn(&mut A, &mut State, f32)>>,
-}
-
-impl<A: App> Default for Handlers<A> {
-    fn default() -> Self {
-        Self {
-            on_hover: None,
-            on_enter: None,
-            on_leave: None,
-            on_click: None,
-            on_double_click: None,
-            on_press: None,
-            on_release: None,
-            on_right_click: None,
-            on_hold: None,
-            on_drag: None,
-            on_drag_end: None,
-            on_scroll: None,
-        }
-    }
+pub struct Handlers {
+    pub on_hover: Option<Box<dyn Fn()>>,
+    pub on_enter: Option<Box<dyn Fn()>>,
+    pub on_leave: Option<Box<dyn Fn()>>,
+    pub on_click: Option<Box<dyn Fn()>>,
+    pub on_double_click: Option<Box<dyn Fn()>>,
+    pub on_press: Option<Box<dyn Fn()>>,
+    pub on_release: Option<Box<dyn Fn()>>,
+    pub on_right_click: Option<Box<dyn Fn()>>,
+    pub on_hold: Option<Box<dyn Fn()>>,
+    pub on_drag: Option<Box<dyn Fn(DragInfo)>>,
+    pub on_drag_end: Option<Box<dyn Fn(DragInfo)>>,
+    pub on_scroll: Option<Box<dyn Fn(f32)>>,
 }
 
 // --- Node types ---
@@ -69,17 +50,17 @@ enum ImageSource {
     Direct(Frame),
 }
 
-pub struct Node<A: App> {
+pub struct Node {
     id: String,
     pub(crate) style: Style,
-    handlers: Handlers<A>,
+    handlers: Handlers,
     content: NodeContent<Self, String, ImageSource>,
 }
 
-pub struct NodeData<A: App> {
+pub struct NodeData {
     pub style: Style,
-    pub handlers: Handlers<A>,
-    pub children: Vec<Node<A>>,
+    pub handlers: Handlers,
+    pub children: Vec<Node>,
 }
 
 impl<N, T, I> From<Vec<N>> for NodeContent<N, T, I> {
@@ -95,25 +76,25 @@ impl<N, I> From<String> for NodeContent<N, String, I> {
 }
 
 /// Intermediate tree produced by the pre-process pass, consumed by the size pass
-struct ProcessedNode<A: App> {
+struct ProcessedNode {
     id: String,
     style: Style,
-    handlers: Handlers<A>,
+    handlers: Handlers,
     fills_row: bool,
     fills_col: bool,
     content: NodeContent<Self, Text, Frame>,
 }
 
 /// Intermediate tree produced by the size pass, consumed by the position pass
-struct SizedNode<A: App> {
+struct SizedNode {
     id: String,
     style: Style,
-    handlers: Handlers<A>,
+    handlers: Handlers,
     size: Size,
     content: NodeContent<Self, Text, Frame>,
 }
 
-impl<A: App> Node<A> {
+impl Node {
     pub fn id(mut self, id: &str) -> Self {
         self.id = id.to_string();
         self
@@ -129,12 +110,12 @@ impl<A: App> Node<A> {
         self
     }
 
-    pub fn handlers(mut self, handlers: Handlers<A>) -> Self {
+    pub fn handlers(mut self, handlers: Handlers) -> Self {
         self.handlers = handlers;
         self
     }
 
-    pub fn children<C: Into<Node<A>>>(mut self, children: Vec<C>) -> Self {
+    pub fn children<C: Into<Node>>(mut self, children: Vec<C>) -> Self {
         match self.content {
             NodeContent::Children(_) => {
                 self.content =
@@ -146,7 +127,7 @@ impl<A: App> Node<A> {
     }
 
     /// Entry point: three-pass layout (pre-process → size → position)
-    pub(crate) fn layout(self, screen_w: u32, screen_h: u32, state: &State) -> ResolvedNode<A> {
+    pub(crate) fn layout(self, screen_w: u32, screen_h: u32, state: &State) -> ResolvedNode {
         let processed = self.pre_process(None.unwrap_or_default(), "0", state);
         let sized = processed.size_pass(screen_w, screen_h);
         sized.position_pass(0.0, 0.0)
@@ -170,7 +151,7 @@ impl<A: App> Node<A> {
         parent_font: &'static Font,
         path: &str,
         state: &State,
-    ) -> ProcessedNode<A> {
+    ) -> ProcessedNode {
         let font = self.style.font.unwrap_or(parent_font);
 
         match self.content {
@@ -207,7 +188,7 @@ impl<A: App> Node<A> {
                 }
             }
             NodeContent::Children(children) => {
-                let processed_children: Vec<ProcessedNode<A>> = children
+                let processed_children: Vec<ProcessedNode> = children
                     .into_iter()
                     .enumerate()
                     .map(|(i, c)| {
@@ -240,7 +221,7 @@ impl<A: App> Node<A> {
     }
 }
 
-impl<A: App> ProcessedNode<A> {
+impl ProcessedNode {
     fn effectively_fills(&self, axis: Axis) -> bool {
         match axis {
             Axis::Row => self.fills_row,
@@ -249,7 +230,7 @@ impl<A: App> ProcessedNode<A> {
     }
 
     /// Pass 1: compute sizes recursively. Fill nodes receive their share from the parent.
-    fn size_pass(self, available_w: u32, available_h: u32) -> SizedNode<A> {
+    fn size_pass(self, available_w: u32, available_h: u32) -> SizedNode {
         match self.content {
             NodeContent::Text(text) => {
                 let padding = self.style.padding;
@@ -322,12 +303,12 @@ impl<A: App> ProcessedNode<A> {
                 let content_h = own_h.unwrap_or(available_h).saturating_sub(padding * 2);
 
                 // Partition children: separate fill-along-main from non-fill
-                enum Slot<A: App> {
-                    Sized(SizedNode<A>),
-                    Deferred(ProcessedNode<A>),
+                enum Slot {
+                    Sized(SizedNode),
+                    Deferred(ProcessedNode),
                 }
 
-                let mut slots: Vec<Slot<A>> = Vec::with_capacity(children.len());
+                let mut slots: Vec<Slot> = Vec::with_capacity(children.len());
                 let mut fill_count: u32 = 0;
                 let mut consumed_main: u32 = 0;
                 let mut flow_count: u32 = 0;
@@ -374,7 +355,7 @@ impl<A: App> ProcessedNode<A> {
                 };
 
                 // Resolve all deferred children
-                let mut sized_children: Vec<SizedNode<A>> = Vec::with_capacity(slots.len());
+                let mut sized_children: Vec<SizedNode> = Vec::with_capacity(slots.len());
                 let mut fill_indices: Vec<usize> = Vec::new();
 
                 for slot in slots {
@@ -487,9 +468,9 @@ impl<A: App> ProcessedNode<A> {
     }
 }
 
-impl<A: App> SizedNode<A> {
+impl SizedNode {
     /// Pass 2: assign positions to produce the final ResolvedNode tree.
-    fn position_pass(self, origin_x: f32, origin_y: f32) -> ResolvedNode<A> {
+    fn position_pass(self, origin_x: f32, origin_y: f32) -> ResolvedNode {
         let (x, y) = match self.style.position {
             Position::Flow => (origin_x as f32, origin_y as f32),
             Position::Relative(rx, ry) => (origin_x as f32 + rx, origin_y as f32 + ry),
@@ -573,7 +554,7 @@ impl<A: App> SizedNode<A> {
                 let content_w = self.size.width.saturating_sub(padding * 2);
                 let content_h = self.size.height.saturating_sub(padding * 2);
 
-                let flow_children: Vec<&SizedNode<A>> = children
+                let flow_children: Vec<&SizedNode> = children
                     .iter()
                     .filter(|c| matches!(c.style.position, Position::Flow))
                     .collect();
@@ -672,7 +653,7 @@ impl<A: App> SizedNode<A> {
 
 // --- Convenience constructors ---
 
-pub fn pane<A: App>() -> Node<A> {
+pub fn pane() -> Node {
     Node {
         id: String::default(),
         style: Style::default(),
@@ -681,15 +662,15 @@ pub fn pane<A: App>() -> Node<A> {
     }
 }
 
-pub fn row<A: App>() -> Node<A> {
+pub fn row() -> Node {
     pane().axis(Axis::Row)
 }
 
-pub fn col<A: App>() -> Node<A> {
+pub fn col() -> Node {
     pane().axis(Axis::Column)
 }
 
-pub fn text<A: App>(content: impl Into<String>) -> Node<A> {
+pub fn text(content: impl Into<String>) -> Node {
     Node {
         id: String::default(),
         style: Style::default(),
@@ -698,7 +679,7 @@ pub fn text<A: App>(content: impl Into<String>) -> Node<A> {
     }
 }
 
-pub fn img<A: App>(key: impl Into<String>) -> Node<A> {
+pub fn img(key: impl Into<String>) -> Node {
     Node {
         id: String::default(),
         style: Style::default(),
@@ -707,7 +688,7 @@ pub fn img<A: App>(key: impl Into<String>) -> Node<A> {
     }
 }
 
-pub fn paint<A: App>(drawable: impl Drawable) -> Node<A> {
+pub fn paint(drawable: impl Drawable) -> Node {
     let frame = Image::from_drawable(drawable).instance();
     Node {
         id: String::default(),
@@ -718,15 +699,15 @@ pub fn paint<A: App>(drawable: impl Drawable) -> Node<A> {
 }
 
 // --- Layout ---
-pub(crate) struct ResolvedNode<A: App> {
+pub(crate) struct ResolvedNode {
     id: String,
     rect: Rect,
     style: Style,
     content: NodeContent<Self, Text, Frame>,
-    handlers: Handlers<A>,
+    handlers: Handlers,
 }
 
-impl<A: App> fmt::Debug for ResolvedNode<A> {
+impl fmt::Debug for ResolvedNode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ResolvedNode")
             .field("id", &self.id)
@@ -737,15 +718,19 @@ impl<A: App> fmt::Debug for ResolvedNode<A> {
 }
 
 // --- Evaluate (hit-test + handlers + draw) ---
+//
+// Every State access here is a short-lived get_state() borrow, acquired and
+// released before any handler closure runs — handler bodies may themselves
+// call get_state()/get_app(), so evaluate's own borrow must never still be
+// live while a handler executes (that would be two live &mut State/App to
+// the same object at once).
 
-impl<A: App> ResolvedNode<A> {
-    pub(crate) fn evaluate(self, app: &mut A, state: &mut State) {
+impl ResolvedNode {
+    pub(crate) fn evaluate(self) {
         let mut cells = Vec::new();
         let mut consumed = ConsumedState::new();
         let mut debug_color_index = 0;
         self.evaluate_recursive(
-            app,
-            state,
             &mut cells,
             &mut consumed,
             Some(Color::hex(0xFFFFFF)),
@@ -755,14 +740,14 @@ impl<A: App> ResolvedNode<A> {
 
         cells.sort_by(|a, b| b.position.z.total_cmp(&a.position.z));
         cells.reverse();
-        state.draw_screen_overlay(cells);
-        state.get_input_mut_ref().consumed_state = consumed;
+        crate::get_state().with_mut(|state| {
+            state.draw_screen_overlay(cells);
+            state.get_input_mut_ref().consumed_state = consumed;
+        });
     }
 
     fn evaluate_recursive(
         self,
-        app: &mut A,
-        state: &mut State,
         cells: &mut Vec<Cell>,
         consumed: &mut ConsumedState,
         text_color: Option<Color>,
@@ -771,16 +756,19 @@ impl<A: App> ResolvedNode<A> {
     ) {
         let effective_depth = depth.max(self.style.z_index as f32);
 
-        let is_captured = state
-            .get_input_ref()
-            .drag_capture
-            .as_ref()
-            .is_some_and(|c| c.id == self.id);
-        let hit = if is_captured {
-            state.test_shape_screen(&state.get_input_ref().drag_capture.as_ref().unwrap().rect)
-        } else {
-            state.test_shape_screen(&self.rect)
-        };
+        let (is_captured, hit) = crate::get_state().with(|state| {
+            let is_captured = state
+                .get_input_ref()
+                .drag_capture
+                .as_ref()
+                .is_some_and(|c| c.id == self.id);
+            let hit = if is_captured {
+                state.test_shape_screen(&state.get_input_ref().drag_capture.as_ref().unwrap().rect)
+            } else {
+                state.test_shape_screen(&self.rect)
+            };
+            (is_captured, hit)
+        });
 
         let color = if hit.is_down() {
             self.style
@@ -809,8 +797,6 @@ impl<A: App> ResolvedNode<A> {
             NodeContent::Children(children) => {
                 for node in children.into_iter().rev() {
                     node.evaluate_recursive(
-                        app,
-                        state,
                         cells,
                         consumed,
                         text_color,
@@ -826,77 +812,82 @@ impl<A: App> ResolvedNode<A> {
 
         if hit.is_hovered() {
             if let Some(f) = self.handlers.on_hover {
-                f(app, state);
+                f();
             }
         }
         if hit.has_entered() {
             if let Some(f) = self.handlers.on_enter {
-                f(app, state);
+                f();
             }
         }
         if hit.has_left() {
             if let Some(f) = self.handlers.on_leave {
-                f(app, state);
+                f();
             }
         }
 
         if !consumed.left {
             if hit.is_clicked() {
                 if let Some(f) = self.handlers.on_click {
-                    f(app, state);
+                    f();
                     consumed.left = true;
                 }
             }
             if hit.is_double_clicked() {
                 if let Some(f) = self.handlers.on_double_click {
-                    f(app, state);
+                    f();
                     consumed.left = true;
                 }
             }
             if hit.is_pressed() {
                 if self.handlers.on_drag.is_some() {
-                    state.get_input_mut_ref().drag_capture = Some(crate::input::DragCapture {
-                        id: self.id.clone(),
-                        rect: self.rect,
+                    crate::get_state().with_mut(|state| {
+                        state.get_input_mut_ref().drag_capture =
+                            Some(crate::input::DragCapture {
+                                id: self.id.clone(),
+                                rect: self.rect,
+                            });
                     });
                 }
                 if let Some(f) = self.handlers.on_press {
-                    f(app, state);
+                    f();
                     consumed.left = true;
                 }
             }
             if hit.is_released() {
                 if let Some(f) = self.handlers.on_release {
-                    f(app, state);
+                    f();
                     consumed.left = true;
                 }
             }
             if hit.is_held().is_some() {
                 if let Some(f) = self.handlers.on_hold {
-                    f(app, state);
+                    f();
                     consumed.left = true;
                 }
             }
             if let Some(drag) = hit.is_dragging() {
                 if let Some(f) = self.handlers.on_drag {
-                    f(app, state, drag);
+                    f(drag);
                     consumed.left = true;
                 }
             }
             if let Some(drag) = hit.is_drag_end() {
                 if let Some(f) = self.handlers.on_drag_end {
-                    f(app, state, drag);
+                    f(drag);
                     consumed.left = true;
                 }
             }
         }
         if is_captured && hit.is_drag_end().is_some() {
-            state.get_input_mut_ref().drag_capture = None;
+            crate::get_state().with_mut(|state| {
+                state.get_input_mut_ref().drag_capture = None;
+            });
         }
         if !consumed.right {
             if hit.is_right_clicked() {
                 if let Some(f) = self.handlers.on_right_click {
-                    f(app, state);
+                    f();
                     consumed.right = true;
                 }
             }
@@ -904,7 +895,7 @@ impl<A: App> ResolvedNode<A> {
         if !consumed.scroll {
             if let Some(delta) = hit.is_scrolling() {
                 if let Some(f) = self.handlers.on_scroll {
-                    f(app, state, delta);
+                    f(delta);
                     consumed.scroll = true;
                 }
             }
@@ -935,7 +926,8 @@ impl<A: App> ResolvedNode<A> {
         }
 
         // Debug UI overlay
-        if state.is_debug() {
+        let is_debug = crate::get_state().with(|state| state.is_debug());
+        if is_debug {
             const DEBUG_COLORS: [Color; 6] = [
                 Color::linear(1.0, 0.2, 0.2, 1.0),
                 Color::linear(0.2, 1.0, 0.2, 1.0),
@@ -946,13 +938,15 @@ impl<A: App> ResolvedNode<A> {
             ];
             let c = DEBUG_COLORS[*debug_color_index % DEBUG_COLORS.len()];
             *debug_color_index += 1;
-            state.debug_ui_rect(
-                self.rect.x(),
-                self.rect.y(),
-                self.rect.width() as f32,
-                self.rect.height() as f32,
-                c,
-            );
+            crate::get_state().with_mut(|state| {
+                state.debug_ui_rect(
+                    self.rect.x(),
+                    self.rect.y(),
+                    self.rect.width() as f32,
+                    self.rect.height() as f32,
+                    c,
+                );
+            });
         }
     }
 
@@ -990,14 +984,14 @@ impl<A: App> ResolvedNode<A> {
 }
 
 // --- Public API ---
-pub struct NewWidgetFn<A: App, F: FnOnce(NodeData<A>) -> Node<A>> {
+pub struct NewWidgetFn<F: FnOnce(NodeData) -> Node> {
     pub func: F,
     pub style: Style,
-    pub handlers: Handlers<A>,
+    pub handlers: Handlers,
     pub id: Option<String>,
 }
 
-impl<A: App, F: FnOnce(NodeData<A>) -> Node<A>> NewWidgetFn<A, F> {
+impl<F: FnOnce(NodeData) -> Node> NewWidgetFn<F> {
     pub fn new(func: F) -> Self {
         Self {
             func,
@@ -1013,8 +1007,8 @@ impl<A: App, F: FnOnce(NodeData<A>) -> Node<A>> NewWidgetFn<A, F> {
     }
 }
 
-impl<A: App, F: FnOnce(NodeData<A>) -> Node<A>> Widget<A> for NewWidgetFn<A, F> {
-    fn render(self, children: Vec<Node<A>>) -> Node<A> {
+impl<F: FnOnce(NodeData) -> Node> Widget for NewWidgetFn<F> {
+    fn render(self, children: Vec<Node>) -> Node {
         let node = (self.func)(NodeData {
             style: self.style,
             handlers: self.handlers,
@@ -1027,23 +1021,20 @@ impl<A: App, F: FnOnce(NodeData<A>) -> Node<A>> Widget<A> for NewWidgetFn<A, F> 
     }
 }
 
-pub trait Widget<A: App> {
-    fn render(self, children: Vec<Node<A>>) -> Node<A>;
+pub trait Widget {
+    fn render(self, children: Vec<Node>) -> Node;
 }
 
-impl<A: App> Widget<A> for Node<A> {
-    fn render(self, children: Vec<Node<A>>) -> Node<A> {
+impl Widget for Node {
+    fn render(self, children: Vec<Node>) -> Node {
         self.children(children)
     }
 }
 
-pub struct WidgetFn<A: App, F: FnOnce(Vec<Node<A>>) -> Node<A>>(
-    pub F,
-    pub std::marker::PhantomData<A>,
-);
+pub struct WidgetFn<F: FnOnce(Vec<Node>) -> Node>(pub F);
 
-impl<A: App, F: FnOnce(Vec<Node<A>>) -> Node<A>> Widget<A> for WidgetFn<A, F> {
-    fn render(self, children: Vec<Node<A>>) -> Node<A> {
+impl<F: FnOnce(Vec<Node>) -> Node> Widget for WidgetFn<F> {
+    fn render(self, children: Vec<Node>) -> Node {
         (self.0)(children)
     }
 }
@@ -1052,6 +1043,7 @@ impl<A: App, F: FnOnce(Vec<Node<A>>) -> Node<A>> Widget<A> for WidgetFn<A, F> {
 mod tests {
     use super::*;
     use crate::color::Color;
+    use crate::get_app;
     use crate::input::{ButtonState, InputState, MouseButton};
     use glam::Vec2;
 
@@ -1076,16 +1068,16 @@ mod tests {
         }
     }
 
-    impl App for TestApp {
-        fn update(&mut self, _state: &mut State) {}
-    }
-
     fn make_state() -> State {
         State::new_for_test(256, 256)
     }
 
-    fn eval(node: Node<TestApp>, app: &mut TestApp, state: &mut State) {
-        node.layout(256, 256, state).evaluate(app, state)
+    fn eval(node: Node, app: &mut TestApp, state: &mut State) {
+        crate::context::register_app(app as *mut TestApp);
+        crate::context::register_state(state as *mut State);
+        crate::context::set_phase(crate::context::Phase::Evaluating);
+        node.layout(256, 256, state).evaluate();
+        crate::context::set_phase(crate::context::Phase::Idle);
     }
 
     fn input_at(x: f32, y: f32) -> InputState {
@@ -1115,15 +1107,15 @@ mod tests {
 
     #[test]
     fn empty_node_zero_size() {
-        let node: Node<TestApp> = row();
-        let resolved: ResolvedNode<_> = node.layout(256, 256, &State::new_for_test(256, 256));
+        let node: Node = row();
+        let resolved: ResolvedNode = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 0);
         assert_eq!(resolved.rect.height(), 0);
     }
 
     #[test]
     fn explicit_size() {
-        let node: Node<TestApp> = row().size(10, 5);
+        let node: Node = row().size(10, 5);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 10);
         assert_eq!(resolved.rect.height(), 5);
@@ -1132,7 +1124,7 @@ mod tests {
     #[test]
     fn paint_sizes_to_drawable_bounding_box() {
         let cells = vec![Cell::new(0.0, 0.0), Cell::new(3.0, 4.0)];
-        let node: Node<TestApp> = paint(cells);
+        let node: Node = paint(cells);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 4);
         assert_eq!(resolved.rect.height(), 5);
@@ -1140,7 +1132,7 @@ mod tests {
 
     #[test]
     fn paint_with_empty_drawable_has_zero_size_and_evaluates() {
-        let node: Node<TestApp> = paint(Vec::<Cell>::new());
+        let node: Node = paint(Vec::<Cell>::new());
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 0);
         assert_eq!(resolved.rect.height(), 0);
@@ -1152,7 +1144,7 @@ mod tests {
 
     #[test]
     fn fill_w_takes_available() {
-        let node: Node<TestApp> = row().fill_w().height(10);
+        let node: Node = row().fill_w().height(10);
         let resolved = node.layout(100, 256, &State::new_for_test(100, 256));
         assert_eq!(resolved.rect.width(), 100);
         assert_eq!(resolved.rect.height(), 10);
@@ -1160,7 +1152,7 @@ mod tests {
 
     #[test]
     fn column_layout_stacks_vertically() {
-        let node: Node<TestApp> = col().children(vec![
+        let node: Node = col().children(vec![
             row().size(10, 5),
             row().size(10, 5),
             row().size(10, 5),
@@ -1175,7 +1167,7 @@ mod tests {
 
     #[test]
     fn row_layout_stacks_horizontally() {
-        let node: Node<TestApp> = row().children(vec![row().size(10, 5), row().size(10, 5)]);
+        let node: Node = row().children(vec![row().size(10, 5), row().size(10, 5)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 20);
         assert_eq!(resolved.rect.height(), 5);
@@ -1185,7 +1177,7 @@ mod tests {
 
     #[test]
     fn gap_between_children() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .gap(4)
             .children(vec![row().size(10, 5), row().size(10, 5)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
@@ -1195,7 +1187,7 @@ mod tests {
 
     #[test]
     fn padding_offsets_children() {
-        let node: Node<TestApp> = col().padding(3).children(vec![row().size(4, 4)]);
+        let node: Node = col().padding(3).children(vec![row().size(4, 4)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.rect.width(), 10); // 4 + 3*2
         assert_eq!(resolved.rect.height(), 10);
@@ -1205,7 +1197,7 @@ mod tests {
 
     #[test]
     fn nested_layout() {
-        let node: Node<TestApp> = col().padding(2).children(vec![
+        let node: Node = col().padding(2).children(vec![
             row()
                 .gap(2)
                 .children(vec![row().size(5, 5), row().size(5, 5)]),
@@ -1219,7 +1211,7 @@ mod tests {
 
     #[test]
     fn absolute_position_skips_cursor() {
-        let node: Node<TestApp> = col().children(vec![
+        let node: Node = col().children(vec![
             row().size(10, 10),
             row().id("abs").size(5, 5).absolute(50.0, 50.0),
             row().id("flow2").size(10, 10),
@@ -1237,7 +1229,7 @@ mod tests {
 
     #[test]
     fn relative_position() {
-        let node: Node<TestApp> = col()
+        let node: Node = col()
             .padding(5)
             .children(vec![row().size(10, 10).relative(3.0, 3.0)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
@@ -1251,7 +1243,7 @@ mod tests {
 
     #[test]
     fn colored_node_emits_cells() {
-        let node: Node<TestApp> = row().size(3, 2).color(RED);
+        let node: Node = row().size(3, 2).color(RED);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
@@ -1263,7 +1255,7 @@ mod tests {
 
     #[test]
     fn uncolored_node_emits_no_cells() {
-        let node: Node<TestApp> = row().size(3, 2);
+        let node: Node = row().size(3, 2);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(100.0, 100.0);
@@ -1274,7 +1266,7 @@ mod tests {
 
     #[test]
     fn hover_color_on_hover() {
-        let node: Node<TestApp> = row().size(10, 10).color(RED).hover_color(BLUE);
+        let node: Node = row().size(10, 10).color(RED).hover_color(BLUE);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(5.0, 5.0); // inside
@@ -1286,7 +1278,7 @@ mod tests {
 
     #[test]
     fn normal_color_when_not_hovered() {
-        let node: Node<TestApp> = row().size(10, 10).color(RED).hover_color(BLUE);
+        let node: Node = row().size(10, 10).color(RED).hover_color(BLUE);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(50.0, 50.0); // outside
@@ -1303,8 +1295,8 @@ mod tests {
         let node = row()
             .size(10, 10)
             .color(RED)
-            .on_click(|app: &mut TestApp, _state| {
-                app.clicked = true;
+            .on_click(|| {
+                get_app::<TestApp>().with_mut(|app| app.clicked = true);
             });
         let mut app = TestApp::new();
         let mut state = make_state();
@@ -1321,8 +1313,8 @@ mod tests {
         let node = row()
             .size(10, 10)
             .color(RED)
-            .on_click(|app: &mut TestApp, _state| {
-                app.clicked = true;
+            .on_click(|| {
+                get_app::<TestApp>().with_mut(|app| app.clicked = true);
             });
         let mut app = TestApp::new();
         let mut state = make_state();
@@ -1336,17 +1328,15 @@ mod tests {
 
     #[test]
     fn on_hover_fires_on_parent_and_child() {
-        let node: Node<TestApp> = col()
+        let node: Node = col()
             .size(20, 20)
             .color(GREY)
-            .on_hover(|app: &mut TestApp, _state| {
-                app.count += 1;
+            .on_hover(|| {
+                get_app::<TestApp>().with_mut(|app| app.count += 1);
             })
-            .children(vec![row().size(10, 10).color(RED).on_hover(
-                |app: &mut TestApp, _state| {
-                    app.count += 10;
-                },
-            )]);
+            .children(vec![row().size(10, 10).color(RED).on_hover(|| {
+                get_app::<TestApp>().with_mut(|app| app.count += 10);
+            })]);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_at(5.0, 5.0); // inside child (and parent)
@@ -1359,17 +1349,15 @@ mod tests {
 
     #[test]
     fn action_deepest_wins() {
-        let node: Node<TestApp> = col()
+        let node: Node = col()
             .size(20, 20)
             .color(GREY)
-            .on_click(|app: &mut TestApp, _state| {
-                app.count += 1;
+            .on_click(|| {
+                get_app::<TestApp>().with_mut(|app| app.count += 1);
             })
-            .children(vec![row().size(10, 10).color(RED).on_click(
-                |app: &mut TestApp, _state| {
-                    app.count += 10;
-                },
-            )]);
+            .children(vec![row().size(10, 10).color(RED).on_click(|| {
+                get_app::<TestApp>().with_mut(|app| app.count += 10);
+            })]);
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(5.0, 5.0); // inside child
@@ -1382,11 +1370,11 @@ mod tests {
 
     #[test]
     fn action_falls_through_to_parent_if_child_has_no_handler() {
-        let node: Node<TestApp> = col()
+        let node: Node = col()
             .size(20, 20)
             .color(GREY)
-            .on_click(|app: &mut TestApp, _state| {
-                app.count += 1;
+            .on_click(|| {
+                get_app::<TestApp>().with_mut(|app| app.count += 1);
             })
             .children(vec![
                 row().size(10, 10).color(RED), // no on_click
@@ -1403,7 +1391,7 @@ mod tests {
 
     #[test]
     fn style_inheritance() {
-        let node: Node<TestApp> = col().color(RED).children(vec![
+        let node: Node = col().color(RED).children(vec![
             row().size(5, 5), // inherits RED
         ]);
         let mut app = TestApp::new();
@@ -1419,7 +1407,7 @@ mod tests {
 
     #[test]
     fn style_override() {
-        let node: Node<TestApp> = col().color(RED).children(vec![
+        let node: Node = col().color(RED).children(vec![
             row().size(5, 5).color(BLUE), // overrides
         ]);
         let mut app = TestApp::new();
@@ -1433,7 +1421,7 @@ mod tests {
 
     #[test]
     fn gap_applied_directly() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .color(GREEN)
             .gap(4)
             .children(vec![row().size(5, 5), row().size(5, 5)]);
@@ -1447,8 +1435,8 @@ mod tests {
         let node = row()
             .size(10, 10)
             .color(RED)
-            .on_click(|app: &mut TestApp, _state| {
-                app.clicked = true;
+            .on_click(|| {
+                get_app::<TestApp>().with_mut(|app| app.clicked = true);
             });
         let mut app = TestApp::new();
         let mut state = make_state();
@@ -1463,17 +1451,16 @@ mod tests {
     #[test]
     fn positioned_node_tested_before_flow() {
         let node = col().size(50, 50).children(vec![
+            row().size(20, 20).color(RED).on_click(|| {
+                get_app::<TestApp>().with_mut(|app| app.count += 1);
+            }),
             row()
                 .size(20, 20)
-                .color(RED)
-                .on_click(|app: &mut TestApp, _state| {
-                    app.count += 1;
+                .color(BLUE)
+                .absolute(0.0, 0.0)
+                .on_click(|| {
+                    get_app::<TestApp>().with_mut(|app| app.count += 10);
                 }),
-            row().size(20, 20).color(BLUE).absolute(0.0, 0.0).on_click(
-                |app: &mut TestApp, _state| {
-                    app.count += 10;
-                },
-            ),
         ]);
         let mut app = TestApp::new();
         let mut state = make_state();
@@ -1490,8 +1477,8 @@ mod tests {
         let node = row()
             .size(20, 20)
             .color(RED)
-            .on_scroll(|app: &mut TestApp, _state, delta| {
-                app.scroll_amount = delta;
+            .on_scroll(|delta| {
+                get_app::<TestApp>().with_mut(|app| app.scroll_amount = delta);
             });
         let mut app = TestApp::new();
         let mut state = make_state();
@@ -1506,14 +1493,13 @@ mod tests {
 
     #[test]
     fn button_convenience() {
-        let node =
-            pane()
-                .size(8, 4)
-                .color(RED)
-                .hover_color(BLUE)
-                .on_click(|app: &mut TestApp, _state| {
-                    app.clicked = true;
-                });
+        let node = pane()
+            .size(8, 4)
+            .color(RED)
+            .hover_color(BLUE)
+            .on_click(|| {
+                get_app::<TestApp>().with_mut(|app| app.clicked = true);
+            });
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(4.0, 2.0);
@@ -1527,8 +1513,8 @@ mod tests {
 
     #[test]
     fn row_col_convenience() {
-        let r: Node<TestApp> = row().children(vec![row().size(5, 10), row().size(5, 10)]);
-        let c: Node<TestApp> = col().children(vec![row().size(10, 5), row().size(10, 5)]);
+        let r: Node = row().children(vec![row().size(5, 10), row().size(5, 10)]);
+        let c: Node = col().children(vec![row().size(10, 5), row().size(10, 5)]);
         let r_resolved = r.layout(256, 256, &State::new_for_test(256, 256));
         let c_resolved = c.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(r_resolved.rect.width(), 10);
@@ -1542,7 +1528,7 @@ mod tests {
     #[test]
     fn macro_simple_nodes() {
         use crate::ui::widget;
-        let children: Vec<Node<TestApp>> = widget! { TestApp;
+        let children: Vec<Node> = widget! {
             row().size(5, 5).color(RED);
             row().size(3, 3).color(BLUE);
         };
@@ -1552,7 +1538,7 @@ mod tests {
     #[test]
     fn macro_nested_children() {
         use crate::ui::widget;
-        let node: Node<TestApp> = widget! { TestApp;
+        let node: Node = widget! {
             row().gap(4) {
                 row().size(5, 5).color(RED);
                 row().size(5, 5).color(BLUE);
@@ -1567,7 +1553,7 @@ mod tests {
     fn macro_if_control_flow() {
         use crate::ui::widget;
         let show = true;
-        let children: Vec<Node<TestApp>> = widget! { TestApp;
+        let children: Vec<Node> = widget! {
             row().size(5, 5).color(RED);
             @ if show {
                 row().size(3, 3).color(BLUE);
@@ -1576,7 +1562,7 @@ mod tests {
         assert_eq!(children.len(), 2);
 
         let show = false;
-        let children: Vec<Node<TestApp>> = widget! { TestApp;
+        let children: Vec<Node> = widget! {
             row().size(5, 5).color(RED);
             @ if show {
                 row().size(3, 3).color(BLUE);
@@ -1589,7 +1575,7 @@ mod tests {
     fn macro_for_loop() {
         use crate::ui::widget;
         let colors = [RED, BLUE, GREEN];
-        let children: Vec<Node<TestApp>> = widget! { TestApp;
+        let children: Vec<Node> = widget! {
             @ for c in colors {
                 row().size(5, 5).color(c);
             }
@@ -1600,7 +1586,7 @@ mod tests {
     #[test]
     fn macro_raw_escape() {
         use crate::ui::widget;
-        let children: Vec<Node<TestApp>> = widget! { TestApp;
+        let children: Vec<Node> = widget! {
             row().size(5, 5).color(RED);
             |c| {
                 c.push(row().size(3, 3).color(BLUE).into());
@@ -1613,17 +1599,17 @@ mod tests {
     #[test]
     fn macro_with_handlers() {
         use crate::ui::widget;
-        let child: Node<TestApp> = widget! { TestApp;
+        let child: Node = widget! {
             pane()
                 .size(5, 3)
                 .color(RED)
                 .hover_color(BLUE)
-                .on_click(|app: &mut TestApp, _state| { app.clicked = true; });
+                .on_click(|| { get_app::<TestApp>().with_mut(|app| app.clicked = true); });
         };
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(2.0, 1.0);
-        let node = col::<TestApp>().children(vec![child]);
+        let node = col().children(vec![child]);
 
         state.set_input(input);
         eval(node, &mut app, &mut state);
@@ -1634,7 +1620,7 @@ mod tests {
     #[test]
     fn macro_deeply_nested() {
         use crate::ui::widget;
-        let node: Node<TestApp> = widget! { TestApp;
+        let node: Node = widget! {
             col().padding(2) {
                 row().gap(2) {
                     row().size(5, 5).color(RED);
@@ -1654,7 +1640,7 @@ mod tests {
     fn macro_for_with_expr_iter() {
         use crate::ui::widget;
         let items = vec![(5, RED), (3, BLUE), (7, GREEN)];
-        let children: Vec<Node<TestApp>> = widget! { TestApp;
+        let children: Vec<Node> = widget! {
             @ for (size, color) in items.iter().copied() {
                 row().size(size, size).color(color)
             }
@@ -1666,7 +1652,7 @@ mod tests {
 
     #[test]
     fn text_node_intrinsic_size() {
-        let node: Node<TestApp> = col().children(vec![text("Hi")]);
+        let node: Node = col().children(vec![text("Hi")]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         assert!(child.rect.width() > 0);
@@ -1675,10 +1661,10 @@ mod tests {
 
     #[test]
     fn text_node_with_padding() {
-        let node: Node<TestApp> = col().children(vec![text("A").padding(3)]);
+        let node: Node = col().children(vec![text("A").padding(3)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
-        let no_pad: Node<TestApp> = col().children(vec![text("A")]);
+        let no_pad: Node = col().children(vec![text("A")]);
         let no_pad_resolved = no_pad.layout(256, 256, &State::new_for_test(256, 256));
         let no_pad_child = no_pad_resolved.find_child_by_index(0).unwrap();
         assert_eq!(child.rect.width(), no_pad_child.rect.width() + 6);
@@ -1687,7 +1673,7 @@ mod tests {
 
     // #[test]
     // fn text_node_omits_uncolored_cells() {
-    //     let node: Node<TestApp> = col().children(vec![text("I")]);
+    //     let node: Node = col().children(vec![text("I")]);
     //     let mut app = TestApp::new();
     //     let mut state = make_state();
     //     state.set_input(input_at(100.0, 100.0));
@@ -1697,24 +1683,24 @@ mod tests {
 
     #[test]
     fn text_inherits_text_color() {
-        let node: Node<TestApp> = col().text_color(RED).children(vec![text("I")]);
+        let node: Node = col().text_color(RED).children(vec![text("I")]);
         let mut app = TestApp::new();
         let mut state = make_state();
         state.set_input(input_at(100.0, 100.0));
-        node.layout(256, 256, &state).evaluate(&mut app, &mut state);
+        eval(node, &mut app, &mut state);
         assert!(!state.get_cells().is_empty());
         assert_eq!(state.get_cells()[0].color, RED.to_array());
     }
 
     #[test]
     fn text_own_color_overrides_inherited() {
-        let node: Node<TestApp> = col()
+        let node: Node = col()
             .text_color(RED)
             .children(vec![text("I").text_color(BLUE)]);
         let mut app = TestApp::new();
         let mut state = make_state();
         state.set_input(input_at(100.0, 100.0));
-        node.layout(256, 256, &state).evaluate(&mut app, &mut state);
+        eval(node, &mut app, &mut state);
         assert!(!state.get_cells().is_empty());
         assert_eq!(state.get_cells()[0].color, BLUE.to_array());
     }
@@ -1722,7 +1708,7 @@ mod tests {
     #[test]
     fn text_inherits_font() {
         use crate::font::TOM_THUMB_3X5;
-        let node: Node<TestApp> = col().font(&TOM_THUMB_3X5).children(vec![text("A")]);
+        let node: Node = col().font(&TOM_THUMB_3X5).children(vec![text("A")]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         match &resolved.content {
             NodeContent::Children(children) => match &children[0].content {
@@ -1736,7 +1722,7 @@ mod tests {
     #[test]
     fn text_in_macro() {
         use crate::ui::widget;
-        let _node: Node<TestApp> = widget! { TestApp;
+        let _node: Node = widget! {
             col().text_color(RED) {
                 text("hello");
             }
@@ -1747,7 +1733,7 @@ mod tests {
 
     #[test]
     fn fill_children_share_space_equally() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .width(100)
             .children(vec![pane().fill_w().height(10), pane().fill_w().height(10)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
@@ -1758,7 +1744,7 @@ mod tests {
 
     #[test]
     fn fill_children_share_remaining_after_fixed() {
-        let node: Node<TestApp> = row().width(100).children(vec![
+        let node: Node = row().width(100).children(vec![
             pane().size(20, 10),
             pane().fill_w().height(10),
             pane().fill_w().height(10),
@@ -1772,7 +1758,7 @@ mod tests {
 
     #[test]
     fn fill_with_gap_accounts_for_gaps() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .width(100)
             .gap(10)
             .children(vec![pane().fill_w().height(10), pane().fill_w().height(10)]);
@@ -1785,7 +1771,7 @@ mod tests {
 
     #[test]
     fn fill_in_column() {
-        let node: Node<TestApp> = col()
+        let node: Node = col()
             .height(60)
             .children(vec![pane().size(10, 20), pane().fill_h().width(10)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
@@ -1796,7 +1782,7 @@ mod tests {
 
     #[test]
     fn three_fill_children_equal() {
-        let node: Node<TestApp> = row().width(90).children(vec![
+        let node: Node = row().width(90).children(vec![
             pane().fill_w().height(10),
             pane().fill_w().height(10),
             pane().fill_w().height(10),
@@ -1810,7 +1796,7 @@ mod tests {
     #[test]
     fn fill_overflow_shrinks_siblings() {
         // Child with fixed content wider than equal share forces siblings smaller
-        let node: Node<TestApp> = row().width(100).children(vec![
+        let node: Node = row().width(100).children(vec![
             pane().fill_w().height(10).children(vec![
                 pane().size(60, 10), // content forces 60, equal share would be 50
             ]),
@@ -1824,7 +1810,7 @@ mod tests {
 
     #[test]
     fn fill_overflow_multiple_siblings() {
-        let node: Node<TestApp> = row().width(120).children(vec![
+        let node: Node = row().width(120).children(vec![
             pane().fill_w().height(10).children(vec![
                 pane().size(80, 10), // overflows the 40 equal share
             ]),
@@ -1840,7 +1826,7 @@ mod tests {
 
     #[test]
     fn fill_single_nested_fill() {
-        let node: Node<TestApp> = row().width(120).children(vec![
+        let node: Node = row().width(120).children(vec![
             row()
                 .height(10)
                 .children(vec![row().fill_w(), row().fill_w()]),
@@ -1875,7 +1861,7 @@ mod tests {
 
     #[test]
     fn fill_double_nested_fill() {
-        let node: Node<TestApp> = row().width(120).children(vec![
+        let node: Node = row().width(120).children(vec![
             row().height(10).children(vec![
                 row().width(10),
                 row()
@@ -1948,7 +1934,7 @@ mod tests {
 
     #[test]
     fn fill_cross_axis_in_row() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .size(100, 60)
             .children(vec![pane().width(50).fill_h(), pane().width(50).height(30)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
@@ -1958,7 +1944,7 @@ mod tests {
 
     #[test]
     fn fill_cross_axis_in_column() {
-        let node: Node<TestApp> = col().size(60, 100).children(vec![
+        let node: Node = col().size(60, 100).children(vec![
             pane().fill_w().height(50),
             pane().width(30).height(50),
         ]);
@@ -1969,7 +1955,7 @@ mod tests {
 
     #[test]
     fn fill_cross_axis_nested_in_row() {
-        let node: Node<TestApp> = row().size(100, 60).children(vec![
+        let node: Node = row().size(100, 60).children(vec![
             pane().width(50).children(vec![pane().fill_h()]),
             pane().width(50).height(30),
         ]);
@@ -1989,7 +1975,7 @@ mod tests {
 
     #[test]
     fn fill_cross_axis_nested_in_column() {
-        let node: Node<TestApp> = col().size(60, 100).children(vec![
+        let node: Node = col().size(60, 100).children(vec![
             pane().height(50).children(vec![pane().fill_w()]),
             pane().width(30).height(50),
         ]);
@@ -2011,7 +1997,7 @@ mod tests {
 
     #[test]
     fn justify_start_is_default() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .width(100)
             .children(vec![pane().size(20, 10), pane().size(20, 10)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
@@ -2021,7 +2007,7 @@ mod tests {
 
     #[test]
     fn justify_center_row() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .width(100)
             .justify_center()
             .children(vec![pane().size(20, 10), pane().size(20, 10)]);
@@ -2033,7 +2019,7 @@ mod tests {
 
     #[test]
     fn justify_center_column() {
-        let node: Node<TestApp> = col()
+        let node: Node = col()
             .height(100)
             .justify_center()
             .children(vec![pane().size(10, 20), pane().size(10, 20)]);
@@ -2045,7 +2031,7 @@ mod tests {
 
     #[test]
     fn justify_end_row() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .width(100)
             .justify_end()
             .children(vec![pane().size(20, 10), pane().size(20, 10)]);
@@ -2057,7 +2043,7 @@ mod tests {
 
     #[test]
     fn justify_end_column() {
-        let node: Node<TestApp> = col()
+        let node: Node = col()
             .height(100)
             .justify_end()
             .children(vec![pane().size(10, 20), pane().size(10, 20)]);
@@ -2069,7 +2055,7 @@ mod tests {
 
     #[test]
     fn justify_space_between_row() {
-        let node: Node<TestApp> = row().width(100).justify_full().children(vec![
+        let node: Node = row().width(100).justify_full().children(vec![
             pane().size(20, 10),
             pane().size(20, 10),
             pane().size(20, 10),
@@ -2083,7 +2069,7 @@ mod tests {
 
     #[test]
     fn justify_space_between_single_child() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .width(100)
             .justify_full()
             .children(vec![pane().size(20, 10)]);
@@ -2094,7 +2080,7 @@ mod tests {
 
     #[test]
     fn justify_center_overflow() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .width(40)
             .justify_center()
             .children(vec![pane().size(30, 10), pane().size(30, 10)]);
@@ -2106,7 +2092,7 @@ mod tests {
 
     #[test]
     fn justify_center_with_gap() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .width(100)
             .gap(10)
             .justify_center()
@@ -2121,14 +2107,14 @@ mod tests {
 
     #[test]
     fn align_start_is_default() {
-        let node: Node<TestApp> = row().size(100, 60).children(vec![pane().size(20, 20)]);
+        let node: Node = row().size(100, 60).children(vec![pane().size(20, 20)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().rect.y(), 0.0);
     }
 
     #[test]
     fn align_center_row() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .size(100, 60)
             .align_center()
             .children(vec![pane().size(20, 20)]);
@@ -2139,7 +2125,7 @@ mod tests {
 
     #[test]
     fn align_center_column() {
-        let node: Node<TestApp> = col()
+        let node: Node = col()
             .size(60, 100)
             .align_center()
             .children(vec![pane().size(20, 20)]);
@@ -2150,7 +2136,7 @@ mod tests {
 
     #[test]
     fn align_end_row() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .size(100, 60)
             .align_end()
             .children(vec![pane().size(20, 20)]);
@@ -2161,7 +2147,7 @@ mod tests {
 
     #[test]
     fn align_end_column() {
-        let node: Node<TestApp> = col()
+        let node: Node = col()
             .size(60, 100)
             .align_end()
             .children(vec![pane().size(20, 20)]);
@@ -2172,7 +2158,7 @@ mod tests {
 
     #[test]
     fn align_center_multiple_children() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .size(100, 60)
             .align_center()
             .children(vec![pane().size(20, 20), pane().size(20, 40)]);
@@ -2184,7 +2170,7 @@ mod tests {
 
     #[test]
     fn justify_and_align_combined() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .size(100, 60)
             .justify_center()
             .align_center()
@@ -2198,7 +2184,7 @@ mod tests {
 
     #[test]
     fn justify_and_align_with_padding() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .size(100, 60)
             .padding(10)
             .justify_center()
@@ -2215,7 +2201,7 @@ mod tests {
 
     #[test]
     fn text_fixed_size_larger_than_intrinsic() {
-        let node: Node<TestApp> = col().children(vec![text("A").size(50, 30)]);
+        let node: Node = col().children(vec![text("A").size(50, 30)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         assert_eq!(child.rect.width(), 50);
@@ -2224,7 +2210,7 @@ mod tests {
 
     #[test]
     fn text_fill_w_takes_available() {
-        let node: Node<TestApp> = row().width(100).children(vec![text("A").fill_w()]);
+        let node: Node = row().width(100).children(vec![text("A").fill_w()]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         assert_eq!(child.rect.width(), 100);
@@ -2232,7 +2218,7 @@ mod tests {
 
     #[test]
     fn text_justify_start_default() {
-        let node: Node<TestApp> = col().children(vec![text("A").width(50)]);
+        let node: Node = col().children(vec![text("A").width(50)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
@@ -2241,7 +2227,7 @@ mod tests {
 
     #[test]
     fn text_justify_center() {
-        let node: Node<TestApp> = col().children(vec![text("A").width(50).justify_center()]);
+        let node: Node = col().children(vec![text("A").width(50).justify_center()]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
@@ -2252,7 +2238,7 @@ mod tests {
 
     #[test]
     fn text_justify_end() {
-        let node: Node<TestApp> = col().children(vec![text("A").width(50).justify_end()]);
+        let node: Node = col().children(vec![text("A").width(50).justify_end()]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
@@ -2263,7 +2249,7 @@ mod tests {
 
     #[test]
     fn text_align_center() {
-        let node: Node<TestApp> = col().children(vec![text("A").size(50, 30).align_center()]);
+        let node: Node = col().children(vec![text("A").size(50, 30).align_center()]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
@@ -2274,7 +2260,7 @@ mod tests {
 
     #[test]
     fn text_align_end() {
-        let node: Node<TestApp> = col().children(vec![text("A").size(50, 30).align_end()]);
+        let node: Node = col().children(vec![text("A").size(50, 30).align_end()]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
@@ -2285,7 +2271,7 @@ mod tests {
 
     #[test]
     fn text_justify_center_align_center() {
-        let node: Node<TestApp> =
+        let node: Node =
             col().children(vec![text("A").size(50, 30).justify_center().align_center()]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
@@ -2298,7 +2284,7 @@ mod tests {
 
     #[test]
     fn text_justify_center_with_padding() {
-        let node: Node<TestApp> =
+        let node: Node =
             col().children(vec![text("A").width(50).padding(5).justify_center()]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
@@ -2311,7 +2297,7 @@ mod tests {
 
     #[test]
     fn text_positioned_in_parent_with_justify() {
-        let node: Node<TestApp> = row()
+        let node: Node = row()
             .width(100)
             .justify_center()
             .children(vec![text("A").width(40).justify_center()]);
@@ -2330,7 +2316,7 @@ mod tests {
 
     #[test]
     fn id_positional_by_index() {
-        let node: Node<TestApp> = col().children(vec![
+        let node: Node = col().children(vec![
             pane().size(10, 10),
             pane().size(10, 10),
             pane().size(10, 10),
@@ -2343,7 +2329,7 @@ mod tests {
 
     #[test]
     fn id_explicit_scoped_under_parent() {
-        let node: Node<TestApp> = col().children(vec![
+        let node: Node = col().children(vec![
             pane().id("foo").size(10, 10),
             pane().id("bar").size(10, 10),
         ]);
@@ -2354,7 +2340,7 @@ mod tests {
 
     #[test]
     fn id_nested_hierarchy() {
-        let node: Node<TestApp> = col().id("root").children(vec![
+        let node: Node = col().id("root").children(vec![
             row()
                 .id("row1")
                 .children(vec![pane().id("a").size(5, 5), pane().size(5, 5)]),
@@ -2371,7 +2357,7 @@ mod tests {
 
     #[test]
     fn id_absolute_uses_abs_prefix() {
-        let node: Node<TestApp> = col().children(vec![
+        let node: Node = col().children(vec![
             pane().size(10, 10),
             pane().size(5, 5).absolute(50.0, 50.0),
         ]);
@@ -2381,14 +2367,14 @@ mod tests {
 
     #[test]
     fn id_relative_uses_rel_prefix() {
-        let node: Node<TestApp> = col().children(vec![pane().size(10, 10).relative(3.0, 3.0)]);
+        let node: Node = col().children(vec![pane().size(10, 10).relative(3.0, 3.0)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_index(0).unwrap().id(), "0/rel_0");
     }
 
     #[test]
     fn id_explicit_on_absolute_still_scoped() {
-        let node: Node<TestApp> =
+        let node: Node =
             col().children(vec![pane().id("drag").size(5, 5).absolute(10.0, 10.0)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_id("drag").unwrap().id(), "0/drag");
@@ -2396,7 +2382,7 @@ mod tests {
 
     #[test]
     fn id_find_child_by_id_matches_suffix() {
-        let node: Node<TestApp> = col()
+        let node: Node = col()
             .id("root")
             .children(vec![pane().id("target").size(5, 5), pane().size(5, 5)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
@@ -2407,10 +2393,10 @@ mod tests {
 
     #[test]
     fn id_reusable_widget_unique_per_call_site() {
-        fn widget() -> Node<TestApp> {
+        fn widget() -> Node {
             pane().id("inner").size(5, 5)
         }
-        let node: Node<TestApp> = col().children(vec![
+        let node: Node = col().children(vec![
             row().id("site_a").children(vec![widget()]),
             row().id("site_b").children(vec![widget()]),
         ]);
@@ -2426,9 +2412,9 @@ mod tests {
 
     #[test]
     fn id_stable_across_position_changes() {
-        let node1: Node<TestApp> =
+        let node1: Node =
             col().children(vec![pane().id("drag").size(5, 5).absolute(10.0, 10.0)]);
-        let node2: Node<TestApp> =
+        let node2: Node =
             col().children(vec![pane().id("drag").size(5, 5).absolute(99.0, 99.0)]);
         let r1 = node1.layout(256, 256, &State::new_for_test(256, 256));
         let r2 = node2.layout(256, 256, &State::new_for_test(256, 256));
@@ -2442,7 +2428,7 @@ mod tests {
     #[test]
     fn id_macro_injects_line_based_ids() {
         use crate::ui::widget;
-        let node: Node<TestApp> = widget! { TestApp;
+        let node: Node = widget! {
             col() {
                 pane().size(10, 10)
                 pane().size(20, 20)
@@ -2462,8 +2448,8 @@ mod tests {
     fn id_macro_stable_across_frames() {
         use crate::ui::widget;
         // Simulates two "frames" — same widget! produces same IDs
-        let build = || -> Node<TestApp> {
-            widget! { TestApp;
+        let build = || -> Node {
+            widget! {
                 col() {
                     pane().size(10, 10)
                     pane().size(20, 20)
@@ -2480,7 +2466,7 @@ mod tests {
     #[test]
     fn id_macro_explicit_id_overrides_injection() {
         use crate::ui::widget;
-        let node: Node<TestApp> = widget! { TestApp;
+        let node: Node = widget! {
             col() {
                 pane().id("custom").size(10, 10)
             }
@@ -2494,7 +2480,7 @@ mod tests {
     fn id_macro_for_loop_unique_per_iteration() {
         use crate::ui::widget;
         let items = vec![1, 2, 3];
-        let node: Node<TestApp> = widget! { TestApp;
+        let node: Node = widget! {
             col() {
                 @ for _item in items.iter() {
                     pane().size(10, 10)
@@ -2514,9 +2500,9 @@ mod tests {
     #[test]
     fn id_macro_for_loop_stable_across_frames() {
         use crate::ui::widget;
-        let build = || -> Node<TestApp> {
+        let build = || -> Node {
             let items = vec![1, 2, 3];
-            widget! { TestApp;
+            widget! {
                 col() {
                     @ for _item in items.iter() {
                         pane().size(10, 10)
@@ -2536,12 +2522,12 @@ mod tests {
     #[test]
     fn id_macro_nested_widget_fn_unique_per_site() {
         use crate::ui::widget;
-        fn my_widget() -> Node<TestApp> {
-            widget! { TestApp;
+        fn my_widget() -> Node {
+            widget! {
                 pane().id("w").size(5, 5)
             }
         }
-        let node: Node<TestApp> = widget! { TestApp;
+        let node: Node = widget! {
             col() {
                 row().id("a") { my_widget() }
                 row().id("b") { my_widget() }

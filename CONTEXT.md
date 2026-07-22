@@ -55,12 +55,16 @@ _Avoid_: Envelope (when referring to the concept generically), controller
 
 
 **Node**:
-The fundamental unit of the declarative UI tree. Has a style (sizing, axis, gap, padding, justify, align, colors), optional event handlers, and content (either child Nodes or text). Built via `pane()`, `row()`, `col()`, `text()` constructors or the `widget!` macro. Resolved through a three-pass layout (pre-process → size → position) then evaluated for hit-testing and rendering. Rebuilt each frame; stable IDs (auto-generated or user-provided) maintain interaction continuity.
+The fundamental unit of the declarative UI tree. Not generic over the App type — event handlers take no App/State parameters, so the same Node/layout/hit-testing code works unchanged across projects. Has a style (sizing, axis, gap, padding, justify, align, colors), optional event handlers, and content (either child Nodes or text). Built via `pane()`, `row()`, `col()`, `text()` constructors or the `widget!` macro. Resolved through a three-pass layout (pre-process → size → position) then evaluated for hit-testing and rendering. Rebuilt each frame; stable IDs (auto-generated or user-provided) maintain interaction continuity.
 _Avoid_: Pane (legacy term), component, element (ambiguous with the world-space Element concept)
 
 **Widget**:
-A composable **Node** constructor. Defined by a trait (`render(self, children) -> Node<A>`). Built-in constructors: `pane()`, `row()`, `col()`, `text()`. User-extensible via `#[widget_fn]` macro which generates a function returning a Node with custom parameters and children.
+A composable **Node** constructor. Defined by a trait (`render(self, children) -> Node`). Built-in constructors: `pane()`, `row()`, `col()`, `text()`. User-extensible via `#[widget_fn]` macro which generates a function returning a Node with custom parameters and children.
 _Avoid_: Component, control, element
+
+**get_app / get_state**:
+Copyable, zero-sized handles (`AppContext<A>`, `StateContext`) returned by `get_app::<A>()` and `get_state()`, giving event handlers and `App::ui()` scoped access to the running App/State without threading either as a parameter through **Node**/**Widget**. `.with(|app| ...)` gives shared access (allowed while building the UI tree or handling events); `.with_mut(|app| ...)` gives exclusive access (event handlers only — panics if called during tree-building, since `App::ui()` may run concurrently with other reads of App). Backed by a thread-local raw pointer registered once at startup, gated by an internal Building/Evaluating/Idle phase to prevent aliasing with the `&mut App`/`&mut State` already held by `init`/`update`/`draw`/`on_key`/`on_mouse`. Modeled on the `signal()` module's thread-local-runtime pattern (`crates/tiles/src/signal.rs`); implemented in `crates/tiles/src/context.rs`.
+_Avoid_: App parameter, state parameter (the old per-handler `&mut A, &mut State` shape this replaces)
 
 **Element**:
 A user-implemented interactive visual with a **Shape** and an appearance that varies by **ElementState**. Defined by a trait (`shape` + `draw`) with default methods (`handle_screen`, `handle_world`) that hit-test, compute visual state, draw to the overlay buffer, and return **HitState**. Lives in the tiles crate.

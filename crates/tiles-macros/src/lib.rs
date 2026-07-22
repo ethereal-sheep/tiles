@@ -14,28 +14,13 @@ use syn::{
 // =============================================================================
 
 struct WidgetInput {
-    app_type: Option<Type>,
     block: UiBlock,
 }
 
 impl Parse for WidgetInput {
     fn parse(input: ParseStream) -> syn::Result<Self> {
-        // Try to parse `Type;` prefix
-        let app_type =
-            if input.peek(Token![self]) || input.peek(syn::Ident) || input.peek(Token![Self]) {
-                let fork = input.fork();
-                if fork.parse::<Type>().is_ok() && fork.peek(Token![;]) {
-                    let ty: Type = input.parse()?;
-                    input.parse::<Token![;]>()?;
-                    Some(ty)
-                } else {
-                    None
-                }
-            } else {
-                None
-            };
         let block: UiBlock = input.parse()?;
-        Ok(WidgetInput { app_type, block })
+        Ok(WidgetInput { block })
     }
 }
 
@@ -219,10 +204,8 @@ fn auto_id_for_expr(expr: &Expr, in_loop: bool) -> TokenStream2 {
     }
 }
 
-/// Built-in constructors generic over the app type (`pane`, `row`, `col`, ...)
-/// that need a turbofish for closure type inference. User-defined widget
-/// functions (`#[widget_fn]`/`#[new_widget_fn]`) bake in their app type via
-/// the attribute and are never generic, so must not be turbofished.
+/// Built-in constructors (`pane`, `row`, `col`, ...) — never call `signal()`
+/// internally, so never need widget-id scoping.
 const BUILTIN_NODE_CONSTRUCTORS: &[&str] = &["pane", "row", "col", "text", "img", "paint"];
 
 fn is_builtin_constructor_call(func: &Expr) -> bool {
@@ -236,107 +219,14 @@ fn is_builtin_constructor_call(func: &Expr) -> bool {
     }
 }
 
-fn turbofish_root_call(expr: &Expr, ty: &Type) -> TokenStream2 {
-    // Walk the method chain to find the root function call and add a turbofish.
-    // Only turbofish calls to built-in constructors (needed for closure type
-    // inference) — bare calls to user-defined widget functions are emitted as-is.
-    match expr {
-        Expr::MethodCall(mc) => {
-            let receiver = turbofish_root_call(&mc.receiver, ty);
-            let method = &mc.method;
-            let turbofish = &mc.turbofish;
-            let args = &mc.args;
-            quote! { #receiver.#method #turbofish(#args) }
-        }
-        Expr::Call(call) if is_builtin_constructor_call(&call.func) => {
-            let func = &call.func;
-            let args = &call.args;
-            quote! { #func::<#ty>(#args) }
-        }
-        _ => quote! { #expr },
-    }
-}
-
-fn maybe_turbofish(expr: &Expr, ty: &Type) -> TokenStream2 {
-    match expr {
-        Expr::MethodCall(_) => turbofish_root_call(expr, ty),
-        _ => quote! { #expr },
-    }
-}
-
-fn is_basic_handler_method(name: &str) -> bool {
-    name.starts_with("on_")
-}
-
-fn rewrite_handler_arg(expr: &Expr, app_type: Option<&Type>) -> TokenStream2 {
-    match expr {
-        Expr::Closure(closure) => {
-            let body = &closure.body;
-            let params: Vec<_> = closure.inputs.iter().collect();
-            match params.len() {
-                0 => {
-                    if let Some(ty) = app_type {
-                        quote! { move |_: &mut #ty, _: &mut ::tiles::State| #body }
-                    } else {
-                        quote! { move |_, _| #body }
-                    }
-                }
-                1 => {
-                    let a = &params[0];
-                    if let Some(ty) = app_type {
-                        quote! { move |#a: &mut #ty, _: &mut ::tiles::State| #body }
-                    } else {
-                        quote! { move |#a, _| #body }
-                    }
-                }
-                _ => {
-                    let inputs = &closure.inputs;
-                    quote! { move |#inputs| #body }
-                }
-            }
-        }
-        other => {
-            if let Some(ty) = app_type {
-                quote! { move |__app: &mut #ty, __state: &mut ::tiles::State| ::tiles::signal::Handler::call(#other, __app, __state) }
-            } else {
-                quote! { move |__app, __state| ::tiles::signal::Handler::call(#other, __app, __state) }
-            }
-        }
-    }
-}
-
-fn rewrite_handlers_in_expr(expr: &Expr, app_type: Option<&Type>) -> Expr {
-    match expr {
-        Expr::MethodCall(mc) => {
-            let receiver = rewrite_handlers_in_expr(&mc.receiver, app_type);
-            let method = &mc.method;
-            let turbofish = &mc.turbofish;
-
-            if is_basic_handler_method(&method.to_string()) && mc.args.len() == 1 {
-                let rewritten_arg = rewrite_handler_arg(&mc.args[0], app_type);
-                syn::parse_quote! { #receiver.#method #turbofish(#rewritten_arg) }
-            } else {
-                let args = &mc.args;
-                syn::parse_quote! { #receiver.#method #turbofish(#args) }
-            }
-        }
-        _ => expr.clone(),
-    }
-}
-
-fn expand_widget_block(block: &UiBlock, app_type: Option<&Type>, in_loop: bool) -> TokenStream2 {
+fn expand_widget_block(block: &UiBlock, in_loop: bool) -> TokenStream2 {
     let mut pushes = Vec::new();
     for stmt in &block.stmts {
-        pushes.push(expand_widget_stmt(stmt, app_type, in_loop));
+        pushes.push(expand_widget_stmt(stmt, in_loop));
     }
-    let vec_decl = if let Some(ty) = app_type {
-        quote! { let mut __children: Vec<::tiles::__private::Node<#ty>> = Vec::new(); }
-    } else {
-        quote! { let mut __children = Vec::new(); }
-    };
     quote! {
         {
-            #vec_decl
+            let mut __children = Vec::new();
             #(#pushes)*
             __children
         }
@@ -386,41 +276,29 @@ fn signal_context_for_expr(expr: &Expr, in_loop: bool) -> (TokenStream2, TokenSt
     (before, after)
 }
 
-fn expand_widget_stmt(stmt: &UiStmt, app_type: Option<&Type>, in_loop: bool) -> TokenStream2 {
+fn expand_widget_stmt(stmt: &UiStmt, in_loop: bool) -> TokenStream2 {
     match stmt {
         UiStmt::Widget { expr, children } => {
-            let expr = &rewrite_handlers_in_expr(expr, app_type);
             let auto_id = auto_id_for_expr(expr, in_loop);
             let children_expr = if let Some(block) = children {
-                expand_widget_block(block, app_type, in_loop)
+                expand_widget_block(block, in_loop)
             } else {
                 quote! { vec![] }
             };
             let (sig_before, sig_after) = signal_context_for_expr(expr, in_loop);
-            if let Some(ty) = app_type {
-                let typed_expr = maybe_turbofish(expr, ty);
-                quote! {
-                    #sig_before
-                    __children.push(
-                        ::tiles::__private::Widget::render(#typed_expr #auto_id, #children_expr)
-                    );
-                    #sig_after
-                }
-            } else {
-                quote! {
-                    #sig_before
-                    __children.push(
-                        ::tiles::__private::Widget::render(#expr #auto_id, #children_expr)
-                    );
-                    #sig_after
-                }
+            quote! {
+                #sig_before
+                __children.push(
+                    ::tiles::__private::Widget::render(#expr #auto_id, #children_expr)
+                );
+                #sig_after
             }
         }
         UiStmt::If { cond, body } => {
             let stmts: Vec<_> = body
                 .stmts
                 .iter()
-                .map(|s| expand_widget_stmt(s, app_type, in_loop))
+                .map(|s| expand_widget_stmt(s, in_loop))
                 .collect();
             quote! {
                 if #cond {
@@ -432,7 +310,7 @@ fn expand_widget_stmt(stmt: &UiStmt, app_type: Option<&Type>, in_loop: bool) -> 
             let stmts: Vec<_> = body
                 .stmts
                 .iter()
-                .map(|s| expand_widget_stmt(s, app_type, true))
+                .map(|s| expand_widget_stmt(s, true))
                 .collect();
             quote! {
                 for (__widget_idx, #pat) in (#iter).into_iter().enumerate() {
@@ -455,7 +333,7 @@ fn expand_widget_stmt(stmt: &UiStmt, app_type: Option<&Type>, in_loop: bool) -> 
         } => {
             let auto_id = auto_id_for_expr(widget_expr, in_loop);
             let children_expr = if let Some(block) = children {
-                expand_widget_block(block, app_type, in_loop)
+                expand_widget_block(block, in_loop)
             } else {
                 quote! { vec![] }
             };
@@ -474,42 +352,27 @@ fn expand_widget_stmt(stmt: &UiStmt, app_type: Option<&Type>, in_loop: bool) -> 
 
 /// Builds a UI widget tree using the Widget trait.
 ///
-/// Supports `@children` to splice a `Vec<Node<A>>` variable into the children list.
+/// Supports `@children` to splice a `Vec<Node>` variable into the children list.
 #[proc_macro]
 pub fn widget(input: TokenStream) -> TokenStream {
-    let WidgetInput { app_type, block } = syn::parse_macro_input!(input as WidgetInput);
-    let ty_ref = match app_type.as_ref() {
-        Some(ty) => ty,
-        None => {
-            return TokenStream::from(
-                syn::Error::new(
-                    proc_macro2::Span::call_site(),
-                    "widget! requires a type context — use it inside #[widget_fn] or #[app_widget_impl]",
-                )
-                .to_compile_error(),
-            );
-        }
-    };
+    let WidgetInput { block } = syn::parse_macro_input!(input as WidgetInput);
 
-    let ty_opt = Some(ty_ref);
-
-    // Single top-level widget → return Node<A> directly
+    // Single top-level widget → return Node directly
     if block.stmts.len() == 1 {
         if let UiStmt::Widget { expr, children } = &block.stmts[0] {
-            let typed_expr = maybe_turbofish(expr, ty_ref);
             let children_expr = if let Some(child_block) = children {
-                expand_widget_block(child_block, ty_opt, false)
+                expand_widget_block(child_block, false)
             } else {
                 quote! { vec![] }
             };
             let expanded = quote! {
-                ::tiles::__private::Widget::render(#typed_expr, #children_expr)
+                ::tiles::__private::Widget::render(#expr, #children_expr)
             };
             return TokenStream::from(expanded);
         }
     }
 
-    let expanded = expand_widget_block(&block, ty_opt, false);
+    let expanded = expand_widget_block(&block, false);
     TokenStream::from(expanded)
 }
 
@@ -519,14 +382,14 @@ pub fn widget(input: TokenStream) -> TokenStream {
 
 /// Attribute macro for declaring widget functions.
 ///
-/// Strips `children: Vec<Node<A>>` from the function signature and wraps the body
+/// Strips `children: Vec<Node>` from the function signature and wraps the body
 /// so children arrive via `Widget::render()`. The function body is regular Rust —
 /// use `widget!` inside it.
 ///
 /// ```ignore
-/// #[widget_fn(Demo)]
-/// fn button(word: &str, f: impl Fn(&mut Demo, &mut State) + 'static, children: Vec<Node<Demo>>) -> Node<Demo> {
-///     widget! { Demo;
+/// #[widget_fn]
+/// fn button(word: &str, f: impl Fn() + 'static, children: Vec<Node>) -> Node {
+///     widget! {
 ///         col().on_press(f) {
 ///             text(word).padding(1)
 ///             @children
@@ -535,11 +398,10 @@ pub fn widget(input: TokenStream) -> TokenStream {
 /// }
 /// ```
 #[proc_macro_attribute]
-pub fn widget_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let app_ty: Type = syn::parse_macro_input!(attr as Type);
+pub fn widget_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let func: syn::ItemFn = syn::parse_macro_input!(item as syn::ItemFn);
 
-    match impl_widget_fn(&app_ty, &func) {
+    match impl_widget_fn(&func) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }
@@ -610,7 +472,7 @@ fn compute_outer_signature(
     (outer_params, combined_generics, has_borrows)
 }
 
-fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2> {
+fn impl_widget_fn(func: &syn::ItemFn) -> syn::Result<TokenStream2> {
     let vis = &func.vis;
     let name = &func.sig.ident;
     let generics = &func.sig.generics;
@@ -619,7 +481,7 @@ fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2
 
     let mut params: Vec<&syn::FnArg> = func.sig.inputs.iter().collect();
 
-    // The last param must be `children: Vec<Node<A>>`
+    // The last param must be `children: Vec<Node>`
     let last_param = params.pop().ok_or_else(|| {
         syn::Error::new_spanned(
             func,
@@ -642,7 +504,7 @@ fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2
             _ => {
                 return Err(syn::Error::new_spanned(
                     pat_type,
-                    "#[widget_fn] last parameter must be a simple `children: Vec<Node<A>>` binding",
+                    "#[widget_fn] last parameter must be a simple `children: Vec<Node>` binding",
                 ));
             }
         },
@@ -662,17 +524,14 @@ fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2
 
     let (outer_params, combined_generics, has_borrows) = compute_outer_signature(generics, &params);
     let return_ty = if has_borrows {
-        quote! { impl ::tiles::__private::Widget<#app_ty> + 'a }
+        quote! { impl ::tiles::__private::Widget + 'a }
     } else {
-        quote! { impl ::tiles::__private::Widget<#app_ty> }
+        quote! { impl ::tiles::__private::Widget }
     };
-
-    // Rewrite body: inject app type into widget! calls that lack it
-    let rewritten_body = inject_widget_type(&quote! { #body }, app_ty);
 
     Ok(quote! {
         #vis fn #name #combined_generics(#(#outer_params),*) -> #return_ty #where_clause {
-            ::tiles::__private::WidgetFn(move |#children_ident: #children_ty| #rewritten_body, ::std::marker::PhantomData)
+            ::tiles::__private::WidgetFn(move |#children_ident: #children_ty| #body)
         }
     })
 }
@@ -682,9 +541,9 @@ fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2
 // =============================================================================
 
 /// Attribute macro for declaring widget functions that can receive the
-/// caller's style/handlers/children via a trailing `NodeData<A>` parameter.
+/// caller's style/handlers/children via a trailing `NodeData` parameter.
 ///
-/// If the last parameter's type is `NodeData<A>`, the function is wrapped in
+/// If the last parameter's type is `NodeData`, the function is wrapped in
 /// `NewWidgetFn` so the caller's `.style(...)`-affecting builder calls and
 /// `.on_*` handlers are captured and handed to the function as `NodeData`
 /// (any pattern is allowed — full destructure, partial, or a plain binding).
@@ -692,15 +551,14 @@ fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2
 /// applied to the returned node (`id` is the only exception — it's always
 /// stamped onto the returned node automatically if the caller set one).
 ///
-/// If there's no trailing `NodeData<A>` parameter (including the old-style
-/// bare `children: Vec<Node<A>>`), this macro does nothing but inject the
-/// app type into `widget!` calls in the body — same treatment as
-/// `#[app_widget]`.
+/// If there's no trailing `NodeData` parameter (including the old-style
+/// bare `children: Vec<Node>`), this macro is a no-op — the signature and
+/// body are left untouched.
 ///
 /// ```ignore
-/// #[new_widget_fn(Demo)]
-/// fn button(word: &str, NodeData { style, handlers, children }: NodeData<Demo>) -> Node<Demo> {
-///     widget! { Demo;
+/// #[new_widget_fn]
+/// fn button(word: &str, NodeData { style, handlers, children }: NodeData) -> Node {
+///     widget! {
 ///         col().style(style).handlers(handlers) {
 ///             text(word).padding(1)
 ///             @children
@@ -709,11 +567,10 @@ fn impl_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2
 /// }
 /// ```
 #[proc_macro_attribute]
-pub fn new_widget_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
-    let app_ty: Type = syn::parse_macro_input!(attr as Type);
+pub fn new_widget_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let func: syn::ItemFn = syn::parse_macro_input!(item as syn::ItemFn);
 
-    match impl_new_widget_fn(&app_ty, &func) {
+    match impl_new_widget_fn(&func) {
         Ok(ts) => ts.into(),
         Err(e) => e.to_compile_error().into(),
     }
@@ -731,7 +588,7 @@ fn is_node_data_type(ty: &Type) -> bool {
     }
 }
 
-fn impl_new_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStream2> {
+fn impl_new_widget_fn(func: &syn::ItemFn) -> syn::Result<TokenStream2> {
     let params: Vec<&syn::FnArg> = func.sig.inputs.iter().collect();
 
     let last_is_node_data = matches!(
@@ -740,22 +597,20 @@ fn impl_new_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStr
     );
 
     if !last_is_node_data {
-        // Error if a NodeData<...> param appears anywhere but last.
+        // Error if a NodeData param appears anywhere but last.
         for p in params.iter().rev().skip(1) {
             if let syn::FnArg::Typed(pat_type) = p {
                 if is_node_data_type(&pat_type.ty) {
                     return Err(syn::Error::new_spanned(
                         pat_type,
-                        "#[new_widget_fn] a `NodeData<A>` parameter must be the last parameter",
+                        "#[new_widget_fn] a `NodeData` parameter must be the last parameter",
                     ));
                 }
             }
         }
 
-        // No NodeData param: pass-through — leave the signature untouched,
-        // only inject the app type into widget! calls in the body.
-        let rewritten = inject_widget_type(&quote! { #func }, app_ty);
-        return Ok(rewritten);
+        // No NodeData param: pass-through, signature and body untouched.
+        return Ok(quote! { #func });
     }
 
     let vis = &func.vis;
@@ -767,13 +622,13 @@ fn impl_new_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStr
     let mut params = params;
     let node_data_param = params.pop().unwrap();
 
-    // Error if another NodeData<...> param appears earlier in the list.
+    // Error if another NodeData param appears earlier in the list.
     for p in &params {
         if let syn::FnArg::Typed(pat_type) = p {
             if is_node_data_type(&pat_type.ty) {
                 return Err(syn::Error::new_spanned(
                     pat_type,
-                    "#[new_widget_fn] a `NodeData<A>` parameter must be the last parameter",
+                    "#[new_widget_fn] a `NodeData` parameter must be the last parameter",
                 ));
             }
         }
@@ -791,119 +646,20 @@ fn impl_new_widget_fn(app_ty: &Type, func: &syn::ItemFn) -> syn::Result<TokenStr
 
     let (outer_params, combined_generics, has_borrows) = compute_outer_signature(generics, &params);
 
-    // `NewWidgetFn` is returned concretely (not as `impl Widget<A>`) so callers
+    // `NewWidgetFn` is returned concretely (not as `impl Widget`) so callers
     // can chain its inherent builder methods (`.fill_w()`, `.on_press()`, `.id()`).
     let closure_bound = if has_borrows {
-        quote! { impl FnOnce(::tiles::NodeData<#app_ty>) -> ::tiles::Node<#app_ty> + 'a }
+        quote! { impl FnOnce(::tiles::NodeData) -> ::tiles::Node + 'a }
     } else {
-        quote! { impl FnOnce(::tiles::NodeData<#app_ty>) -> ::tiles::Node<#app_ty> }
+        quote! { impl FnOnce(::tiles::NodeData) -> ::tiles::Node }
     };
-    let return_ty = quote! { ::tiles::__private::NewWidgetFn<#app_ty, #closure_bound> };
-
-    // Rewrite body: inject app type into widget! calls that lack it
-    let rewritten_body = inject_widget_type(&quote! { #body }, app_ty);
+    let return_ty = quote! { ::tiles::__private::NewWidgetFn<#closure_bound> };
 
     Ok(quote! {
         #vis fn #name #combined_generics(#(#outer_params),*) -> #return_ty #where_clause {
-            ::tiles::__private::NewWidgetFn::new(move |#node_data_pat: #node_data_ty| #rewritten_body)
+            ::tiles::__private::NewWidgetFn::new(move |#node_data_pat: #node_data_ty| #body)
         }
     })
-}
-
-fn inject_widget_type(tokens: &TokenStream2, app_ty: &Type) -> TokenStream2 {
-    use proc_macro2::TokenTree;
-
-    let mut output = Vec::new();
-    let mut iter = tokens.clone().into_iter().peekable();
-
-    while let Some(tt) = iter.next() {
-        match &tt {
-            TokenTree::Ident(ident) if ident == "widget" => {
-                // Check if next token is `!`
-                if let Some(TokenTree::Punct(p)) = iter.peek() {
-                    if p.as_char() == '!' {
-                        let bang = iter.next().unwrap();
-                        // Next should be a group (the macro body)
-                        if let Some(TokenTree::Group(group)) = iter.peek() {
-                            let delimiter = group.delimiter();
-                            let inner = group.stream();
-                            iter.next(); // consume the group
-
-                            // Check if it already has a type prefix (Type;)
-                            let has_prefix = has_type_prefix(&inner);
-                            let new_inner = if has_prefix {
-                                inject_widget_type(&inner, app_ty)
-                            } else {
-                                let rewritten = inject_widget_type(&inner, app_ty);
-                                quote! { #app_ty; #rewritten }
-                            };
-
-                            let new_group = proc_macro2::Group::new(delimiter, new_inner);
-                            output.push(TokenTree::Ident(ident.clone()));
-                            output.push(bang);
-                            output.push(TokenTree::Group(new_group));
-                            continue;
-                        } else {
-                            output.push(tt);
-                            output.push(bang);
-                            continue;
-                        }
-                    }
-                }
-                output.push(tt);
-            }
-            TokenTree::Group(group) => {
-                let new_inner = inject_widget_type(&group.stream(), app_ty);
-                let mut new_group = proc_macro2::Group::new(group.delimiter(), new_inner);
-                new_group.set_span(group.span());
-                output.push(TokenTree::Group(new_group));
-            }
-            _ => output.push(tt),
-        }
-    }
-
-    output.into_iter().collect()
-}
-
-fn has_type_prefix(tokens: &TokenStream2) -> bool {
-    use proc_macro2::TokenTree;
-    let mut iter = tokens.clone().into_iter();
-    // A type prefix looks like: Ident ; ... or Self ;
-    // We check if the second meaningful token is `;`
-    let first = iter.next();
-    match first {
-        Some(TokenTree::Ident(_)) => match iter.next() {
-            Some(TokenTree::Punct(p)) => p.as_char() == ';',
-            _ => false,
-        },
-        _ => false,
-    }
-}
-
-// =============================================================================
-// #[widget_impl] attribute macro
-// =============================================================================
-
-/// Attribute macro for impl blocks that injects the Self type into `widget!` calls.
-///
-/// ```ignore
-/// #[widget_impl]
-/// impl App for Demo {
-///     fn ui(&self, _state: &State) -> Node<Self> {
-///         widget! {
-///             col().fill_w() { ... }
-///         }
-///     }
-/// }
-/// ```
-#[proc_macro_attribute]
-pub fn app_widget(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    let impl_block: syn::ItemImpl = syn::parse_macro_input!(item as syn::ItemImpl);
-
-    let self_ty = &impl_block.self_ty;
-    let tokens: TokenStream2 = quote! { #impl_block };
-    let rewritten = inject_widget_type(&tokens, self_ty);
-    TokenStream::from(rewritten)
 }
 
 // =============================================================================
@@ -921,7 +677,7 @@ pub fn app_widget(_attr: TokenStream, item: TokenStream) -> TokenStream {
 //
 // The generated impl targets a different type (the "owner") specified via
 // a struct-level attribute:
-//   #[builders(owner = "PaneNode<A: App>", access = "self.style")]
+//   #[builders(owner = "PaneNode", access = "self.style")]
 
 use syn::{Data, DeriveInput, Fields};
 

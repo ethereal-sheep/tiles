@@ -1,7 +1,6 @@
 use crate::__private::NewWidgetFn;
 use crate::color::Color;
 use crate::font::Font;
-use crate::runner::App;
 use crate::{Node, NodeData};
 use tiles_macros::Builders;
 
@@ -56,9 +55,9 @@ pub enum Position {
 //      if is None
 
 #[derive(Clone, Debug, Default, Builders)]
-#[builders(forward(to = "Node<A: App>", via = "style"))]
+#[builders(forward(to = "Node", via = "style"))]
 #[builders(forward(
-    to = "NewWidgetFn<A: App, F: FnOnce(NodeData<A>) -> Node<A>>",
+    to = "NewWidgetFn<F: FnOnce(NodeData) -> Node>",
     via = "style"
 ))]
 pub struct Style {

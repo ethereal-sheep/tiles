@@ -30,10 +30,7 @@ pub trait App {
     fn on_key(&mut self, _state: &mut State, _event: KeyEvent) {}
     fn on_mouse(&mut self, _state: &mut State, _event: MouseEvent) {}
 
-    fn ui(&self, _state: &State) -> crate::node::Node<Self>
-    where
-        Self: Sized,
-    {
+    fn ui() -> crate::node::Node {
         crate::ui::col()
     }
 }
@@ -439,6 +436,13 @@ pub(crate) fn run_app<A: App + 'static>(
         state,
         signal_runtime: crate::signal::SignalRuntime::new(),
     };
+
+    // Registered once here — `runner` is never moved again (only borrowed)
+    // for the remainder of this call, so these pointers stay valid for the
+    // process lifetime.
+    crate::context::register_app(app_ptr);
+    crate::context::register_state(&mut runner.state as *mut State);
+
     event_loop.run_app(&mut runner)
 }
 
@@ -665,7 +669,9 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                 self.state.debug_vertices.clear();
 
                 crate::signal::set_runtime(&self.signal_runtime);
-                let tree = self.app.ui(&self.state);
+                crate::context::set_phase(crate::context::Phase::Building);
+                let tree = A::ui();
+                crate::context::set_phase(crate::context::Phase::Idle);
                 let resolved = tree.layout(
                     self.state.viewport_width(),
                     self.state.viewport_height(),
@@ -675,7 +681,9 @@ impl<A: App> ApplicationHandler for Runner<'_, A> {
                 if self.state.is_debug() {
                     dbg!(&resolved);
                 }
-                resolved.evaluate(self.app, &mut self.state);
+                crate::context::set_phase(crate::context::Phase::Evaluating);
+                resolved.evaluate();
+                crate::context::set_phase(crate::context::Phase::Idle);
                 crate::signal::clear_runtime();
 
                 self.state.dt = self.state.fixed_dt;
