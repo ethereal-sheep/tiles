@@ -146,14 +146,12 @@ pub fn signal<T: Clone + 'static>(default: T) -> Signal<T> {
 
 #[doc(hidden)]
 pub fn __push_widget(path: u64) {
-    if !try_with_runtime(|rt| {
+    try_with_runtime(|rt| {
         let parent = rt.widget_stack.borrow().last().copied().unwrap_or(0);
         let combined = parent.wrapping_mul(2654435761).wrapping_add(path);
         rt.widget_stack.borrow_mut().push(combined);
         rt.local_counter.set(0);
-    }) {
-        // No runtime active — no-op (e.g. in tests without signal setup)
-    }
+    });
 }
 
 #[doc(hidden)]
