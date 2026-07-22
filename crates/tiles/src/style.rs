@@ -1,4 +1,4 @@
-use crate::__private::NewWidgetFn;
+use crate::__private::WidgetFn;
 use crate::color::Color;
 use crate::font::Font;
 use crate::{Node, NodeData};
@@ -56,10 +56,7 @@ pub enum Position {
 
 #[derive(Clone, Debug, Default, Builders)]
 #[builders(forward(to = "Node", via = "style"))]
-#[builders(forward(
-    to = "NewWidgetFn<F: FnOnce(NodeData) -> Node>",
-    via = "style"
-))]
+#[builders(forward(to = "WidgetFn<F: FnOnce(NodeData) -> Node>", via = "style"))]
 pub struct Style {
     #[builder(dual_variant(name = "size", variant = "Fixed", args = "w: u32, h: u32",))]
     #[builder(variant(name = "fill_w", variant = "Fill"))]

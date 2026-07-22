@@ -25,22 +25,25 @@ mod size;
 mod style;
 mod text;
 pub mod ui {
+    pub use crate::context::{get_app, get_state};
     pub use crate::node::{col, img, paint, pane, row, text};
     pub use crate::signal::signal;
-    pub use tiles_macros::{new_widget_fn, widget, widget_fn};
+    pub mod macros {
+        pub use tiles_macros::{widget, widget_fn};
+    }
 }
 
 pub use cell::{Cell, Rotation};
 pub use color::Color;
 pub use config::{Config, ConfigBuilder};
 #[cfg(feature = "runtime")]
-pub use context::{AppContext, StateContext, get_app, get_state};
+pub use context::{AppContext, StateContext};
 pub use drawable::Drawable;
 pub use element::{DragInfo, Element, ElementState, HitState};
 pub use image::{Frame, Image, ImageError, Sprite};
 pub use input::{KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent};
 pub use line::Line;
-pub use node::{Node, NodeData};
+pub use node::{Handlers, Node, NodeData};
 pub use rect::{Rect, RoundedRect};
 #[cfg(feature = "runtime")]
 pub use runner::{App, State};
@@ -51,7 +54,7 @@ pub use text::Text;
 
 #[doc(hidden)]
 pub mod __private {
-    pub use crate::node::{NewWidgetFn, Node, Widget, WidgetFn};
+    pub use crate::node::{BlankWidgetFn, Node, Widget, WidgetFn};
     pub use crate::signal::{__pop_widget, __push_widget, __widget_id};
 }
 

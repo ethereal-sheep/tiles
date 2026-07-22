@@ -3,11 +3,14 @@ use std::f32::consts::PI;
 
 use glam::Vec2;
 use tiles::{
-    App, Cell, Color, Config, Drawable, KeyCode, KeyEvent, KeyState, MouseEvent, Node, NodeData,
-    Rect, Shape, State, Style, Text,
+    App, Cell, Color, Config, Drawable, Handlers, KeyCode, KeyEvent, KeyState, MouseEvent, Node,
+    NodeData, Rect, Shape, State, Style, Text,
     font::TINY5_4X5,
-    get_app, get_state,
-    ui::{col, img, new_widget_fn, paint, row, signal, text, widget, widget_fn},
+    ui::{
+        col, get_app, get_state, img,
+        macros::{widget, widget_fn},
+        paint, row, signal, text,
+    },
 };
 
 const BG: Color = Color::linear(0.12, 0.12, 0.15, 1.0);
@@ -27,7 +30,7 @@ struct Demo {
     active_index: Option<usize>,
 }
 
-#[new_widget_fn]
+#[widget_fn]
 fn new_widget_with_node_data(
     name: &str,
     NodeData {
@@ -48,7 +51,7 @@ fn new_widget_with_node_data(
     }
 }
 
-#[new_widget_fn]
+#[widget_fn]
 fn new_widget_with_explicit_merged_style_and_node_data(
     name: &str,
     NodeData {
@@ -70,7 +73,7 @@ fn new_widget_with_explicit_merged_style_and_node_data(
     }
 }
 
-#[new_widget_fn] // generate a type which doesn't pass in node data, since user never ask for it
+#[widget_fn] // generate a type which doesn't pass in node data, since user never ask for it
 fn new_widget_without_node_data(name: &str) -> Node {
     widget! {
         col().on_click(|| get_app::<Demo>().with_mut(|app| app.show_panel = true)) {
@@ -79,7 +82,7 @@ fn new_widget_without_node_data(name: &str) -> Node {
     }
 }
 
-#[new_widget_fn]
+#[widget_fn]
 fn test(
     name: &str,
     NodeData {
@@ -97,7 +100,17 @@ fn test(
 }
 
 #[widget_fn]
-fn button(word: impl Into<String>, f: impl Fn(), children: Vec<Node>) -> Node {
+fn button(
+    word: impl Into<String>,
+    NodeData {
+        handlers, children, ..
+    }: NodeData,
+) -> Node {
+    let handlers = Handlers {
+        on_press: handlers.on_press,
+        ..Default::default()
+    };
+
     widget! {
         col()
         .align_center()
@@ -105,7 +118,7 @@ fn button(word: impl Into<String>, f: impl Fn(), children: Vec<Node>) -> Node {
         .color(BTN_COLOR)
         .hover_color(BTN_HOVER)
         .pressed_color(BTN_PRESS)
-        .on_press(f) {
+        .handlers(handlers) {
             text(word).font(&TINY5_4X5).padding(1)
             @children
         }
@@ -113,7 +126,7 @@ fn button(word: impl Into<String>, f: impl Fn(), children: Vec<Node>) -> Node {
 }
 
 #[widget_fn]
-fn border(c: Color, children: Vec<Node>) -> Node {
+fn border(c: Color, NodeData { children, .. }: NodeData) -> Node {
     widget! {
         row().gap(1).padding(5).color(c) {
             @children
@@ -122,10 +135,12 @@ fn border(c: Color, children: Vec<Node>) -> Node {
 }
 
 #[widget_fn]
-fn signal_counter(children: Vec<Node>) -> Node {
+fn signal_counter(
+    NodeData {
+        handlers, children, ..
+    }: NodeData,
+) -> Node {
     let count = signal(0i32);
-    get_state();
-
     widget! {
         row().gap(2).padding(2) {
             text(format!("{}", count.get())).width(25).justify_center().font(&TINY5_4X5).padding(1).color(BTN_PRESS)
@@ -147,42 +162,42 @@ fn signal_counter(children: Vec<Node>) -> Node {
     }
 }
 
-#[widget_fn]
-fn action_bar(
-    active_index: Option<usize>,
-    set_active_index: impl Fn(usize) + Copy,
-    actions: Vec<&str>,
-    children: Vec<Node>,
-) -> Node {
-    widget! {
-        row().gap(1).padding(5) {
-            @ for (i, child) in children.into_iter().take(actions.len()).enumerate() {
-                col()
-                .align_center()
-                .width(25)
-                .color(BTN_COLOR)
-                .hover_color(BTN_HOVER)
-                .pressed_color(BTN_PRESS)
-                .on_press(move || {
-                    set_active_index(i)
-                }) {
-                    text(actions[i]).font(&TINY5_4X5).padding(1)
-                    @ if let Some(index) = active_index && index == i {
-                        col().relative(5.0, 0.0) {
-                            @[child]
-                            text("testing hide")
-                        }
-                    }
-                }
-            }
-            // @ for (i, child) in children.into_iter().enumerate() {
-            //     if let Some(i) = &hovered_item_index {
-            //         child
-            //     }
-            // }
-        }
-    }
-}
+// #[widget_fn]
+// fn action_bar(
+//     active_index: Option<usize>,
+//     set_active_index: impl Fn(usize) + Copy,
+//     actions: Vec<&str>,
+//     children: Vec<Node>,
+// ) -> Node {
+//     widget! {
+//         row().gap(1).padding(5) {
+//             @ for (i, child) in children.into_iter().take(actions.len()).enumerate() {
+//                 col()
+//                 .align_center()
+//                 .width(25)
+//                 .color(BTN_COLOR)
+//                 .hover_color(BTN_HOVER)
+//                 .pressed_color(BTN_PRESS)
+//                 .on_press(move || {
+//                     set_active_index(i)
+//                 }) {
+//                     text(actions[i]).font(&TINY5_4X5).padding(1)
+//                     @ if let Some(index) = active_index && index == i {
+//                         col().relative(5.0, 0.0) {
+//                             @[child]
+//                             text("testing hide")
+//                         }
+//                     }
+//                 }
+//             }
+//             // @ for (i, child) in children.into_iter().enumerate() {
+//             //     if let Some(i) = &hovered_item_index {
+//             //         child
+//             //     }
+//             // }
+//         }
+//     }
+// }
 
 impl App for Demo {
     fn init(&mut self, state: &mut State) {
@@ -194,30 +209,22 @@ impl App for Demo {
 
     fn ui() -> Node {
         let (fps, _elapsed, _pos, active_index) = get_app::<Demo>().with(|app| {
-            tiles::get_state()
-                .with(|state| (1.0 / state.dt(), state.elapsed(), app.pos, app.active_index))
+            get_state().with(|state| (1.0 / state.dt(), state.elapsed(), app.pos, app.active_index))
         });
         let _row_count = 20;
         let app = get_app::<Self>();
         widget! {
             col().fill_w().fill_h() {
                 row().padding(2).gap(2).fill_w() {
-                    button("file", move || app.with_mut(|app| app.count += 1))
-                    button("edit", move || app.with_mut(|app| app.count -= 1))
-                    button("clear", move || app.with_mut(|app| app.count = 0))
-                    button("debug", move || tiles::get_state().with_mut(|state| state.set_debug(!state.is_debug())))
-                    test("test").on_click(move || app.with_mut(|app| app.show_panel = true)) {
-                        test("test2")
-                    }
-                    // new_widget_with_node_data("test").fill_w()
-                    new_widget_with_explicit_merged_style_and_node_data("merged").gap(3)
-                    new_widget_without_node_data("plain")
-                    text(format!("{:.0}", fps)).fill_w().justify_end()
+                    button("file").on_press(move || app.with_mut(|app| app.count += 1))
+                    button("edit").on_press(move || app.with_mut(|app| app.count -= 1))
+                    button("clear").on_press(move || app.with_mut(|app| app.count = 0))
+                    button("debug").on_press(move || get_state().with_mut(|state| state.set_debug(!state.is_debug())))
                 }
                 // title bar
-                action_bar(active_index, move |i| { app.with_mut(|app| app.active_index = Some(i)); eprintln!("{}", i); }, vec!["test1"]) {
-                    button("file", move || app.with_mut(|app| app.count += 1))
-                }
+                // action_bar(active_index, move |i| { app.with_mut(|app| app.active_index = Some(i)); eprintln!("{}", i); }, vec!["test1"]) {
+                //     button("file", move || app.with_mut(|app| app.count += 1))
+                // }
                 col().fill_w().fill_h() {
                     @ for i in 0..3 {
                         signal_counter()

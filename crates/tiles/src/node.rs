@@ -17,10 +17,7 @@ use tiles_macros::Builders;
 
 #[derive(Builders, Default)]
 #[builders(forward(to = "Node", via = "handlers"))]
-#[builders(forward(
-    to = "NewWidgetFn<F: FnOnce(NodeData) -> Node>",
-    via = "handlers"
-))]
+#[builders(forward(to = "WidgetFn<F: FnOnce(NodeData) -> Node>", via = "handlers"))]
 pub struct Handlers {
     pub on_hover: Option<Box<dyn Fn()>>,
     pub on_enter: Option<Box<dyn Fn()>>,
@@ -100,11 +97,6 @@ impl Node {
         self
     }
 
-    pub fn on_test<X>(mut self, id: &str) -> Self {
-        self.id = id.to_string();
-        self
-    }
-
     pub fn style(mut self, style: Style) -> Self {
         self.style = style;
         self
@@ -115,7 +107,7 @@ impl Node {
         self
     }
 
-    pub fn children<C: Into<Node>>(mut self, children: Vec<C>) -> Self {
+    fn children<C: Into<Node>>(mut self, children: Vec<C>) -> Self {
         match self.content {
             NodeContent::Children(_) => {
                 self.content =
@@ -146,12 +138,7 @@ impl Node {
 
     /// Pass 0: resolve font inheritance, marshal text, resolve image keys, and
     /// compute effective fill info.
-    fn pre_process(
-        self,
-        parent_font: &'static Font,
-        path: &str,
-        state: &State,
-    ) -> ProcessedNode {
+    fn pre_process(self, parent_font: &'static Font, path: &str, state: &State) -> ProcessedNode {
         let font = self.style.font.unwrap_or(parent_font);
 
         match self.content {
@@ -740,7 +727,7 @@ impl ResolvedNode {
 
         cells.sort_by(|a, b| b.position.z.total_cmp(&a.position.z));
         cells.reverse();
-        crate::get_state().with_mut(|state| {
+        crate::ui::get_state().with_mut(|state| {
             state.draw_screen_overlay(cells);
             state.get_input_mut_ref().consumed_state = consumed;
         });
@@ -756,7 +743,7 @@ impl ResolvedNode {
     ) {
         let effective_depth = depth.max(self.style.z_index as f32);
 
-        let (is_captured, hit) = crate::get_state().with(|state| {
+        let (is_captured, hit) = crate::ui::get_state().with(|state| {
             let is_captured = state
                 .get_input_ref()
                 .drag_capture
@@ -841,12 +828,11 @@ impl ResolvedNode {
             }
             if hit.is_pressed() {
                 if self.handlers.on_drag.is_some() {
-                    crate::get_state().with_mut(|state| {
-                        state.get_input_mut_ref().drag_capture =
-                            Some(crate::input::DragCapture {
-                                id: self.id.clone(),
-                                rect: self.rect,
-                            });
+                    crate::ui::get_state().with_mut(|state| {
+                        state.get_input_mut_ref().drag_capture = Some(crate::input::DragCapture {
+                            id: self.id.clone(),
+                            rect: self.rect,
+                        });
                     });
                 }
                 if let Some(f) = self.handlers.on_press {
@@ -880,7 +866,7 @@ impl ResolvedNode {
             }
         }
         if is_captured && hit.is_drag_end().is_some() {
-            crate::get_state().with_mut(|state| {
+            crate::ui::get_state().with_mut(|state| {
                 state.get_input_mut_ref().drag_capture = None;
             });
         }
@@ -926,7 +912,7 @@ impl ResolvedNode {
         }
 
         // Debug UI overlay
-        let is_debug = crate::get_state().with(|state| state.is_debug());
+        let is_debug = crate::ui::get_state().with(|state| state.is_debug());
         if is_debug {
             const DEBUG_COLORS: [Color; 6] = [
                 Color::linear(1.0, 0.2, 0.2, 1.0),
@@ -938,7 +924,7 @@ impl ResolvedNode {
             ];
             let c = DEBUG_COLORS[*debug_color_index % DEBUG_COLORS.len()];
             *debug_color_index += 1;
-            crate::get_state().with_mut(|state| {
+            crate::ui::get_state().with_mut(|state| {
                 state.debug_ui_rect(
                     self.rect.x(),
                     self.rect.y(),
@@ -984,14 +970,14 @@ impl ResolvedNode {
 }
 
 // --- Public API ---
-pub struct NewWidgetFn<F: FnOnce(NodeData) -> Node> {
+pub struct WidgetFn<F: FnOnce(NodeData) -> Node> {
     pub func: F,
     pub style: Style,
     pub handlers: Handlers,
     pub id: Option<String>,
 }
 
-impl<F: FnOnce(NodeData) -> Node> NewWidgetFn<F> {
+impl<F: FnOnce(NodeData) -> Node> WidgetFn<F> {
     pub fn new(func: F) -> Self {
         Self {
             func,
@@ -1007,13 +993,39 @@ impl<F: FnOnce(NodeData) -> Node> NewWidgetFn<F> {
     }
 }
 
-impl<F: FnOnce(NodeData) -> Node> Widget for NewWidgetFn<F> {
+impl<F: FnOnce(NodeData) -> Node> Widget for WidgetFn<F> {
     fn render(self, children: Vec<Node>) -> Node {
         let node = (self.func)(NodeData {
             style: self.style,
             handlers: self.handlers,
             children,
         });
+        match self.id {
+            Some(id) => node.id(&id),
+            None => node,
+        }
+    }
+}
+
+pub struct BlankWidgetFn<F: FnOnce() -> Node> {
+    pub func: F,
+    pub id: Option<String>,
+}
+
+impl<F: FnOnce() -> Node> BlankWidgetFn<F> {
+    pub fn new(func: F) -> Self {
+        Self { func, id: None }
+    }
+
+    pub fn id(mut self, id: &str) -> Self {
+        self.id = Some(id.to_string());
+        self
+    }
+}
+
+impl<F: FnOnce() -> Node> Widget for BlankWidgetFn<F> {
+    fn render(self, _children: Vec<Node>) -> Node {
+        let node = (self.func)();
         match self.id {
             Some(id) => node.id(&id),
             None => node,
@@ -1031,20 +1043,12 @@ impl Widget for Node {
     }
 }
 
-pub struct WidgetFn<F: FnOnce(Vec<Node>) -> Node>(pub F);
-
-impl<F: FnOnce(Vec<Node>) -> Node> Widget for WidgetFn<F> {
-    fn render(self, children: Vec<Node>) -> Node {
-        (self.0)(children)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::color::Color;
-    use crate::get_app;
     use crate::input::{ButtonState, InputState, MouseButton};
+    use crate::ui::get_app;
     use glam::Vec2;
 
     const RED: Color = Color::linear(1.0, 0.0, 0.0, 1.0);
@@ -1292,12 +1296,9 @@ mod tests {
 
     #[test]
     fn on_click_fires() {
-        let node = row()
-            .size(10, 10)
-            .color(RED)
-            .on_click(|| {
-                get_app::<TestApp>().with_mut(|app| app.clicked = true);
-            });
+        let node = row().size(10, 10).color(RED).on_click(|| {
+            get_app::<TestApp>().with_mut(|app| app.clicked = true);
+        });
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(5.0, 5.0);
@@ -1310,12 +1311,9 @@ mod tests {
 
     #[test]
     fn on_click_outside_does_not_fire() {
-        let node = row()
-            .size(10, 10)
-            .color(RED)
-            .on_click(|| {
-                get_app::<TestApp>().with_mut(|app| app.clicked = true);
-            });
+        let node = row().size(10, 10).color(RED).on_click(|| {
+            get_app::<TestApp>().with_mut(|app| app.clicked = true);
+        });
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(50.0, 50.0);
@@ -1432,12 +1430,9 @@ mod tests {
 
     #[test]
     fn consumed_flag_per_button() {
-        let node = row()
-            .size(10, 10)
-            .color(RED)
-            .on_click(|| {
-                get_app::<TestApp>().with_mut(|app| app.clicked = true);
-            });
+        let node = row().size(10, 10).color(RED).on_click(|| {
+            get_app::<TestApp>().with_mut(|app| app.clicked = true);
+        });
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(5.0, 5.0);
@@ -1474,12 +1469,9 @@ mod tests {
 
     #[test]
     fn scroll_handler() {
-        let node = row()
-            .size(20, 20)
-            .color(RED)
-            .on_scroll(|delta| {
-                get_app::<TestApp>().with_mut(|app| app.scroll_amount = delta);
-            });
+        let node = row().size(20, 20).color(RED).on_scroll(|delta| {
+            get_app::<TestApp>().with_mut(|app| app.scroll_amount = delta);
+        });
         let mut app = TestApp::new();
         let mut state = make_state();
         let mut input = input_at(5.0, 5.0);
@@ -1493,13 +1485,9 @@ mod tests {
 
     #[test]
     fn button_convenience() {
-        let node = pane()
-            .size(8, 4)
-            .color(RED)
-            .hover_color(BLUE)
-            .on_click(|| {
-                get_app::<TestApp>().with_mut(|app| app.clicked = true);
-            });
+        let node = pane().size(8, 4).color(RED).hover_color(BLUE).on_click(|| {
+            get_app::<TestApp>().with_mut(|app| app.clicked = true);
+        });
         let mut app = TestApp::new();
         let mut state = make_state();
         let input = input_with_click_at(4.0, 2.0);
@@ -1527,7 +1515,7 @@ mod tests {
 
     #[test]
     fn macro_simple_nodes() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let children: Vec<Node> = widget! {
             row().size(5, 5).color(RED);
             row().size(3, 3).color(BLUE);
@@ -1537,7 +1525,7 @@ mod tests {
 
     #[test]
     fn macro_nested_children() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let node: Node = widget! {
             row().gap(4) {
                 row().size(5, 5).color(RED);
@@ -1551,7 +1539,7 @@ mod tests {
 
     #[test]
     fn macro_if_control_flow() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let show = true;
         let children: Vec<Node> = widget! {
             row().size(5, 5).color(RED);
@@ -1573,7 +1561,7 @@ mod tests {
 
     #[test]
     fn macro_for_loop() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let colors = [RED, BLUE, GREEN];
         let children: Vec<Node> = widget! {
             @ for c in colors {
@@ -1585,7 +1573,7 @@ mod tests {
 
     #[test]
     fn macro_raw_escape() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let children: Vec<Node> = widget! {
             row().size(5, 5).color(RED);
             |c| {
@@ -1598,7 +1586,7 @@ mod tests {
 
     #[test]
     fn macro_with_handlers() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let child: Node = widget! {
             pane()
                 .size(5, 3)
@@ -1619,7 +1607,7 @@ mod tests {
 
     #[test]
     fn macro_deeply_nested() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let node: Node = widget! {
             col().padding(2) {
                 row().gap(2) {
@@ -1638,7 +1626,7 @@ mod tests {
 
     #[test]
     fn macro_for_with_expr_iter() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let items = vec![(5, RED), (3, BLUE), (7, GREEN)];
         let children: Vec<Node> = widget! {
             @ for (size, color) in items.iter().copied() {
@@ -1721,7 +1709,7 @@ mod tests {
 
     #[test]
     fn text_in_macro() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let _node: Node = widget! {
             col().text_color(RED) {
                 text("hello");
@@ -2284,8 +2272,7 @@ mod tests {
 
     #[test]
     fn text_justify_center_with_padding() {
-        let node: Node =
-            col().children(vec![text("A").width(50).padding(5).justify_center()]);
+        let node: Node = col().children(vec![text("A").width(50).padding(5).justify_center()]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         let child = resolved.find_child_by_index(0).unwrap();
         let tr = child.text_rect().unwrap();
@@ -2374,8 +2361,7 @@ mod tests {
 
     #[test]
     fn id_explicit_on_absolute_still_scoped() {
-        let node: Node =
-            col().children(vec![pane().id("drag").size(5, 5).absolute(10.0, 10.0)]);
+        let node: Node = col().children(vec![pane().id("drag").size(5, 5).absolute(10.0, 10.0)]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
         assert_eq!(resolved.find_child_by_id("drag").unwrap().id(), "0/drag");
     }
@@ -2412,10 +2398,8 @@ mod tests {
 
     #[test]
     fn id_stable_across_position_changes() {
-        let node1: Node =
-            col().children(vec![pane().id("drag").size(5, 5).absolute(10.0, 10.0)]);
-        let node2: Node =
-            col().children(vec![pane().id("drag").size(5, 5).absolute(99.0, 99.0)]);
+        let node1: Node = col().children(vec![pane().id("drag").size(5, 5).absolute(10.0, 10.0)]);
+        let node2: Node = col().children(vec![pane().id("drag").size(5, 5).absolute(99.0, 99.0)]);
         let r1 = node1.layout(256, 256, &State::new_for_test(256, 256));
         let r2 = node2.layout(256, 256, &State::new_for_test(256, 256));
         let id1 = r1.find_child_by_id("drag").unwrap().id().to_string();
@@ -2427,7 +2411,7 @@ mod tests {
 
     #[test]
     fn id_macro_injects_line_based_ids() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let node: Node = widget! {
             col() {
                 pane().size(10, 10)
@@ -2446,7 +2430,7 @@ mod tests {
 
     #[test]
     fn id_macro_stable_across_frames() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         // Simulates two "frames" — same widget! produces same IDs
         let build = || -> Node {
             widget! {
@@ -2465,7 +2449,7 @@ mod tests {
 
     #[test]
     fn id_macro_explicit_id_overrides_injection() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let node: Node = widget! {
             col() {
                 pane().id("custom").size(10, 10)
@@ -2478,7 +2462,7 @@ mod tests {
 
     #[test]
     fn id_macro_for_loop_unique_per_iteration() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let items = vec![1, 2, 3];
         let node: Node = widget! {
             col() {
@@ -2499,7 +2483,7 @@ mod tests {
 
     #[test]
     fn id_macro_for_loop_stable_across_frames() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         let build = || -> Node {
             let items = vec![1, 2, 3];
             widget! {
@@ -2521,7 +2505,7 @@ mod tests {
 
     #[test]
     fn id_macro_nested_widget_fn_unique_per_site() {
-        use crate::ui::widget;
+        use crate::ui::macros::widget;
         fn my_widget() -> Node {
             widget! {
                 pane().id("w").size(5, 5)
