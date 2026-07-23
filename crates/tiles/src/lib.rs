@@ -43,7 +43,7 @@ pub use element::{DragInfo, Element, ElementState, HitState};
 pub use image::{Frame, Image, ImageError, Sprite};
 pub use input::{KeyCode, KeyEvent, KeyState, MouseAction, MouseButton, MouseEvent};
 pub use line::Line;
-pub use node::{Handlers, Node, NodeData};
+pub use node::{Handlers, Node, Props};
 pub use rect::{Rect, RoundedRect};
 #[cfg(feature = "runtime")]
 pub use runner::{App, State};

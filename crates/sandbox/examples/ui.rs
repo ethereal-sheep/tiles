@@ -4,7 +4,7 @@ use std::f32::consts::PI;
 use glam::Vec2;
 use tiles::{
     App, Cell, Color, Config, Drawable, Handlers, KeyCode, KeyEvent, KeyState, MouseEvent, Node,
-    NodeData, Rect, Shape, State, Style, Text,
+    Props, Rect, Shape, State, Style, Text,
     font::TINY5_4X5,
     ui::{
         col, get_app, get_state, img,
@@ -31,13 +31,13 @@ struct Demo {
 }
 
 #[widget_fn]
-fn new_widget_with_node_data(
+fn new_widget_with_props(
     name: &str,
-    NodeData {
+    Props {
         style,
         handlers,
         children,
-    }: NodeData,
+    }: Props,
 ) -> Node {
     widget! {
         col().style(style).handlers(handlers)
@@ -52,13 +52,13 @@ fn new_widget_with_node_data(
 }
 
 #[widget_fn]
-fn new_widget_with_explicit_merged_style_and_node_data(
+fn new_widget_with_explicit_merged_style_and_props(
     name: &str,
-    NodeData {
+    Props {
         style,
         handlers,
         children,
-    }: NodeData,
+    }: Props,
 ) -> Node {
     let new_style = Style {
         gap: style.gap + 1,
@@ -74,7 +74,7 @@ fn new_widget_with_explicit_merged_style_and_node_data(
 }
 
 #[widget_fn] // generate a type which doesn't pass in node data, since user never ask for it
-fn new_widget_without_node_data(name: &str) -> Node {
+fn new_widget_without_props(name: &str) -> Node {
     widget! {
         col().on_click(|| get_app::<Demo>().with_mut(|app| app.show_panel = true)) {
             text(name).font(&TINY5_4X5).padding(1)
@@ -85,11 +85,11 @@ fn new_widget_without_node_data(name: &str) -> Node {
 #[widget_fn]
 fn test(
     name: &str,
-    NodeData {
+    Props {
         style,
         handlers,
         children,
-    }: NodeData,
+    }: Props,
 ) -> Node {
     widget! {
         col().style(style).handlers(handlers) {
@@ -102,9 +102,9 @@ fn test(
 #[widget_fn]
 fn button(
     word: impl Into<String>,
-    NodeData {
+    Props {
         handlers, children, ..
-    }: NodeData,
+    }: Props,
 ) -> Node {
     let handlers = Handlers {
         on_press: handlers.on_press,
@@ -126,7 +126,7 @@ fn button(
 }
 
 #[widget_fn]
-fn border(c: Color, NodeData { children, .. }: NodeData) -> Node {
+fn border(c: Color, Props { children, .. }: Props) -> Node {
     widget! {
         row().gap(1).padding(5).color(c) {
             @children
@@ -135,11 +135,7 @@ fn border(c: Color, NodeData { children, .. }: NodeData) -> Node {
 }
 
 #[widget_fn]
-fn signal_counter(
-    NodeData {
-        handlers, children, ..
-    }: NodeData,
-) -> Node {
+fn signal_counter() -> Node {
     let count = signal(0i32);
     widget! {
         row().gap(2).padding(2) {
@@ -216,9 +212,9 @@ impl App for Demo {
         widget! {
             col().fill_w().fill_h() {
                 row().padding(2).gap(2).fill_w() {
-                    button("file").on_press(move || app.with_mut(|app| app.count += 1))
-                    button("edit").on_press(move || app.with_mut(|app| app.count -= 1))
-                    button("clear").on_press(move || app.with_mut(|app| app.count = 0))
+                    button("file")
+                    button("edit")
+                    button("clear")
                     button("debug").on_press(move || get_state().with_mut(|state| state.set_debug(!state.is_debug())))
                 }
                 // title bar

@@ -17,7 +17,7 @@ use tiles_macros::Builders;
 
 #[derive(Builders, Default)]
 #[builders(forward(to = "Node", via = "handlers"))]
-#[builders(forward(to = "WidgetFn<F: FnOnce(NodeData) -> Node>", via = "handlers"))]
+#[builders(forward(to = "WidgetFn<F: FnOnce(Props) -> Node>", via = "handlers"))]
 pub struct Handlers {
     pub on_hover: Option<Box<dyn Fn()>>,
     pub on_enter: Option<Box<dyn Fn()>>,
@@ -54,7 +54,7 @@ pub struct Node {
     content: NodeContent<Self, String, ImageSource>,
 }
 
-pub struct NodeData {
+pub struct Props {
     pub style: Style,
     pub handlers: Handlers,
     pub children: Vec<Node>,
@@ -970,14 +970,14 @@ impl ResolvedNode {
 }
 
 // --- Public API ---
-pub struct WidgetFn<F: FnOnce(NodeData) -> Node> {
+pub struct WidgetFn<F: FnOnce(Props) -> Node> {
     pub func: F,
     pub style: Style,
     pub handlers: Handlers,
     pub id: Option<String>,
 }
 
-impl<F: FnOnce(NodeData) -> Node> WidgetFn<F> {
+impl<F: FnOnce(Props) -> Node> WidgetFn<F> {
     pub fn new(func: F) -> Self {
         Self {
             func,
@@ -993,9 +993,9 @@ impl<F: FnOnce(NodeData) -> Node> WidgetFn<F> {
     }
 }
 
-impl<F: FnOnce(NodeData) -> Node> Widget for WidgetFn<F> {
+impl<F: FnOnce(Props) -> Node> Widget for WidgetFn<F> {
     fn render(self, children: Vec<Node>) -> Node {
-        let node = (self.func)(NodeData {
+        let node = (self.func)(Props {
             style: self.style,
             handlers: self.handlers,
             children,

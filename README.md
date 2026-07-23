@@ -88,22 +88,13 @@ cargo run -p sandbox --example sprite
     - [x] paint tag, paint(impl Drawable)
     - [ ] clip; if parent has size, and clip is true, then children will crop to parent's size instead of pushing parent size
     - [ ] onFocusIn, onFocusOut, onFocus, onBlur with better naming
-- [ ] Macro: fix generic widget turbofish
-- [ ] Generic Node Tree (remove typing by caching call back in a global static singleton)
+- [x] Macro: fix generic widget turbofish
+- [x] Generic Node Tree (remove typing by caching call back in a global static singleton)
 - [ ] CLI commands to interact with engine
 - [ ] Animation tool
 - [ ] Optimize drawing rect of cells since most cells in a rect are one color
-- [ ] UI Callback Refactor
-    - [ ] Add `CallbackId` (Copy) and thread-local `CallbackStore<A>`
-    - [ ] Replace `Handlers<A>` fields (`Box<dyn Fn(...)>`) with `Option<CallbackId>`
-    - [ ] Builders (`.on_press()`, `.on_drag()`, etc.) register into store, return ID
-    - [ ] Remove `<A>` from `Node`, `ProcessedNode`, `SizedNode`, `ResolvedNode`
-    - [ ] Drop turbofish from constructors (`pane()`, `col()`, `row()`, `text()`)
-    - [ ] Event dispatch looks up ID in store
-    - [ ] `run()` clears store before each `ui()` call
-    - [ ] Update `widget!` macro (no more turbofish injection)
-    - [ ] Add `Callback<Args>` newtype over `Rc` for user-facing callbacks with extra args
-    - [ ] `widget_fn` auto-wraps bare closures into `Callback::new(...)`
+- [x] UI Callback Refactor
+- [ ] Deprecate element
 
 
 ## Dependencies

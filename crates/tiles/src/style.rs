@@ -1,7 +1,7 @@
 use crate::__private::WidgetFn;
 use crate::color::Color;
 use crate::font::Font;
-use crate::{Node, NodeData};
+use crate::{Node, Props};
 use tiles_macros::Builders;
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
@@ -56,7 +56,7 @@ pub enum Position {
 
 #[derive(Clone, Debug, Default, Builders)]
 #[builders(forward(to = "Node", via = "style"))]
-#[builders(forward(to = "WidgetFn<F: FnOnce(NodeData) -> Node>", via = "style"))]
+#[builders(forward(to = "WidgetFn<F: FnOnce(Props) -> Node>", via = "style"))]
 pub struct Style {
     #[builder(dual_variant(name = "size", variant = "Fixed", args = "w: u32, h: u32",))]
     #[builder(variant(name = "fill_w", variant = "Fill"))]

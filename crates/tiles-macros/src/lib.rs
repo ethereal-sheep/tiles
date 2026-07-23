@@ -446,23 +446,23 @@ fn compute_outer_signature(
 // =============================================================================
 
 /// Attribute macro for declaring widget functions that can receive the
-/// caller's style/handlers/children via a trailing `NodeData` parameter.
+/// caller's style/handlers/children via a trailing `Props` parameter.
 ///
-/// If the last parameter's type is `NodeData`, the function is wrapped in
+/// If the last parameter's type is `Props`, the function is wrapped in
 /// `WidgetFn` so the caller's `.style(...)`-affecting builder calls and
-/// `.on_*` handlers are captured and handed to the function as `NodeData`
+/// `.on_*` handlers are captured and handed to the function as `Props`
 /// (any pattern is allowed — full destructure, partial, or a plain binding).
 /// Fields the function doesn't bind are simply unavailable to it and never
 /// applied to the returned node (`id` is the only exception — it's always
 /// stamped onto the returned node automatically if the caller set one).
 ///
-/// If there's no trailing `NodeData` parameter, the function is wrapped in
+/// If there's no trailing `Props` parameter, the function is wrapped in
 /// a `BlankWidgetFn` which does not allow styling or handling at the caller,
 /// and silently ignores children.
 ///
 /// ```ignore
 /// #[widget_fn]
-/// fn button(word: &str, NodeData { style, handlers, children }: NodeData) -> Node {
+/// fn button(word: &str, Props { style, handlers, children }: Props) -> Node {
 ///     widget! {
 ///         col().style(style).handlers(handlers) {
 ///             text(word).padding(1)
@@ -481,14 +481,14 @@ pub fn widget_fn(_attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
-/// Returns true if `ty`'s final path segment is `NodeData`.
-fn is_node_data_type(ty: &Type) -> bool {
+/// Returns true if `ty`'s final path segment is `Props`.
+fn is_props_type(ty: &Type) -> bool {
     match ty {
         Type::Path(type_path) => type_path
             .path
             .segments
             .last()
-            .is_some_and(|seg| seg.ident == "NodeData"),
+            .is_some_and(|seg| seg.ident == "Props"),
         _ => false,
     }
 }
@@ -496,25 +496,25 @@ fn is_node_data_type(ty: &Type) -> bool {
 fn impl_widget_fn(func: &syn::ItemFn) -> syn::Result<TokenStream2> {
     let params: Vec<&syn::FnArg> = func.sig.inputs.iter().collect();
 
-    let last_is_node_data = matches!(
+    let last_is_props = matches!(
         params.last(),
-        Some(syn::FnArg::Typed(pat_type)) if is_node_data_type(&pat_type.ty)
+        Some(syn::FnArg::Typed(pat_type)) if is_props_type(&pat_type.ty)
     );
 
-    let mut has_node_data = last_is_node_data;
-    if !last_is_node_data {
-        // Error if a NodeData param appears anywhere but last.
+    let mut has_props = last_is_props;
+    if !last_is_props {
+        // Error if a Props param appears anywhere but last.
         for p in params.iter().rev().skip(1) {
             if let syn::FnArg::Typed(pat_type) = p {
-                if is_node_data_type(&pat_type.ty) {
+                if is_props_type(&pat_type.ty) {
                     return Err(syn::Error::new_spanned(
                         pat_type,
-                        "#[new_widget_fn] a `NodeData` parameter must be the last parameter",
+                        "#[new_widget_fn] a `Props` parameter must be the last parameter",
                     ));
                 }
             }
         }
-        has_node_data = false;
+        has_props = false;
     }
 
     let vis = &func.vis;
@@ -523,7 +523,7 @@ fn impl_widget_fn(func: &syn::ItemFn) -> syn::Result<TokenStream2> {
     let (_impl_generics, _ty_generics, where_clause) = generics.split_for_impl();
     let body = &func.block;
 
-    if !has_node_data {
+    if !has_props {
         let (outer_params, combined_generics, has_borrows) =
             compute_outer_signature(generics, &params);
 
@@ -543,25 +543,25 @@ fn impl_widget_fn(func: &syn::ItemFn) -> syn::Result<TokenStream2> {
     }
 
     let mut params = params;
-    let node_data_param = params.pop().unwrap();
+    let props_param = params.pop().unwrap();
 
-    // Error if another NodeData param appears earlier in the list.
+    // Error if another Props param appears earlier in the list.
     for p in &params {
         if let syn::FnArg::Typed(pat_type) = p {
-            if is_node_data_type(&pat_type.ty) {
+            if is_props_type(&pat_type.ty) {
                 return Err(syn::Error::new_spanned(
                     pat_type,
-                    "#[new_widget_fn] a `NodeData` parameter must be the last parameter",
+                    "#[new_widget_fn] a `Props` parameter must be the last parameter",
                 ));
             }
         }
     }
 
-    let (node_data_pat, node_data_ty) = match node_data_param {
+    let (props_pat, props_ty) = match props_param {
         syn::FnArg::Typed(pat_type) => (&pat_type.pat, &pat_type.ty),
         syn::FnArg::Receiver(_) => {
             return Err(syn::Error::new_spanned(
-                node_data_param,
+                props_param,
                 "#[new_widget_fn] cannot be used on methods with self",
             ));
         }
@@ -572,15 +572,15 @@ fn impl_widget_fn(func: &syn::ItemFn) -> syn::Result<TokenStream2> {
     // `NewWidgetFn` is returned concretely (not as `impl Widget`) so callers
     // can chain its inherent builder methods (`.fill_w()`, `.on_press()`, `.id()`).
     let closure_bound = if has_borrows {
-        quote! { impl FnOnce(::tiles::NodeData) -> ::tiles::Node + 'a }
+        quote! { impl FnOnce(::tiles::Props) -> ::tiles::Node + 'a }
     } else {
-        quote! { impl FnOnce(::tiles::NodeData) -> ::tiles::Node }
+        quote! { impl FnOnce(::tiles::Props) -> ::tiles::Node }
     };
     let return_ty = quote! { ::tiles::__private::WidgetFn<#closure_bound> };
 
     Ok(quote! {
         #vis fn #name #combined_generics(#(#outer_params),*) -> #return_ty #where_clause {
-            ::tiles::__private::WidgetFn::new(move |#node_data_pat: #node_data_ty| #body)
+            ::tiles::__private::WidgetFn::new(move |#props_pat: #props_ty| #body)
         }
     })
 }
