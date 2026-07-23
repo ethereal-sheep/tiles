@@ -7,9 +7,9 @@ use tiles::{
     Props, Rect, Shape, State, Style, Text,
     font::TINY5_4X5,
     ui::{
-        col, get_app, get_state, img,
+        blocks::{col, img, paint, row, text},
+        hooks::{get_app, get_state, signal},
         macros::{widget, widget_fn},
-        paint, row, signal, text,
     },
 };
 
@@ -40,7 +40,9 @@ fn new_widget_with_props(
     }: Props,
 ) -> Node {
     widget! {
-        col().style(style).handlers(handlers)
+        col()
+            .style(style)
+            .handlers(handlers)
             .width(25)
             .color(BTN_COLOR)
             .hover_color(BTN_HOVER)

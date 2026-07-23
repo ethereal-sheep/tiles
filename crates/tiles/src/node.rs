@@ -10,6 +10,7 @@ use crate::rect::Rect;
 use crate::runner::State;
 use crate::size::Size;
 use crate::style::{Align, Axis, Justify, Position, Sizing, Style};
+use crate::ui::hooks::get_state;
 use crate::{Drawable, Frame, Image, Shape, Sprite, Text};
 use tiles_macros::Builders;
 
@@ -727,7 +728,7 @@ impl ResolvedNode {
 
         cells.sort_by(|a, b| b.position.z.total_cmp(&a.position.z));
         cells.reverse();
-        crate::ui::get_state().with_mut(|state| {
+        get_state().with_mut(|state| {
             state.draw_screen_overlay(cells);
             state.get_input_mut_ref().consumed_state = consumed;
         });
@@ -743,7 +744,7 @@ impl ResolvedNode {
     ) {
         let effective_depth = depth.max(self.style.z_index as f32);
 
-        let (is_captured, hit) = crate::ui::get_state().with(|state| {
+        let (is_captured, hit) = get_state().with(|state| {
             let is_captured = state
                 .get_input_ref()
                 .drag_capture
@@ -828,7 +829,7 @@ impl ResolvedNode {
             }
             if hit.is_pressed() {
                 if self.handlers.on_drag.is_some() {
-                    crate::ui::get_state().with_mut(|state| {
+                    get_state().with_mut(|state| {
                         state.get_input_mut_ref().drag_capture = Some(crate::input::DragCapture {
                             id: self.id.clone(),
                             rect: self.rect,
@@ -866,7 +867,7 @@ impl ResolvedNode {
             }
         }
         if is_captured && hit.is_drag_end().is_some() {
-            crate::ui::get_state().with_mut(|state| {
+            get_state().with_mut(|state| {
                 state.get_input_mut_ref().drag_capture = None;
             });
         }
@@ -912,7 +913,7 @@ impl ResolvedNode {
         }
 
         // Debug UI overlay
-        let is_debug = crate::ui::get_state().with(|state| state.is_debug());
+        let is_debug = get_state().with(|state| state.is_debug());
         if is_debug {
             const DEBUG_COLORS: [Color; 6] = [
                 Color::linear(1.0, 0.2, 0.2, 1.0),
@@ -924,7 +925,7 @@ impl ResolvedNode {
             ];
             let c = DEBUG_COLORS[*debug_color_index % DEBUG_COLORS.len()];
             *debug_color_index += 1;
-            crate::ui::get_state().with_mut(|state| {
+            get_state().with_mut(|state| {
                 state.debug_ui_rect(
                     self.rect.x(),
                     self.rect.y(),
@@ -1048,7 +1049,7 @@ mod tests {
     use super::*;
     use crate::color::Color;
     use crate::input::{ButtonState, InputState, MouseButton};
-    use crate::ui::get_app;
+    use crate::ui::hooks::get_app;
     use glam::Vec2;
 
     const RED: Color = Color::linear(1.0, 0.0, 0.0, 1.0);

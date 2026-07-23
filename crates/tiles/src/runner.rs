@@ -31,7 +31,7 @@ pub trait App {
     fn on_mouse(&mut self, _state: &mut State, _event: MouseEvent) {}
 
     fn ui() -> crate::node::Node {
-        crate::ui::col()
+        crate::ui::blocks::col()
     }
 }
 

@@ -25,11 +25,15 @@ mod size;
 mod style;
 mod text;
 pub mod ui {
-    pub use crate::context::{get_app, get_state};
-    pub use crate::node::{col, img, paint, pane, row, text};
-    pub use crate::signal::signal;
+    pub mod blocks {
+        pub use crate::node::{col, img, paint, pane, row, text};
+    }
     pub mod macros {
         pub use tiles_macros::{widget, widget_fn};
+    }
+    pub mod hooks {
+        pub use crate::context::{get_app, get_state};
+        pub use crate::signal::signal;
     }
 }
 
