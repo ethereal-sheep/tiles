@@ -83,6 +83,7 @@ pub struct Style {
     #[builder(variant(name = "absolute", variant = "Absolute", args = "x: f32, y: f32"))]
     pub position: Position,
     pub z_index: i32,
+    pub clip: bool,
     pub color: Option<Color>,
     pub hover_color: Option<Color>,
     pub pressed_color: Option<Color>,

@@ -86,7 +86,7 @@ cargo run -p sandbox --example sprite
     - [ ] Sounds - ''
 - [x] UI
     - [x] paint tag, paint(impl Drawable)
-    - [ ] clip; if parent has size, and clip is true, then children will crop to parent's size instead of pushing parent size
+    - [x] clip; if parent has size, and clip is true, then children will crop to parent's size instead of pushing parent size
     - [ ] onFocusIn, onFocusOut, onFocus, onBlur with better naming
 - [x] Macro: fix generic widget turbofish
 - [x] Generic Node Tree (remove typing by caching call back in a global static singleton)
@@ -95,6 +95,9 @@ cargo run -p sandbox --example sprite
 - [ ] Optimize drawing rect of cells since most cells in a rect are one color
 - [x] UI Callback Refactor
 - [ ] Deprecate element
+- [ ] Formatter for widget blocks
+- [ ] Snippet gen. for widget fns
+
 
 
 ## Dependencies

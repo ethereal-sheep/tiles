@@ -180,6 +180,19 @@ impl Rect {
         }
     }
 
+    /// Geometric intersection with another Rect. Zero-size (at the near edge) if they don't overlap.
+    pub fn intersect(&self, other: &Rect) -> Rect {
+        let x1 = self.left().max(other.left());
+        let y1 = self.top().max(other.top());
+        let x2 = self.right().min(other.right());
+        let y2 = self.bottom().min(other.bottom());
+        Rect {
+            x: x1,
+            y: y1,
+            w: (x2 - x1).max(0.0) as u32,
+            h: (y2 - y1).max(0.0) as u32,
+        }
+    }
 }
 
 impl Shape for Rect {

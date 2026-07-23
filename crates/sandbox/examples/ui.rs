@@ -224,12 +224,15 @@ impl App for Demo {
                 //     button("file", move || app.with_mut(|app| app.count += 1))
                 // }
                 col().fill_w().fill_h() {
-                    @ for i in 0..3 {
-                        signal_counter()
-                    }
                     signal_counter()
-                    img("knight")
-                    paint(Rect::from_top_left(0.0, 0.0, 12, 12).fill().color(RED))
+                    col().size(10, 10).clip().justify_center() {
+                        img("knight")
+                        paint(Rect::from_top_left(0.0, 0.0, 12, 12).fill().color(RED))
+                    }
+                    col().size(10, 10).clip() {
+                        img("knight")
+                        paint(Rect::from_top_left(0.0, 0.0, 12, 12).fill().color(RED))
+                    }
                     // Counter indicator
                     // col().gap(1) {
                     //     @ for j in 0..=(self.count.unsigned_abs().saturating_sub(1) / row_count) {

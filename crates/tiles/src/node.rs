@@ -724,6 +724,7 @@ impl ResolvedNode {
             Some(Color::hex(0xFFFFFF)),
             0.0,
             &mut debug_color_index,
+            None,
         );
 
         cells.sort_by(|a, b| b.position.z.total_cmp(&a.position.z));
@@ -741,8 +742,23 @@ impl ResolvedNode {
         text_color: Option<Color>,
         depth: f32,
         debug_color_index: &mut usize,
+        inherited_clip: Option<Rect>,
     ) {
         let effective_depth = depth.max(self.style.z_index as f32);
+
+        // Position::Relative/Absolute nodes use f32 offsets that don't reliably
+        // land on the same pixel grid as flow layout, so an inherited clip from
+        // an ancestor doesn't apply to them (or their subtree).
+        let inherited_clip = if matches!(self.style.position, Position::Flow) {
+            inherited_clip
+        } else {
+            None
+        };
+
+        let clipped_rect = match inherited_clip {
+            Some(c) => self.rect.intersect(&c),
+            None => self.rect,
+        };
 
         let (is_captured, hit) = get_state().with(|state| {
             let is_captured = state
@@ -751,9 +767,14 @@ impl ResolvedNode {
                 .as_ref()
                 .is_some_and(|c| c.id == self.id);
             let hit = if is_captured {
-                state.test_shape_screen(&state.get_input_ref().drag_capture.as_ref().unwrap().rect)
+                let drag_rect = state.get_input_ref().drag_capture.as_ref().unwrap().rect;
+                let drag_rect = match inherited_clip {
+                    Some(c) => drag_rect.intersect(&c),
+                    None => drag_rect,
+                };
+                state.test_shape_screen(&drag_rect)
             } else {
-                state.test_shape_screen(&self.rect)
+                state.test_shape_screen(&clipped_rect)
             };
             (is_captured, hit)
         });
@@ -781,6 +802,14 @@ impl ResolvedNode {
         }
         .or(text_color);
 
+        // A clip=true node establishes/narrows the clip box passed to descendants;
+        // otherwise the inherited clip (if any) passes through unchanged.
+        let child_clip = if self.style.clip {
+            Some(clipped_rect)
+        } else {
+            inherited_clip
+        };
+
         let (text, image) = match self.content {
             NodeContent::Children(children) => {
                 for node in children.into_iter().rev() {
@@ -790,6 +819,7 @@ impl ResolvedNode {
                         text_color,
                         effective_depth,
                         debug_color_index,
+                        child_clip,
                     );
                 }
                 (None, None)
@@ -891,6 +921,9 @@ impl ResolvedNode {
         // Draw text glyphs
         if let (Some(text), Some(text_color)) = (text, text_color) {
             text.color(text_color).emit_cells(&mut |mut c| {
+                if inherited_clip.is_some_and(|clip| !clip.contains_point(c.position.x, c.position.y)) {
+                    return;
+                }
                 c.position.z = effective_depth;
                 cells.push(c);
             });
@@ -899,6 +932,9 @@ impl ResolvedNode {
         // Draw image pixels
         if let Some(frame) = image {
             frame.emit_cells(&mut |mut c| {
+                if inherited_clip.is_some_and(|clip| !clip.contains_point(c.position.x, c.position.y)) {
+                    return;
+                }
                 c.position.z = effective_depth;
                 cells.push(c);
             });
@@ -906,7 +942,7 @@ impl ResolvedNode {
 
         // Draw pane background
         if let Some(color) = color {
-            self.rect.fill().color(color).emit_cells(&mut |mut c| {
+            clipped_rect.fill().color(color).emit_cells(&mut |mut c| {
                 c.position.z = effective_depth;
                 cells.push(c);
             });
@@ -1980,6 +2016,141 @@ mod tests {
                 .width(),
             60
         );
+    }
+
+    // --- Clip tests ---
+
+    #[test]
+    fn clip_truncates_oversized_child_cells() {
+        // Parent is 10 wide/tall and clips; child is 20 wide/tall and colored,
+        // so it would normally emit 400 cells but only the 10x10 overlap should render.
+        let node: Node = row().size(10, 10).clip().children(vec![pane().size(20, 20).color(RED)]);
+        let mut app = TestApp::new();
+        let mut state = make_state();
+        state.set_input(input_at(100.0, 100.0));
+        eval(node, &mut app, &mut state);
+        assert_eq!(state.get_cells().len(), 100);
+    }
+
+    #[test]
+    fn no_clip_lets_oversized_child_spill() {
+        let node: Node = row().size(10, 10).children(vec![pane().size(20, 20).color(RED)]);
+        let mut app = TestApp::new();
+        let mut state = make_state();
+        state.set_input(input_at(100.0, 100.0));
+        eval(node, &mut app, &mut state);
+        assert_eq!(state.get_cells().len(), 400);
+    }
+
+    #[test]
+    fn clip_does_not_affect_layout_sizes() {
+        // Same overflow scenario as fill_overflow_shrinks_siblings, but with clip
+        // set on the parent — sibling flow math must be unaffected by clip.
+        let node: Node = row().width(100).clip().children(vec![
+            pane().fill_w().height(10).children(vec![pane().size(60, 10)]),
+            pane().fill_w().height(10),
+        ]);
+        let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
+        assert_eq!(resolved.find_child_by_index(0).unwrap().rect.width(), 60);
+        assert_eq!(resolved.find_child_by_index(1).unwrap().rect.width(), 40);
+    }
+
+    #[test]
+    fn clip_blocks_hit_test_outside_parent_bounds() {
+        // Child sits at x=[5,25) but parent clips to x=[0,10); a click at x=15
+        // lands inside the child's own rect but outside the clipped visible area.
+        let node: Node = row().size(10, 10).clip().children(vec![
+            row().size(5, 10),
+            row().size(20, 10).color(RED).on_click(|| {
+                get_app::<TestApp>().with_mut(|app| app.clicked = true);
+            }),
+        ]);
+        let mut app = TestApp::new();
+        let mut state = make_state();
+        state.set_input(input_with_click_at(15.0, 5.0));
+        eval(node, &mut app, &mut state);
+        assert!(!app.clicked);
+    }
+
+    #[test]
+    fn clip_allows_hit_test_inside_parent_bounds() {
+        let node: Node = row().size(10, 10).clip().children(vec![
+            row().size(5, 10),
+            row().size(20, 10).color(RED).on_click(|| {
+                get_app::<TestApp>().with_mut(|app| app.clicked = true);
+            }),
+        ]);
+        let mut app = TestApp::new();
+        let mut state = make_state();
+        state.set_input(input_with_click_at(7.0, 5.0));
+        eval(node, &mut app, &mut state);
+        assert!(app.clicked);
+    }
+
+    #[test]
+    fn clip_propagates_to_grandchildren() {
+        // Clip on the outer row constrains a grandchild nested inside a
+        // non-clipping intermediate child.
+        let node: Node = row().size(10, 10).clip().children(vec![row().children(vec![
+            pane().size(20, 20).color(RED),
+        ])]);
+        let mut app = TestApp::new();
+        let mut state = make_state();
+        state.set_input(input_at(100.0, 100.0));
+        eval(node, &mut app, &mut state);
+        assert_eq!(state.get_cells().len(), 100);
+    }
+
+    #[test]
+    fn nested_clip_intersects_transitively() {
+        // Outer clips to 10x10; inner (5x5, offset within outer) also clips,
+        // and contains an oversized grandchild — result is bounded by the
+        // intersection of both clip boxes, i.e. by the inner 5x5 box.
+        let node: Node = row().size(10, 10).clip().children(vec![
+            row().size(5, 5).clip().children(vec![pane().size(20, 20).color(RED)]),
+        ]);
+        let mut app = TestApp::new();
+        let mut state = make_state();
+        state.set_input(input_at(100.0, 100.0));
+        eval(node, &mut app, &mut state);
+        assert_eq!(state.get_cells().len(), 25);
+    }
+
+    #[test]
+    fn shrink_axis_is_not_clipped() {
+        // Parent has Fixed width (10) but Shrink height (default); child is
+        // 20x20. Width overflow (20 -> 10) is clipped, but height is not
+        // artificially restricted below the child's natural 20 extent, since
+        // a Shrink axis's own box already equals its content and has nothing
+        // to clip against.
+        let resolved = row()
+            .width(10)
+            .clip()
+            .children(vec![pane().size(20, 20).color(RED)])
+            .layout(256, 256, &State::new_for_test(256, 256));
+        assert_eq!(resolved.rect.width(), 10);
+        assert_eq!(resolved.rect.height(), 20);
+
+        let node: Node = row().width(10).clip().children(vec![pane().size(20, 20).color(RED)]);
+        let mut app = TestApp::new();
+        let mut state = make_state();
+        state.set_input(input_at(100.0, 100.0));
+        eval(node, &mut app, &mut state);
+        assert_eq!(state.get_cells().len(), 200); // 10 wide (clipped) x 20 tall (unclipped)
+    }
+
+    #[test]
+    fn absolute_child_ignores_ancestor_clip() {
+        // Child is positioned absolutely outside the clipping parent's bounds;
+        // it should render/hit-test at full size regardless.
+        let node: Node = row().size(10, 10).clip().children(vec![
+            pane().size(20, 20).color(RED).absolute(50.0, 50.0),
+        ]);
+        let mut app = TestApp::new();
+        let mut state = make_state();
+        state.set_input(input_at(100.0, 100.0));
+        eval(node, &mut app, &mut state);
+        assert_eq!(state.get_cells().len(), 400);
     }
 
     // --- Justify tests ---
