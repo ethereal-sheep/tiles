@@ -2,8 +2,8 @@ use core::fmt;
 
 use crate::cell::Cell;
 use crate::color::Color;
-use crate::element::DragInfo;
 use crate::font::Font;
+use crate::handlers::Handlers;
 use crate::image::placeholder_image;
 use crate::input::ConsumedState;
 use crate::rect::Rect;
@@ -12,27 +12,6 @@ use crate::size::Size;
 use crate::style::{Align, Axis, Justify, Position, Sizing, Style};
 use crate::ui::hooks::get_state;
 use crate::{Drawable, Frame, Image, Shape, Sprite, Text};
-use tiles_macros::Builders;
-
-// --- Handlers ---
-
-#[derive(Builders, Default)]
-#[builders(forward(to = "Node", via = "handlers"))]
-#[builders(forward(to = "WidgetFn<F: FnOnce(Props) -> Node>", via = "handlers"))]
-pub struct Handlers {
-    pub on_hover: Option<Box<dyn Fn()>>,
-    pub on_enter: Option<Box<dyn Fn()>>,
-    pub on_leave: Option<Box<dyn Fn()>>,
-    pub on_click: Option<Box<dyn Fn()>>,
-    pub on_double_click: Option<Box<dyn Fn()>>,
-    pub on_press: Option<Box<dyn Fn()>>,
-    pub on_release: Option<Box<dyn Fn()>>,
-    pub on_right_click: Option<Box<dyn Fn()>>,
-    pub on_hold: Option<Box<dyn Fn()>>,
-    pub on_drag: Option<Box<dyn Fn(DragInfo)>>,
-    pub on_drag_end: Option<Box<dyn Fn(DragInfo)>>,
-    pub on_scroll: Option<Box<dyn Fn(f32)>>,
-}
 
 // --- Node types ---
 #[derive(Debug)]
@@ -51,7 +30,7 @@ enum ImageSource {
 pub struct Node {
     id: String,
     pub(crate) style: Style,
-    handlers: Handlers,
+    pub(crate) handlers: Handlers,
     content: NodeContent<Self, String, ImageSource>,
 }
 
@@ -921,7 +900,9 @@ impl ResolvedNode {
         // Draw text glyphs
         if let (Some(text), Some(text_color)) = (text, text_color) {
             text.color(text_color).emit_cells(&mut |mut c| {
-                if inherited_clip.is_some_and(|clip| !clip.contains_point(c.position.x, c.position.y)) {
+                if inherited_clip
+                    .is_some_and(|clip| !clip.contains_point(c.position.x, c.position.y))
+                {
                     return;
                 }
                 c.position.z = effective_depth;
@@ -932,7 +913,9 @@ impl ResolvedNode {
         // Draw image pixels
         if let Some(frame) = image {
             frame.emit_cells(&mut |mut c| {
-                if inherited_clip.is_some_and(|clip| !clip.contains_point(c.position.x, c.position.y)) {
+                if inherited_clip
+                    .is_some_and(|clip| !clip.contains_point(c.position.x, c.position.y))
+                {
                     return;
                 }
                 c.position.z = effective_depth;
@@ -2024,7 +2007,10 @@ mod tests {
     fn clip_truncates_oversized_child_cells() {
         // Parent is 10 wide/tall and clips; child is 20 wide/tall and colored,
         // so it would normally emit 400 cells but only the 10x10 overlap should render.
-        let node: Node = row().size(10, 10).clip().children(vec![pane().size(20, 20).color(RED)]);
+        let node: Node = row()
+            .size(10, 10)
+            .clip()
+            .children(vec![pane().size(20, 20).color(RED)]);
         let mut app = TestApp::new();
         let mut state = make_state();
         state.set_input(input_at(100.0, 100.0));
@@ -2034,7 +2020,9 @@ mod tests {
 
     #[test]
     fn no_clip_lets_oversized_child_spill() {
-        let node: Node = row().size(10, 10).children(vec![pane().size(20, 20).color(RED)]);
+        let node: Node = row()
+            .size(10, 10)
+            .children(vec![pane().size(20, 20).color(RED)]);
         let mut app = TestApp::new();
         let mut state = make_state();
         state.set_input(input_at(100.0, 100.0));
@@ -2047,7 +2035,10 @@ mod tests {
         // Same overflow scenario as fill_overflow_shrinks_siblings, but with clip
         // set on the parent — sibling flow math must be unaffected by clip.
         let node: Node = row().width(100).clip().children(vec![
-            pane().fill_w().height(10).children(vec![pane().size(60, 10)]),
+            pane()
+                .fill_w()
+                .height(10)
+                .children(vec![pane().size(60, 10)]),
             pane().fill_w().height(10),
         ]);
         let resolved = node.layout(256, 256, &State::new_for_test(256, 256));
@@ -2091,9 +2082,10 @@ mod tests {
     fn clip_propagates_to_grandchildren() {
         // Clip on the outer row constrains a grandchild nested inside a
         // non-clipping intermediate child.
-        let node: Node = row().size(10, 10).clip().children(vec![row().children(vec![
-            pane().size(20, 20).color(RED),
-        ])]);
+        let node: Node = row()
+            .size(10, 10)
+            .clip()
+            .children(vec![row().children(vec![pane().size(20, 20).color(RED)])]);
         let mut app = TestApp::new();
         let mut state = make_state();
         state.set_input(input_at(100.0, 100.0));
@@ -2107,7 +2099,10 @@ mod tests {
         // and contains an oversized grandchild — result is bounded by the
         // intersection of both clip boxes, i.e. by the inner 5x5 box.
         let node: Node = row().size(10, 10).clip().children(vec![
-            row().size(5, 5).clip().children(vec![pane().size(20, 20).color(RED)]),
+            row()
+                .size(5, 5)
+                .clip()
+                .children(vec![pane().size(20, 20).color(RED)]),
         ]);
         let mut app = TestApp::new();
         let mut state = make_state();
@@ -2131,7 +2126,10 @@ mod tests {
         assert_eq!(resolved.rect.width(), 10);
         assert_eq!(resolved.rect.height(), 20);
 
-        let node: Node = row().width(10).clip().children(vec![pane().size(20, 20).color(RED)]);
+        let node: Node = row()
+            .width(10)
+            .clip()
+            .children(vec![pane().size(20, 20).color(RED)]);
         let mut app = TestApp::new();
         let mut state = make_state();
         state.set_input(input_at(100.0, 100.0));
@@ -2143,9 +2141,10 @@ mod tests {
     fn absolute_child_ignores_ancestor_clip() {
         // Child is positioned absolutely outside the clipping parent's bounds;
         // it should render/hit-test at full size regardless.
-        let node: Node = row().size(10, 10).clip().children(vec![
-            pane().size(20, 20).color(RED).absolute(50.0, 50.0),
-        ]);
+        let node: Node = row()
+            .size(10, 10)
+            .clip()
+            .children(vec![pane().size(20, 20).color(RED).absolute(50.0, 50.0)]);
         let mut app = TestApp::new();
         let mut state = make_state();
         state.set_input(input_at(100.0, 100.0));
